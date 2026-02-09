@@ -354,10 +354,12 @@ h1 {
   backdrop-filter: blur(10px);
   box-shadow: 0 20px 45px -36px rgba(12, 57, 168, 0.55);
   overflow: visible;
+  position: relative;
+  z-index: 3;
 }
 
 .controls.club-menu-open {
-  padding-bottom: 390px;
+  z-index: 20;
 }
 
 .controls-head {
@@ -480,6 +482,10 @@ h1 {
   padding: 10px;
   display: grid;
   gap: 8px;
+}
+
+.multi-select-menu[hidden] {
+  display: none !important;
 }
 
 .multi-select-menu input {
@@ -1222,7 +1228,7 @@ tbody td:nth-last-child(2) {
   }
 
   .controls.club-menu-open {
-    padding-bottom: 10px;
+    z-index: 20;
   }
 
   .controls-body {
