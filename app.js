@@ -11,6 +11,8 @@ const state = {
   raw: null,
   filtered: [],
   selected: new Set(),
+  clubFilter: new Set(),
+  clubFilterSearch: "",
   detailClubId: null,
   currency: "GBP",
   transferMode: "pnl_proxy",
@@ -18,6 +20,9 @@ const state = {
   season: "All",
   search: "",
   sortBy: "totalSpendMetric",
+  sortDir: "desc",
+  detailIncomingSort: { key: "fee", dir: "desc" },
+  detailOutgoingSort: { key: "fee", dir: "desc" },
 };
 
 const elements = {
@@ -45,6 +50,13 @@ const elements = {
   currencySelect: document.getElementById("currencySelect"),
   sortSelect: document.getElementById("sortSelect"),
   viewModeSelect: document.getElementById("viewModeSelect"),
+  clubControl: document.getElementById("clubControl"),
+  clubFilterTrigger: document.getElementById("clubFilterTrigger"),
+  clubFilterMenu: document.getElementById("clubFilterMenu"),
+  clubFilterSearch: document.getElementById("clubFilterSearch"),
+  clubFilterAllBtn: document.getElementById("clubFilterAllBtn"),
+  clubFilterVisibleBtn: document.getElementById("clubFilterVisibleBtn"),
+  clubFilterOptions: document.getElementById("clubFilterOptions"),
   searchInput: document.getElementById("searchInput"),
   lastUpdated: document.getElementById("lastUpdated"),
   refreshBtn: document.getElementById("refreshBtn"),
@@ -72,6 +84,27 @@ const formatMoney = (value, currency) => {
 const formatPercent = (value) => `${Math.round(value * 100)}%`;
 
 const capitalize = (value) => value.charAt(0).toUpperCase() + value.slice(1);
+
+const defaultSortDir = (key) => {
+  if (["team_name", "player", "window", "contract_confidence"].includes(key)) return "asc";
+  return "desc";
+};
+
+const compareValues = (a, b, key, dir) => {
+  const left = a?.[key];
+  const right = b?.[key];
+  let result = 0;
+
+  if (typeof left === "string" || typeof right === "string") {
+    result = String(left || "").localeCompare(String(right || ""), undefined, { sensitivity: "base" });
+  } else if (typeof left === "boolean" || typeof right === "boolean") {
+    result = Number(Boolean(left)) - Number(Boolean(right));
+  } else {
+    result = (Number(left) || 0) - (Number(right) || 0);
+  }
+
+  return dir === "asc" ? result : -result;
+};
 
 const transferViewConfig = () => {
   if (state.transferMode === "cash") {
@@ -150,6 +183,7 @@ const applyFilters = () => {
   state.filtered = state.raw.clubs
     .filter((club) => (state.league === "All" ? true : club.league === state.league))
     .filter((club) => (state.season === "All" ? true : club.season === state.season))
+    .filter((club) => (state.clubFilter.size ? state.clubFilter.has(club.team_id) : true))
     .filter((club) => club.team_name.toLowerCase().includes(state.search))
     .map((club) => {
       const derived = deriveClub(club, fx);
@@ -163,7 +197,7 @@ const applyFilters = () => {
         totalSpendMetric,
       };
     })
-    .sort((a, b) => b[state.sortBy] - a[state.sortBy]);
+    .sort((a, b) => compareValues(a, b, state.sortBy, state.sortDir));
 };
 
 const coverageClass = (coverage) => {
@@ -310,6 +344,86 @@ const bindHoverTargets = (root) => {
   });
 };
 
+const scopedClubs = () =>
+  (state.raw?.clubs || [])
+    .filter((club) => (state.league === "All" ? true : club.league === state.league))
+    .filter((club) => (state.season === "All" ? true : club.season === state.season))
+    .sort((a, b) => a.team_name.localeCompare(b.team_name, undefined, { sensitivity: "base" }));
+
+const renderClubFilter = () => {
+  const clubs = scopedClubs();
+  const scopedIds = new Set(clubs.map((club) => club.team_id));
+
+  state.clubFilter.forEach((id) => {
+    if (!scopedIds.has(id)) {
+      state.clubFilter.delete(id);
+    }
+  });
+
+  const search = state.clubFilterSearch.trim().toLowerCase();
+  const visible = clubs.filter((club) => club.team_name.toLowerCase().includes(search));
+  const selectedCount = state.clubFilter.size;
+  const scopedCount = clubs.length;
+
+  elements.clubFilterTrigger.textContent =
+    selectedCount === 0
+      ? `All clubs (${scopedCount})`
+      : selectedCount === 1
+        ? `${clubs.find((club) => state.clubFilter.has(club.team_id))?.team_name || "1 club"}`
+        : `${selectedCount} clubs selected`;
+
+  if (!visible.length) {
+    elements.clubFilterOptions.innerHTML = '<p class="multi-select-empty">No clubs match that search.</p>';
+    return;
+  }
+
+  elements.clubFilterOptions.innerHTML = visible
+    .map((club) => {
+      const checked = state.clubFilter.has(club.team_id);
+      return `
+        <label class="multi-option">
+          <input type="checkbox" data-club-filter-id="${club.team_id}" ${checked ? "checked" : ""} />
+          <span>${escapeHtml(club.team_name)}</span>
+        </label>
+      `;
+    })
+    .join("");
+};
+
+const toggleClubFilterMenu = (open) => {
+  const shouldOpen = typeof open === "boolean" ? open : elements.clubFilterMenu.hasAttribute("hidden");
+  if (shouldOpen) {
+    elements.clubFilterMenu.removeAttribute("hidden");
+    elements.clubFilterTrigger.setAttribute("aria-expanded", "true");
+  } else {
+    elements.clubFilterMenu.setAttribute("hidden", "");
+    elements.clubFilterTrigger.setAttribute("aria-expanded", "false");
+  }
+};
+
+const renderTableSortState = () => {
+  document.querySelectorAll(".sort-btn[data-sort]").forEach((button) => {
+    const isActive = button.dataset.sort === state.sortBy;
+    button.classList.toggle("active", isActive);
+    button.dataset.dir = isActive ? state.sortDir : "";
+    button.setAttribute("aria-sort", isActive ? (state.sortDir === "asc" ? "ascending" : "descending") : "none");
+  });
+};
+
+const renderDetailSortState = () => {
+  document.querySelectorAll(".detail-sort-btn[data-detail-sort]").forEach((button) => {
+    const isActive = button.dataset.detailSort === state.detailIncomingSort.key;
+    button.classList.toggle("active", isActive);
+    button.dataset.dir = isActive ? state.detailIncomingSort.dir : "";
+  });
+
+  document.querySelectorAll(".outgoing-sort-btn[data-outgoing-sort]").forEach((button) => {
+    const isActive = button.dataset.outgoingSort === state.detailOutgoingSort.key;
+    button.classList.toggle("active", isActive);
+    button.dataset.dir = isActive ? state.detailOutgoingSort.dir : "";
+  });
+};
+
 const renderSummary = () => {
   const view = transferViewConfig();
   const totalSpend = state.filtered.reduce((sum, club) => sum + club.totalSpendMetric, 0);
@@ -393,6 +507,13 @@ const renderTransferViewLabels = () => {
   elements.netHeader.textContent = view.netLabel;
   elements.totalHeader.textContent = view.totalLabel;
   elements.trendHint.textContent = view.trendHint;
+
+  const totalOption = elements.sortSelect.querySelector('option[value="totalSpendMetric"]');
+  const netOption = elements.sortSelect.querySelector('option[value="netTransferMetric"]');
+  const inOption = elements.sortSelect.querySelector('option[value="transferInMetric"]');
+  if (totalOption) totalOption.textContent = view.totalLabel;
+  if (netOption) netOption.textContent = view.netLabel;
+  if (inOption) inOption.textContent = view.transferInLabel;
 };
 
 const renderTrendChart = () => {
@@ -522,6 +643,7 @@ const renderDetail = () => {
     elements.detailSpendPill.textContent = "Spend --";
     elements.detailIncomingBody.innerHTML = '<tr><td class="detail-empty" colspan="5">No incoming transfers.</td></tr>';
     elements.detailOutgoingBody.innerHTML = '<tr><td class="detail-empty" colspan="4">No outgoing transfers.</td></tr>';
+    renderDetailSortState();
     return;
   }
 
@@ -538,7 +660,8 @@ const renderDetail = () => {
   elements.detailAssumedPill.textContent = `Assumed ${selectedClub.assumedDeals}/${selectedClub.incomingCount}`;
   elements.detailSpendPill.textContent = `Total ${formatMoney(selectedClub.totalSpendMetric, state.currency)}`;
 
-  const incomingRows = selectedClub.transfers_in
+  const incomingRows = [...selectedClub.transfers_in]
+    .sort((a, b) => compareValues(a, b, state.detailIncomingSort.key, state.detailIncomingSort.dir))
     .map((transfer) => {
       const fee = formatMoney((transfer.fee || 0) * fx, state.currency);
       return `
@@ -553,7 +676,8 @@ const renderDetail = () => {
     })
     .join("");
 
-  const outgoingRows = selectedClub.transfers_out
+  const outgoingRows = [...selectedClub.transfers_out]
+    .sort((a, b) => compareValues(a, b, state.detailOutgoingSort.key, state.detailOutgoingSort.dir))
     .map((transfer) => {
       const fee = formatMoney((transfer.fee || 0) * fx, state.currency);
       return `
@@ -571,6 +695,7 @@ const renderDetail = () => {
     incomingRows || '<tr><td class="detail-empty" colspan="5">No incoming transfers.</td></tr>';
   elements.detailOutgoingBody.innerHTML =
     outgoingRows || '<tr><td class="detail-empty" colspan="4">No outgoing transfers.</td></tr>';
+  renderDetailSortState();
 };
 
 const renderTable = () => {
@@ -604,6 +729,7 @@ const renderTable = () => {
   bindSelectionInputs(elements.table);
   bindDrillButtons(elements.table);
   bindHoverTargets(elements.table);
+  renderTableSortState();
 };
 
 const renderMobileCards = () => {
@@ -727,6 +853,9 @@ const populateFilters = () => {
   if (onlyOneLeague) {
     state.league = "All";
   }
+
+  elements.sortSelect.value = state.sortBy;
+  renderClubFilter();
 };
 
 const bindQuickNav = () => {
@@ -750,7 +879,9 @@ const bindQuickNav = () => {
 };
 
 const render = () => {
+  if (!state.raw) return;
   applyFilters();
+  renderClubFilter();
   renderTransferViewLabels();
   renderPeriodBadge();
   renderSummary();
@@ -777,6 +908,49 @@ const loadData = async () => {
 };
 
 const bindEvents = () => {
+  elements.clubFilterTrigger.addEventListener("click", () => {
+    toggleClubFilterMenu();
+    if (!elements.clubFilterMenu.hasAttribute("hidden")) {
+      elements.clubFilterSearch.focus();
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!elements.clubControl.contains(event.target)) {
+      toggleClubFilterMenu(false);
+    }
+  });
+
+  elements.clubFilterSearch.addEventListener("input", (event) => {
+    state.clubFilterSearch = event.target.value;
+    renderClubFilter();
+  });
+
+  elements.clubFilterOptions.addEventListener("change", (event) => {
+    const id = event.target.dataset.clubFilterId;
+    if (!id) return;
+    if (event.target.checked) {
+      state.clubFilter.add(id);
+    } else {
+      state.clubFilter.delete(id);
+    }
+    render();
+  });
+
+  elements.clubFilterAllBtn.addEventListener("click", () => {
+    state.clubFilter.clear();
+    render();
+  });
+
+  elements.clubFilterVisibleBtn.addEventListener("click", () => {
+    const search = state.clubFilterSearch.trim().toLowerCase();
+    const visibleIds = scopedClubs()
+      .filter((club) => club.team_name.toLowerCase().includes(search))
+      .map((club) => club.team_id);
+    state.clubFilter = new Set(visibleIds);
+    render();
+  });
+
   elements.leagueSelect.addEventListener("change", (event) => {
     state.league = event.target.value;
     render();
@@ -799,7 +973,49 @@ const bindEvents = () => {
 
   elements.sortSelect.addEventListener("change", (event) => {
     state.sortBy = event.target.value;
+    state.sortDir = defaultSortDir(state.sortBy);
     render();
+  });
+
+  document.querySelectorAll(".sort-btn[data-sort]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.sort;
+      if (!key) return;
+      if (state.sortBy === key) {
+        state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+      } else {
+        state.sortBy = key;
+        state.sortDir = defaultSortDir(key);
+      }
+      elements.sortSelect.value = state.sortBy;
+      render();
+    });
+  });
+
+  document.querySelectorAll(".detail-sort-btn[data-detail-sort]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.detailSort;
+      if (!key) return;
+      if (state.detailIncomingSort.key === key) {
+        state.detailIncomingSort.dir = state.detailIncomingSort.dir === "asc" ? "desc" : "asc";
+      } else {
+        state.detailIncomingSort = { key, dir: defaultSortDir(key) };
+      }
+      renderDetail();
+    });
+  });
+
+  document.querySelectorAll(".outgoing-sort-btn[data-outgoing-sort]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.outgoingSort;
+      if (!key) return;
+      if (state.detailOutgoingSort.key === key) {
+        state.detailOutgoingSort.dir = state.detailOutgoingSort.dir === "asc" ? "desc" : "asc";
+      } else {
+        state.detailOutgoingSort = { key, dir: defaultSortDir(key) };
+      }
+      renderDetail();
+    });
   });
 
   elements.searchInput.addEventListener("input", (event) => {

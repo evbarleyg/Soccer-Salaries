@@ -65,6 +65,20 @@
           <label for="searchInput">Search</label>
           <input id="searchInput" type="search" placeholder="Club name" />
         </div>
+        <div class="control club-control" id="clubControl">
+          <label for="clubFilterSearch">Clubs</label>
+          <button class="multi-select-trigger" id="clubFilterTrigger" type="button" aria-expanded="false">
+            All clubs
+          </button>
+          <div class="multi-select-menu" id="clubFilterMenu" hidden>
+            <input id="clubFilterSearch" type="search" placeholder="Filter clubs..." />
+            <div class="multi-select-actions">
+              <button id="clubFilterAllBtn" type="button">All clubs</button>
+              <button id="clubFilterVisibleBtn" type="button">Select visible</button>
+            </div>
+            <div class="multi-select-options" id="clubFilterOptions"></div>
+          </div>
+        </div>
         <div class="control" id="leagueControl">
           <label for="leagueSelect">League</label>
           <select id="leagueSelect"></select>
@@ -84,10 +98,12 @@
         <div class="control">
           <label for="sortSelect">Sort</label>
           <select id="sortSelect">
+            <option value="team_name">Club (A-Z)</option>
             <option value="totalSpendMetric">Total Spend</option>
             <option value="wageBill">Wages</option>
             <option value="netTransferMetric">Net Transfers</option>
             <option value="transferInMetric">Transfers In</option>
+            <option value="transferOutRevenue">Transfer-Out Fees</option>
             <option value="contractCoverage">Contract Coverage</option>
             <option value="assumedDeals">Assumed Deals</option>
           </select>
@@ -140,14 +156,54 @@
               <thead>
                 <tr>
                   <th></th>
-                  <th>Club</th>
-                  <th>Wages</th>
-                  <th id="transferInHeader">Amortized Transfers In</th>
-                  <th id="transferOutHeader">Transfer-Out Fees</th>
-                  <th id="netHeader">Net Transfer Cost</th>
-                  <th id="totalHeader">Total Spend</th>
-                  <th>Contract Coverage</th>
-                  <th>Assumed Deals</th>
+                  <th class="sortable-th">
+                    <button class="sort-btn" data-sort="team_name" type="button">
+                      Club
+                      <span class="sort-indicator"></span>
+                    </button>
+                  </th>
+                  <th class="sortable-th">
+                    <button class="sort-btn" data-sort="wageBill" type="button">
+                      Wages
+                      <span class="sort-indicator"></span>
+                    </button>
+                  </th>
+                  <th class="sortable-th">
+                    <button class="sort-btn" data-sort="transferInMetric" type="button">
+                      <span id="transferInHeader">Amortized Transfers In</span>
+                      <span class="sort-indicator"></span>
+                    </button>
+                  </th>
+                  <th class="sortable-th">
+                    <button class="sort-btn" data-sort="transferOutRevenue" type="button">
+                      <span id="transferOutHeader">Transfer-Out Fees</span>
+                      <span class="sort-indicator"></span>
+                    </button>
+                  </th>
+                  <th class="sortable-th">
+                    <button class="sort-btn" data-sort="netTransferMetric" type="button">
+                      <span id="netHeader">Net Transfer Cost</span>
+                      <span class="sort-indicator"></span>
+                    </button>
+                  </th>
+                  <th class="sortable-th">
+                    <button class="sort-btn" data-sort="totalSpendMetric" type="button">
+                      <span id="totalHeader">Total Spend</span>
+                      <span class="sort-indicator"></span>
+                    </button>
+                  </th>
+                  <th class="sortable-th">
+                    <button class="sort-btn" data-sort="contractCoverage" type="button">
+                      Contract Coverage
+                      <span class="sort-indicator"></span>
+                    </button>
+                  </th>
+                  <th class="sortable-th">
+                    <button class="sort-btn" data-sort="assumedDeals" type="button">
+                      Assumed Deals
+                      <span class="sort-indicator"></span>
+                    </button>
+                  </th>
                   <th>Drill Down</th>
                 </tr>
               </thead>
@@ -182,11 +238,36 @@
               <table class="detail-table">
                 <thead>
                   <tr>
-                    <th>Player</th>
-                    <th>Fee</th>
-                    <th>Contract Years</th>
-                    <th>Confidence</th>
-                    <th>Loan</th>
+                    <th class="sortable-th">
+                      <button class="sort-btn detail-sort-btn" data-detail-sort="player" type="button">
+                        Player
+                        <span class="sort-indicator"></span>
+                      </button>
+                    </th>
+                    <th class="sortable-th">
+                      <button class="sort-btn detail-sort-btn" data-detail-sort="fee" type="button">
+                        Fee
+                        <span class="sort-indicator"></span>
+                      </button>
+                    </th>
+                    <th class="sortable-th">
+                      <button class="sort-btn detail-sort-btn" data-detail-sort="contract_years" type="button">
+                        Contract Years
+                        <span class="sort-indicator"></span>
+                      </button>
+                    </th>
+                    <th class="sortable-th">
+                      <button class="sort-btn detail-sort-btn" data-detail-sort="contract_confidence" type="button">
+                        Confidence
+                        <span class="sort-indicator"></span>
+                      </button>
+                    </th>
+                    <th class="sortable-th">
+                      <button class="sort-btn detail-sort-btn" data-detail-sort="is_loan" type="button">
+                        Loan
+                        <span class="sort-indicator"></span>
+                      </button>
+                    </th>
                   </tr>
                 </thead>
                 <tbody id="detailIncomingBody"></tbody>
@@ -199,10 +280,30 @@
               <table class="detail-table">
                 <thead>
                   <tr>
-                    <th>Player</th>
-                    <th>Fee</th>
-                    <th>Window</th>
-                    <th>Loan</th>
+                    <th class="sortable-th">
+                      <button class="sort-btn outgoing-sort-btn" data-outgoing-sort="player" type="button">
+                        Player
+                        <span class="sort-indicator"></span>
+                      </button>
+                    </th>
+                    <th class="sortable-th">
+                      <button class="sort-btn outgoing-sort-btn" data-outgoing-sort="fee" type="button">
+                        Fee
+                        <span class="sort-indicator"></span>
+                      </button>
+                    </th>
+                    <th class="sortable-th">
+                      <button class="sort-btn outgoing-sort-btn" data-outgoing-sort="window" type="button">
+                        Window
+                        <span class="sort-indicator"></span>
+                      </button>
+                    </th>
+                    <th class="sortable-th">
+                      <button class="sort-btn outgoing-sort-btn" data-outgoing-sort="is_loan" type="button">
+                        Loan
+                        <span class="sort-indicator"></span>
+                      </button>
+                    </th>
                   </tr>
                 </thead>
                 <tbody id="detailOutgoingBody"></tbody>
