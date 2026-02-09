@@ -650,6 +650,10 @@ tbody td:nth-last-child(2) {
   font-family: var(--mono);
 }
 
+.sort-btn .sort-indicator::before {
+  content: "↕";
+}
+
 .sort-btn.active {
   color: #21448d;
 }

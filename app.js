@@ -667,7 +667,7 @@ const renderDetail = () => {
 
   elements.detailClubName.textContent = `${selectedClub.team_name} Player Drilldown`;
   elements.detailSubtitle.textContent =
-    "Player-level transfer fees and contract-length confidence used for amortized spend.";
+    "Player-level transfer fees and contract-length confidence used for amortized spend. Click headers to sort.";
   elements.detailCoveragePill.textContent = `Coverage ${formatPercent(selectedClub.contractCoverage)}`;
   elements.detailAssumedPill.textContent = `Assumed ${selectedClub.assumedDeals}/${selectedClub.incomingCount}`;
   elements.detailSpendPill.textContent = `Total ${formatMoney(selectedClub.totalSpendMetric, state.currency)}`;
