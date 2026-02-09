@@ -2,17 +2,17 @@
 
 :root {
   color-scheme: light;
-  --bg: #f5f8ff;
+  --bg: #f6f8fc;
   --surface: #ffffff;
-  --surface-soft: #f8fbff;
-  --ink: #0b1736;
-  --muted: #566489;
-  --accent: #155eef;
-  --accent-dark: #0040c1;
-  --ink-soft: #1b2b55;
+  --surface-soft: #f9fbff;
+  --ink: #0f172f;
+  --muted: #56617f;
+  --accent: #2457e5;
+  --accent-dark: #153eb3;
+  --ink-soft: #202b4f;
   --teal: #0fa3b1;
   --gold: #f59e0b;
-  --shadow: 0 26px 60px -38px rgba(12, 36, 94, 0.35);
+  --shadow: 0 18px 48px -34px rgba(20, 32, 74, 0.32);
   --line: #dbe6ff;
   --radius: 20px;
   --mono: "IBM Plex Mono", "Courier New", monospace;
@@ -28,9 +28,9 @@
 body {
   font-family: var(--sans);
   background:
-    radial-gradient(circle at 12% 10%, #d8e6ff 0%, rgba(216, 230, 255, 0) 44%),
-    radial-gradient(circle at 92% 8%, #e6f2ff 0%, rgba(230, 242, 255, 0) 38%),
-    linear-gradient(145deg, #f2f6ff 0%, #f8fbff 40%, #f4f9ff 100%);
+    radial-gradient(circle at 16% 6%, #dce7ff 0%, rgba(220, 231, 255, 0) 38%),
+    radial-gradient(circle at 92% 8%, #eaf2ff 0%, rgba(234, 242, 255, 0) 40%),
+    linear-gradient(150deg, #f3f6fc 0%, #f8fbff 45%, #f6f9ff 100%);
   color: var(--ink);
   min-height: 100vh;
 }
@@ -133,9 +133,10 @@ h1 {
   background: #f7faff;
   color: var(--ink-soft);
   border-radius: 999px;
-  padding: 7px 12px;
-  font-size: 0.77rem;
-  font-family: var(--mono);
+  padding: 8px 13px;
+  font-size: 0.88rem;
+  font-family: var(--sans);
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -256,6 +257,7 @@ h1 {
   padding: 14px;
   backdrop-filter: blur(10px);
   box-shadow: 0 20px 45px -36px rgba(12, 57, 168, 0.55);
+  overflow: visible;
 }
 
 .control {
@@ -265,9 +267,11 @@ h1 {
 }
 
 .control label {
-  font-size: 0.85rem;
-  font-family: var(--mono);
-  color: var(--muted);
+  font-size: 0.82rem;
+  font-family: var(--sans);
+  font-weight: 600;
+  color: #4b5880;
+  letter-spacing: 0.02em;
 }
 
 .control input,
@@ -295,6 +299,8 @@ h1 {
 
 .multi-select-trigger {
   width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
   border-radius: 12px;
   border: 1px solid #cadcff;
   background: #fff;
@@ -320,7 +326,7 @@ h1 {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  right: 0;
+  width: min(360px, 80vw);
   z-index: 20;
   border: 1px solid #c5d8ff;
   border-radius: 14px;
@@ -355,7 +361,7 @@ h1 {
 }
 
 .multi-select-options {
-  max-height: 220px;
+  max-height: min(260px, 42vh);
   overflow-y: auto;
   border: 1px solid #edf2ff;
   border-radius: 10px;
@@ -429,11 +435,12 @@ h1 {
 }
 
 .card h3 {
-  font-size: 0.9rem;
-  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-family: var(--sans);
   text-transform: uppercase;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.08em;
   margin-bottom: 14px;
+  color: #3e4d79;
 }
 
 .card .value {
@@ -579,11 +586,12 @@ td {
 }
 
 th {
-  font-family: var(--mono);
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: #48557d;
   position: sticky;
   top: 0;
   background: #f9fbff;
@@ -616,10 +624,16 @@ tbody td:nth-last-child(2) {
 }
 
 .sort-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: 0;
   border: 0;
   background: transparent;
+  box-shadow: none;
   color: inherit;
-  font: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
   text-transform: inherit;
   letter-spacing: inherit;
   width: 100%;
@@ -633,7 +647,7 @@ tbody td:nth-last-child(2) {
 
 .sort-btn:hover {
   background: #f2f7ff;
-  color: #2f4b8e;
+  color: #1f3d87;
 }
 
 .sort-btn:focus-visible {
@@ -643,10 +657,10 @@ tbody td:nth-last-child(2) {
 
 .sort-btn .sort-indicator {
   margin-left: auto;
-  width: 14px;
+  width: 16px;
   text-align: center;
-  opacity: 0.45;
-  font-size: 0.72rem;
+  opacity: 0.65;
+  font-size: 0.76rem;
   font-family: var(--mono);
 }
 
@@ -655,7 +669,8 @@ tbody td:nth-last-child(2) {
 }
 
 .sort-btn.active {
-  color: #21448d;
+  color: #183a8b;
+  background: #eef4ff;
 }
 
 .sort-btn.active .sort-indicator {
@@ -685,7 +700,8 @@ tbody td:nth-last-child(2) {
   padding: 16px;
   background: linear-gradient(145deg, #0d255f 0%, #17357e 100%);
   color: #f5f8ff;
-  border: 1px solid rgba(176, 202, 255, 0.25);
+  border: 1px solid rgba(176, 202, 255, 0.33);
+  box-shadow: 0 18px 40px -28px rgba(8, 31, 95, 0.55);
 }
 
 .compare-card h4 {

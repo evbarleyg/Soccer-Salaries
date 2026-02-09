@@ -947,11 +947,13 @@ const bindEvents = () => {
       state.clubFilter.delete(id);
     }
     render();
+    toggleClubFilterMenu(false);
   });
 
   elements.clubFilterAllBtn.addEventListener("click", () => {
     state.clubFilter.clear();
     render();
+    toggleClubFilterMenu(false);
   });
 
   elements.clubFilterVisibleBtn.addEventListener("click", () => {
@@ -961,6 +963,7 @@ const bindEvents = () => {
       .map((club) => club.team_id);
     state.clubFilter = new Set(visibleIds);
     render();
+    toggleClubFilterMenu(false);
   });
 
   elements.leagueSelect.addEventListener("change", (event) => {
