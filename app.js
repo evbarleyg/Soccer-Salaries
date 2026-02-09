@@ -626,22 +626,24 @@ const renderQualitySurface = () => {
       return { ...club, assumptionRate, pressure };
     })
     .sort((a, b) => b.pressure - a.pressure || a.contractCoverage - b.contractCoverage)
-    .slice(0, 10);
+    .slice(0, 20);
+
+  if (!rows.length) {
+    elements.qualityRows.innerHTML = '<tr><td class="detail-empty" colspan="6">No quality rows in current filter.</td></tr>';
+    return;
+  }
 
   elements.qualityRows.innerHTML = rows
     .map((club) => {
-      const coverageWidth = Math.round(Math.max(club.contractCoverage, 0.04) * 100);
       return `
-        <div class="quality-row">
-          <div class="quality-top">
-            <div class="quality-name">${club.team_name}</div>
-            <div class="quality-metrics">
-              <span>Coverage ${formatPercent(club.contractCoverage)}</span>
-              <span>Assumed ${club.assumedDeals}/${club.incomingCount}</span>
-            </div>
-          </div>
-          <div class="quality-track"><span class="quality-fill" style="width:${coverageWidth}%"></span></div>
-        </div>
+        <tr>
+          <td>${club.team_name}</td>
+          <td><span class="coverage ${coverageClass(club.contractCoverage)}">${formatPercent(club.contractCoverage)}</span></td>
+          <td>${club.assumedDeals}</td>
+          <td>${club.incomingCount}</td>
+          <td>${formatPercent(club.assumptionRate || 0)}</td>
+          <td>${(club.pressure || 0).toFixed(1)}</td>
+        </tr>
       `;
     })
     .join("");

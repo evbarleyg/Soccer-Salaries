@@ -57,6 +57,7 @@
         <button class="quick-link" data-target="trendSection" type="button">Net Spend</button>
         <button class="quick-link" data-target="clubsSection" type="button">Club Table</button>
         <button class="quick-link" data-target="detailPanel" type="button">Player Drilldown</button>
+        <button class="quick-link" data-target="qualitySection" type="button">Data Quality</button>
         <button class="quick-link" data-target="methodPanel" type="button">Method</button>
       </nav>
 
@@ -130,21 +131,12 @@
 
       <section class="summary" id="summaryCards"></section>
 
-      <section class="insight-grid" id="insightSection">
-        <article class="panel findings">
-          <div class="panel-head">
-            <h2>Executive Findings</h2>
-            <p>What matters first from the current filter.</p>
-          </div>
-          <div id="findingsGrid" class="findings-grid"></div>
-        </article>
-        <article class="panel quality">
-          <div class="panel-head">
-            <h2>Data Quality Surface</h2>
-            <p>Contract coverage and assumption pressure by club.</p>
-          </div>
-          <div id="qualityRows" class="quality-rows"></div>
-        </article>
+      <section class="panel findings" id="insightSection">
+        <div class="panel-head">
+          <h2>Executive Findings</h2>
+          <p>What matters first from the current filter.</p>
+        </div>
+        <div id="findingsGrid" class="findings-grid"></div>
       </section>
 
       <section class="panel trend" id="trendSection">
@@ -359,6 +351,28 @@
             <h3>Data Sources</h3>
             <ul id="sourceList"></ul>
           </div>
+        </div>
+      </section>
+
+      <section class="panel quality-table-panel" id="qualitySection">
+        <div class="panel-head">
+          <h2>Data Quality Surface</h2>
+          <p>Bottom-level quality table across current filters. Higher pressure indicates higher assumption burden.</p>
+        </div>
+        <div class="table-wrap">
+          <table class="quality-table">
+            <thead>
+              <tr>
+                <th>Club</th>
+                <th>Coverage</th>
+                <th>Assumed Deals</th>
+                <th>Incoming Deals</th>
+                <th>Assumption Rate</th>
+                <th>Pressure Score</th>
+              </tr>
+            </thead>
+            <tbody id="qualityRows"></tbody>
+          </table>
         </div>
       </section>
     </div>
