@@ -259,7 +259,7 @@ h1 {
   padding: 14px;
   backdrop-filter: blur(10px);
   box-shadow: 0 20px 45px -36px rgba(12, 57, 168, 0.55);
-  overflow: visible;
+  overflow: hidden;
 }
 
 .controls-head {
@@ -364,11 +364,10 @@ h1 {
 }
 
 .multi-select-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  width: min(360px, 80vw);
-  z-index: 20;
+  position: static;
+  margin-top: 8px;
+  width: 100%;
+  z-index: 2;
   border: 1px solid #c5d8ff;
   border-radius: 14px;
   background: #fff;
@@ -402,23 +401,29 @@ h1 {
 }
 
 .multi-select-options {
-  max-height: min(260px, 42vh);
-  overflow-y: auto;
+  max-height: 56px;
+  overflow-x: auto;
+  overflow-y: hidden;
   border: 1px solid #edf2ff;
   border-radius: 10px;
   padding: 8px;
-  display: grid;
-  gap: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .multi-option {
   display: flex;
   align-items: center;
   gap: 8px;
-  border-radius: 8px;
-  padding: 6px 7px;
+  border: 1px solid #d6e3ff;
+  border-radius: 999px;
+  padding: 6px 10px;
   color: var(--ink-soft);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  background: #fbfdff;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .multi-option:hover {
