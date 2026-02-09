@@ -11,6 +11,7 @@ const state = {
   raw: null,
   filtered: [],
   selected: new Set(),
+  detailClubId: null,
   currency: "GBP",
   league: "All",
   season: "All",
@@ -20,8 +21,18 @@ const state = {
 
 const elements = {
   table: document.getElementById("clubTable"),
+  quickNav: document.getElementById("quickNav"),
   mobileCards: document.getElementById("mobileClubCards"),
   spendChart: document.getElementById("spendChart"),
+  findingsGrid: document.getElementById("findingsGrid"),
+  qualityRows: document.getElementById("qualityRows"),
+  detailClubName: document.getElementById("detailClubName"),
+  detailSubtitle: document.getElementById("detailSubtitle"),
+  detailCoveragePill: document.getElementById("detailCoveragePill"),
+  detailAssumedPill: document.getElementById("detailAssumedPill"),
+  detailSpendPill: document.getElementById("detailSpendPill"),
+  detailIncomingBody: document.getElementById("detailIncomingBody"),
+  detailOutgoingBody: document.getElementById("detailOutgoingBody"),
   summary: document.getElementById("summaryCards"),
   compareCards: document.getElementById("compareCards"),
   compareHint: document.getElementById("compareHint"),
@@ -61,7 +72,12 @@ const deriveClub = (club, fx) => {
 
   const incomingCount = club.transfers_in.length;
   const reportedContracts = club.transfers_in.filter((transfer) => HIGH_CONFIDENCE.has(transfer.contract_confidence)).length;
+  const summaryAssumed = club.confidence_summary ? Number(club.confidence_summary.assumed_contracts || 0) : 0;
+  const inferredAssumed = Math.max(incomingCount - reportedContracts, 0);
+  const assumedDeals = Math.max(summaryAssumed, inferredAssumed);
   const contractCoverage = incomingCount ? reportedContracts / incomingCount : 1;
+  const grossCommitment = club.wage_bill + amortizedTransfers;
+  const wageShareOfCommitment = grossCommitment > 0 ? club.wage_bill / grossCommitment : 0;
 
   return {
     ...club,
@@ -72,7 +88,9 @@ const deriveClub = (club, fx) => {
     totalSpend: totalSpend * fx,
     incomingCount,
     reportedContracts,
+    assumedDeals,
     contractCoverage,
+    wageShareOfCommitment,
   };
 };
 
@@ -95,6 +113,21 @@ const coverageClass = (coverage) => {
   return "low";
 };
 
+const confidenceLabel = (confidence) => {
+  switch (confidence) {
+    case "reported":
+      return "Reported";
+    case "reported_fuzzy_match":
+      return "Reported (fuzzy)";
+    case "reported_loan":
+      return "Reported (loan)";
+    case "override":
+      return "Manual override";
+    default:
+      return "Assumed";
+  }
+};
+
 const syncSelectionFromEvent = (event) => {
   const id = event.target.dataset.id;
   if (event.target.checked) {
@@ -115,6 +148,15 @@ const syncSelectionFromEvent = (event) => {
 const bindSelectionInputs = (root) => {
   root.querySelectorAll("input[type='checkbox'][data-id]").forEach((input) => {
     input.addEventListener("change", syncSelectionFromEvent);
+  });
+};
+
+const bindDrillButtons = (root) => {
+  root.querySelectorAll(".drill-btn[data-drill-id]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      state.detailClubId = event.currentTarget.dataset.drillId;
+      renderDetail();
+    });
   });
 };
 
@@ -163,21 +205,180 @@ const renderSummary = () => {
 };
 
 const renderTrendChart = () => {
-  const topClubs = [...state.filtered].slice(0, 10);
-  const maxSpend = topClubs.reduce((max, club) => Math.max(max, club.totalSpend), 0) || 1;
+  const rankedClubs = [...state.filtered].sort((a, b) => b.netTransferCost - a.netTransferCost);
+  const maxAbsNet = rankedClubs.reduce((max, club) => Math.max(max, Math.abs(club.netTransferCost)), 0) || 1;
 
-  elements.spendChart.innerHTML = topClubs
+  elements.spendChart.innerHTML = rankedClubs
     .map((club) => {
-      const width = Math.max(6, Math.round((club.totalSpend / maxSpend) * 100));
+      const absoluteShare = (Math.abs(club.netTransferCost) / maxAbsNet) * 50;
+      const width = Math.max(2, absoluteShare);
+      const left = club.netTransferCost >= 0 ? 50 : 50 - width;
+      const trendClass = club.netTransferCost >= 0 ? "buy" : "sell";
+      const transferTag = club.netTransferCost < 0 ? "Net revenue surplus" : "Net spend";
       return `
         <div class="trend-row">
-          <div class="trend-name">${club.team_name}</div>
-          <div class="trend-track"><span class="trend-fill" style="width:${width}%"></span></div>
-          <div class="trend-value">${formatMoney(club.totalSpend, state.currency)}</div>
+          <div class="trend-name">${club.team_name}<span class="trend-meta">${transferTag} | Wage share ${formatPercent(
+            club.wageShareOfCommitment
+          )}</span></div>
+          <div class="trend-track"><span class="trend-fill ${trendClass}" style="left:${left}%;width:${width}%"></span></div>
+          <div class="trend-value">${formatMoney(club.netTransferCost, state.currency)}</div>
         </div>
       `;
     })
     .join("");
+};
+
+const renderFindings = () => {
+  if (!state.filtered.length) {
+    elements.findingsGrid.innerHTML = "";
+    return;
+  }
+
+  const bySpend = [...state.filtered].sort((a, b) => b.totalSpend - a.totalSpend);
+  const byNetTransfer = [...state.filtered].sort((a, b) => b.netTransferCost - a.netTransferCost);
+  const byCoverage = [...state.filtered].sort((a, b) => a.contractCoverage - b.contractCoverage);
+  const byWageShare = [...state.filtered].sort((a, b) => b.wageShareOfCommitment - a.wageShareOfCommitment);
+
+  const highestSpend = bySpend[0];
+  const highestNetBuyer = byNetTransfer[0];
+  const highestNetSeller = byNetTransfer[byNetTransfer.length - 1];
+  const lowestCoverage = byCoverage[0];
+  const highestWageShare = byWageShare[0];
+
+  const cards = [
+    {
+      label: "Highest Total Spend",
+      value: `${highestSpend.team_name} ${formatMoney(highestSpend.totalSpend, state.currency)}`,
+      note: `Wages ${formatMoney(highestSpend.wageBill, state.currency)} and net transfers ${formatMoney(
+        highestSpend.netTransferCost,
+        state.currency
+      )}.`,
+    },
+    {
+      label: "Most Aggressive Net Buyer",
+      value: `${highestNetBuyer.team_name} ${formatMoney(highestNetBuyer.netTransferCost, state.currency)}`,
+      note: `${highestNetBuyer.assumedDeals} assumed deals across ${highestNetBuyer.incomingCount} incomings.`,
+    },
+    {
+      label: "Largest Net Seller",
+      value: `${highestNetSeller.team_name} ${formatMoney(highestNetSeller.netTransferCost, state.currency)}`,
+      note: `Transfer-outs currently offset spend by ${formatMoney(
+        Math.abs(highestNetSeller.netTransferCost),
+        state.currency
+      )}.`,
+    },
+    {
+      label: "Highest Assumption Risk",
+      value: `${lowestCoverage.team_name} ${formatPercent(lowestCoverage.contractCoverage)} coverage`,
+      note: `${lowestCoverage.assumedDeals} assumed contract lengths.`,
+    },
+    {
+      label: "Most Wage-Led Cost Base",
+      value: `${highestWageShare.team_name} ${formatPercent(highestWageShare.wageShareOfCommitment)}`,
+      note: "Share of wages in wage + amortized transfer commitment.",
+    },
+  ];
+
+  elements.findingsGrid.innerHTML = cards
+    .map(
+      (card) => `
+        <article class="finding-card">
+          <p class="finding-label">${card.label}</p>
+          <p class="finding-value">${card.value}</p>
+          <p class="finding-note">${card.note}</p>
+        </article>
+      `
+    )
+    .join("");
+};
+
+const renderQualitySurface = () => {
+  const rows = [...state.filtered]
+    .map((club) => {
+      const assumptionRate = club.incomingCount ? club.assumedDeals / club.incomingCount : 0;
+      const pressure = assumptionRate * Math.max(club.incomingCount, 1);
+      return { ...club, assumptionRate, pressure };
+    })
+    .sort((a, b) => b.pressure - a.pressure || a.contractCoverage - b.contractCoverage)
+    .slice(0, 10);
+
+  elements.qualityRows.innerHTML = rows
+    .map((club) => {
+      const coverageWidth = Math.round(Math.max(club.contractCoverage, 0.04) * 100);
+      return `
+        <div class="quality-row">
+          <div class="quality-top">
+            <div class="quality-name">${club.team_name}</div>
+            <div class="quality-metrics">
+              <span>Coverage ${formatPercent(club.contractCoverage)}</span>
+              <span>Assumed ${club.assumedDeals}/${club.incomingCount}</span>
+            </div>
+          </div>
+          <div class="quality-track"><span class="quality-fill" style="width:${coverageWidth}%"></span></div>
+        </div>
+      `;
+    })
+    .join("");
+};
+
+const renderDetail = () => {
+  if (!state.filtered.length) {
+    elements.detailClubName.textContent = "Club Player Drilldown";
+    elements.detailSubtitle.textContent = "No clubs in current filter.";
+    elements.detailCoveragePill.textContent = "Coverage --";
+    elements.detailAssumedPill.textContent = "Assumed --";
+    elements.detailSpendPill.textContent = "Spend --";
+    elements.detailIncomingBody.innerHTML = '<tr><td class="detail-empty" colspan="5">No incoming transfers.</td></tr>';
+    elements.detailOutgoingBody.innerHTML = '<tr><td class="detail-empty" colspan="4">No outgoing transfers.</td></tr>';
+    return;
+  }
+
+  const defaultClub = state.filtered[0];
+  const selectedClub = state.filtered.find((club) => club.team_id === state.detailClubId) || defaultClub;
+  state.detailClubId = selectedClub.team_id;
+
+  const fx = computeFx(state.currency);
+
+  elements.detailClubName.textContent = `${selectedClub.team_name} Player Drilldown`;
+  elements.detailSubtitle.textContent =
+    "Player-level transfer fees and contract-length confidence used for amortized spend.";
+  elements.detailCoveragePill.textContent = `Coverage ${formatPercent(selectedClub.contractCoverage)}`;
+  elements.detailAssumedPill.textContent = `Assumed ${selectedClub.assumedDeals}/${selectedClub.incomingCount}`;
+  elements.detailSpendPill.textContent = `Total ${formatMoney(selectedClub.totalSpend, state.currency)}`;
+
+  const incomingRows = selectedClub.transfers_in
+    .map((transfer) => {
+      const fee = formatMoney((transfer.fee || 0) * fx, state.currency);
+      return `
+        <tr>
+          <td>${transfer.player}</td>
+          <td>${fee}</td>
+          <td>${transfer.contract_years || "--"}</td>
+          <td>${confidenceLabel(transfer.contract_confidence)}</td>
+          <td>${transfer.is_loan ? "Yes" : "No"}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const outgoingRows = selectedClub.transfers_out
+    .map((transfer) => {
+      const fee = formatMoney((transfer.fee || 0) * fx, state.currency);
+      return `
+        <tr>
+          <td>${transfer.player}</td>
+          <td>${fee}</td>
+          <td>${transfer.window || "--"}</td>
+          <td>${transfer.is_loan ? "Yes" : "No"}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  elements.detailIncomingBody.innerHTML =
+    incomingRows || '<tr><td class="detail-empty" colspan="5">No incoming transfers.</td></tr>';
+  elements.detailOutgoingBody.innerHTML =
+    outgoingRows || '<tr><td class="detail-empty" colspan="4">No outgoing transfers.</td></tr>';
 };
 
 const renderTable = () => {
@@ -185,8 +386,9 @@ const renderTable = () => {
     .map((club) => {
       const checked = state.selected.has(club.team_id);
       const coverageClassName = coverageClass(club.contractCoverage);
+      const isDetail = state.detailClubId === club.team_id;
       return `
-        <tr>
+        <tr ${isDetail ? 'style="background:#fff7eb;"' : ""}>
           <td>
             <label class="checkbox">
               <input type="checkbox" data-id="${club.team_id}" ${checked ? "checked" : ""} />
@@ -199,12 +401,15 @@ const renderTable = () => {
           <td>${formatMoney(club.netTransferCost, state.currency)}</td>
           <td>${formatMoney(club.totalSpend, state.currency)}</td>
           <td><span class="coverage ${coverageClassName}">${formatPercent(club.contractCoverage)}</span></td>
+          <td>${club.assumedDeals}</td>
+          <td><button class="mini-btn drill-btn" data-drill-id="${club.team_id}">View players</button></td>
         </tr>
       `;
     })
     .join("");
 
   bindSelectionInputs(elements.table);
+  bindDrillButtons(elements.table);
 };
 
 const renderMobileCards = () => {
@@ -212,9 +417,10 @@ const renderMobileCards = () => {
     .map((club) => {
       const checked = state.selected.has(club.team_id);
       const coverageClassName = coverageClass(club.contractCoverage);
+      const isDetail = state.detailClubId === club.team_id;
 
       return `
-        <article class="mobile-club-card">
+        <article class="mobile-club-card" ${isDetail ? 'style="border-color:#e3bca4;"' : ""}>
           <div class="mobile-club-head">
             <h4>${club.team_name}</h4>
             <label class="checkbox">
@@ -246,6 +452,13 @@ const renderMobileCards = () => {
               <span class="mobile-metric-label">Contract Coverage</span>
               <span class="coverage ${coverageClassName}">${formatPercent(club.contractCoverage)}</span>
             </div>
+            <div class="mobile-metric">
+              <span class="mobile-metric-label">Assumed Deals</span>
+              <span class="mobile-metric-value">${club.assumedDeals} / ${club.incomingCount}</span>
+            </div>
+          </div>
+          <div style="margin-top:10px;">
+            <button class="mini-btn drill-btn" data-drill-id="${club.team_id}">View player table</button>
           </div>
         </article>
       `;
@@ -253,6 +466,7 @@ const renderMobileCards = () => {
     .join("");
 
   bindSelectionInputs(elements.mobileCards);
+  bindDrillButtons(elements.mobileCards);
 };
 
 const renderCompare = () => {
@@ -320,12 +534,35 @@ const populateFilters = () => {
   }
 };
 
+const bindQuickNav = () => {
+  const links = [...elements.quickNav.querySelectorAll(".quick-link")];
+  if (links.length) {
+    links[0].classList.add("active");
+  }
+
+  elements.quickNav.querySelectorAll(".quick-link").forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetId = button.dataset.target;
+      const target = document.getElementById(targetId);
+      if (!target) return;
+
+      elements.quickNav.querySelectorAll(".quick-link").forEach((link) => link.classList.remove("active"));
+      button.classList.add("active");
+
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+};
+
 const render = () => {
   applyFilters();
   renderSummary();
+  renderFindings();
+  renderQualitySurface();
   renderTrendChart();
   renderTable();
   renderMobileCards();
+  renderDetail();
   renderCompare();
   renderMethodology();
 };
@@ -376,6 +613,7 @@ const bindEvents = () => {
 };
 
 bindEvents();
+bindQuickNav();
 loadData().catch((error) => {
   elements.lastUpdated.textContent = error.message;
 });

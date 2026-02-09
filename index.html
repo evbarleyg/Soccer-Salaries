@@ -22,6 +22,15 @@
         </div>
       </header>
 
+      <nav class="quick-nav" id="quickNav">
+        <button class="quick-link" data-target="summaryCards" type="button">Overview</button>
+        <button class="quick-link" data-target="insightSection" type="button">Findings</button>
+        <button class="quick-link" data-target="trendSection" type="button">Net Spend</button>
+        <button class="quick-link" data-target="clubsSection" type="button">Club Table</button>
+        <button class="quick-link" data-target="detailPanel" type="button">Player Drilldown</button>
+        <button class="quick-link" data-target="methodPanel" type="button">Method</button>
+      </nav>
+
       <section class="controls">
         <div class="control">
           <label for="searchInput">Search</label>
@@ -50,21 +59,40 @@
             <option value="wageBill">Wages</option>
             <option value="netTransferCost">Net Transfer Cost</option>
             <option value="amortizedTransfers">Amortized Transfers In</option>
+            <option value="contractCoverage">Contract Coverage</option>
+            <option value="assumedDeals">Assumed Deals</option>
           </select>
         </div>
       </section>
 
       <section class="summary" id="summaryCards"></section>
 
-      <section class="panel trend">
+      <section class="insight-grid" id="insightSection">
+        <article class="panel findings">
+          <div class="panel-head">
+            <h2>Executive Findings</h2>
+            <p>What matters first from the current filter.</p>
+          </div>
+          <div id="findingsGrid" class="findings-grid"></div>
+        </article>
+        <article class="panel quality">
+          <div class="panel-head">
+            <h2>Data Quality Surface</h2>
+            <p>Contract coverage and assumption pressure by club.</p>
+          </div>
+          <div id="qualityRows" class="quality-rows"></div>
+        </article>
+      </section>
+
+      <section class="panel trend" id="trendSection">
         <div class="panel-head">
-          <h2>Spend Ladder</h2>
-          <p>Top clubs by total spend in current filter.</p>
+          <h2>Net Spend by Club</h2>
+          <p>Solid bars show net transfer cost. Positive is spend, negative is transfer revenue surplus.</p>
         </div>
         <div class="trend-bars" id="spendChart"></div>
       </section>
 
-      <section class="grid">
+      <section class="grid" id="clubsSection">
         <div class="panel">
           <div class="panel-head">
             <h2>Club Spend Table</h2>
@@ -83,6 +111,8 @@
                   <th>Net Transfer Cost</th>
                   <th>Total Spend</th>
                   <th>Contract Coverage</th>
+                  <th>Assumed Deals</th>
+                  <th>Drill Down</th>
                 </tr>
               </thead>
               <tbody id="clubTable"></tbody>
@@ -99,7 +129,54 @@
         </div>
       </section>
 
-      <section class="panel insight">
+      <section class="panel detail" id="detailPanel">
+        <div class="panel-head">
+          <h2 id="detailClubName">Club Player Drilldown</h2>
+          <p id="detailSubtitle">Choose a club from the table or mobile cards to inspect player-level transfers.</p>
+        </div>
+        <div class="detail-metrics">
+          <span class="detail-pill" id="detailCoveragePill">Coverage --</span>
+          <span class="detail-pill" id="detailAssumedPill">Assumed --</span>
+          <span class="detail-pill" id="detailSpendPill">Spend --</span>
+        </div>
+        <div class="detail-grid">
+          <article class="detail-block">
+            <h3>Incoming Transfers</h3>
+            <div class="table-wrap">
+              <table class="detail-table">
+                <thead>
+                  <tr>
+                    <th>Player</th>
+                    <th>Fee</th>
+                    <th>Contract Years</th>
+                    <th>Confidence</th>
+                    <th>Loan</th>
+                  </tr>
+                </thead>
+                <tbody id="detailIncomingBody"></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="detail-block">
+            <h3>Outgoing Transfers</h3>
+            <div class="table-wrap">
+              <table class="detail-table">
+                <thead>
+                  <tr>
+                    <th>Player</th>
+                    <th>Fee</th>
+                    <th>Window</th>
+                    <th>Loan</th>
+                  </tr>
+                </thead>
+                <tbody id="detailOutgoingBody"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel insight" id="methodPanel">
         <div class="panel-head">
           <h2>Method &amp; Sources</h2>
         </div>

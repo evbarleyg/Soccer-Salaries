@@ -100,6 +100,55 @@ h1 {
   color: var(--accent-dark);
 }
 
+.quick-nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  position: sticky;
+  top: 8px;
+  z-index: 8;
+  padding: 8px;
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid var(--line);
+}
+
+.quick-link {
+  border: 1px solid #d7c9bd;
+  background: #fff9f2;
+  color: var(--ink-soft);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 0.77rem;
+  font-family: var(--mono);
+  cursor: pointer;
+}
+
+.quick-link:hover,
+.quick-link.active {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+  background: #fff0e7;
+}
+
+.mini-btn {
+  border: 1px solid #d6c8bb;
+  background: #fff;
+  color: var(--ink-soft);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  font-family: var(--mono);
+  cursor: pointer;
+}
+
+.mini-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}
+
 .controls {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
@@ -140,6 +189,13 @@ h1 {
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 16px;
   margin-bottom: 28px;
+}
+
+.insight-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 18px;
+  margin-bottom: 22px;
 }
 
 .card {
@@ -218,9 +274,17 @@ h1 {
 
 .trend-row {
   display: grid;
-  grid-template-columns: 140px 1fr auto;
+  grid-template-columns: 130px 1fr auto;
   gap: 12px;
   align-items: center;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+}
+
+.trend-row:hover {
+  border-color: var(--line);
+  background: #fffaf5;
 }
 
 .trend-name {
@@ -231,21 +295,52 @@ h1 {
 .trend-track {
   background: #efe3d7;
   border-radius: 999px;
-  height: 12px;
+  height: 13px;
   overflow: hidden;
+  position: relative;
+}
+
+.trend-track::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #cdb9aa;
+  z-index: 1;
 }
 
 .trend-fill {
   display: block;
-  height: 100%;
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
   border-radius: 999px;
-  background: linear-gradient(90deg, #d95d39 0%, #f4a261 60%, #e9c46a 100%);
+}
+
+.trend-fill.buy {
+  background: #c44b2f;
+}
+
+.trend-fill.sell {
+  background: #2f8a5f;
 }
 
 .trend-value {
   font-size: 0.88rem;
   color: var(--muted);
   font-family: var(--mono);
+  text-align: right;
+}
+
+.trend-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.74rem;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .panel-head {
@@ -296,6 +391,15 @@ tbody tr:hover {
   background: #fbf6ef;
 }
 
+tbody tr td:first-child {
+  width: 32px;
+}
+
+tbody td:last-child,
+tbody td:nth-last-child(2) {
+  white-space: nowrap;
+}
+
 .compare {
   position: sticky;
   top: 28px;
@@ -336,6 +440,58 @@ tbody tr:hover {
   justify-content: space-between;
   font-size: 0.9rem;
   margin-bottom: 6px;
+}
+
+.detail {
+  margin-bottom: 26px;
+}
+
+.detail-metrics {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.detail-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: #fff8f2;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-family: var(--mono);
+  color: var(--ink-soft);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.detail-block {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: #fffcf8;
+}
+
+.detail-block h3 {
+  margin-bottom: 10px;
+  font-size: 0.98rem;
+}
+
+.detail-table th,
+.detail-table td {
+  padding: 9px 8px;
+  font-size: 0.84rem;
+}
+
+.detail-empty {
+  color: var(--muted);
+  font-size: 0.86rem;
 }
 
 .insight .formula {
@@ -380,6 +536,86 @@ tbody tr:hover {
   color: var(--muted);
   font-size: 0.9rem;
   line-height: 1.35;
+}
+
+.findings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.finding-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: #fffaf5;
+}
+
+.finding-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-family: var(--mono);
+  margin-bottom: 5px;
+}
+
+.finding-value {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.finding-note {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.quality-rows {
+  display: grid;
+  gap: 10px;
+}
+
+.quality-row {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: #fffdf9;
+}
+
+.quality-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  gap: 10px;
+}
+
+.quality-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.quality-metrics {
+  display: flex;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-family: var(--mono);
+}
+
+.quality-track {
+  height: 8px;
+  background: #efe3d7;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.quality-fill {
+  height: 100%;
+  display: block;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #c0472a 0%, #e38a3e 50%, #8ecf92 100%);
 }
 
 .coverage {
@@ -468,13 +704,15 @@ tbody tr:hover {
 }
 
 @media (max-width: 980px) {
-  .controls {
-    position: sticky;
-    top: 8px;
-    z-index: 5;
+  .grid {
+    grid-template-columns: 1fr;
   }
 
-  .grid {
+  .insight-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-grid {
     grid-template-columns: 1fr;
   }
 
@@ -504,11 +742,35 @@ tbody tr:hover {
     padding: 10px;
   }
 
+  .quick-nav {
+    top: 6px;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .quick-link {
+    font-size: 0.72rem;
+    padding: 6px 10px;
+  }
+
   .summary {
     grid-template-columns: 1fr;
   }
 
-  .table-wrap {
+  .findings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quality-metrics {
+    font-size: 0.74rem;
+  }
+
+  .detail-pill {
+    font-size: 0.72rem;
+    padding: 5px 8px;
+  }
+
+  .grid .table-wrap {
     display: none;
   }
 
@@ -517,7 +779,7 @@ tbody tr:hover {
   }
 
   .trend-row {
-    grid-template-columns: 88px 1fr;
+    grid-template-columns: 92px 1fr;
     gap: 8px;
   }
 
@@ -525,5 +787,13 @@ tbody tr:hover {
     grid-column: 1 / -1;
     justify-self: end;
     margin-top: -2px;
+  }
+
+  .trend-name {
+    font-size: 0.86rem;
+  }
+
+  .trend-meta {
+    font-size: 0.68rem;
   }
 }
