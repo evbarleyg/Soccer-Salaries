@@ -1,4 +1,5 @@
 const DATA_URL = "./data/teams.json";
+const FILTERS_COLLAPSED_KEY = "true_spend_filters_collapsed";
 
 const HIGH_CONFIDENCE = new Set([
   "reported",
@@ -48,6 +49,8 @@ const elements = {
   leagueControl: document.getElementById("leagueControl"),
   leagueSelect: document.getElementById("leagueSelect"),
   seasonSelect: document.getElementById("seasonSelect"),
+  filtersPanel: document.getElementById("filtersPanel"),
+  toggleFiltersBtn: document.getElementById("toggleFiltersBtn"),
   currencySelect: document.getElementById("currencySelect"),
   sortSelect: document.getElementById("sortSelect"),
   viewModeSelect: document.getElementById("viewModeSelect"),
@@ -345,6 +348,13 @@ const bindHoverTargets = (root) => {
 
     target.addEventListener("mouseleave", hideHoverTooltip);
   });
+};
+
+const setFiltersCollapsed = (collapsed) => {
+  elements.filtersPanel.classList.toggle("collapsed", collapsed);
+  elements.toggleFiltersBtn.setAttribute("aria-expanded", String(!collapsed));
+  elements.toggleFiltersBtn.textContent = collapsed ? "Expand Filters" : "Collapse Filters";
+  localStorage.setItem(FILTERS_COLLAPSED_KEY, collapsed ? "1" : "0");
 };
 
 const scopedClubs = () =>
@@ -920,6 +930,14 @@ const loadData = async () => {
 };
 
 const bindEvents = () => {
+  const savedFiltersCollapsed = localStorage.getItem(FILTERS_COLLAPSED_KEY) === "1";
+  setFiltersCollapsed(savedFiltersCollapsed);
+
+  elements.toggleFiltersBtn.addEventListener("click", () => {
+    const collapsed = elements.filtersPanel.classList.contains("collapsed");
+    setFiltersCollapsed(!collapsed);
+  });
+
   elements.clubFilterTrigger.addEventListener("click", () => {
     toggleClubFilterMenu();
     if (!elements.clubFilterMenu.hasAttribute("hidden")) {

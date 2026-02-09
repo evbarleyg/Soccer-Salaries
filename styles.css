@@ -112,6 +112,11 @@ h1 {
   transform: translateY(-1px);
 }
 
+.ghost-small {
+  padding: 7px 12px;
+  font-size: 0.82rem;
+}
+
 .quick-nav {
   display: flex;
   gap: 8px;
@@ -247,9 +252,6 @@ h1 {
 }
 
 .controls {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px;
   margin-bottom: 28px;
   background: rgba(255, 255, 255, 0.78);
   border: 1px solid #d7e3ff;
@@ -258,6 +260,45 @@ h1 {
   backdrop-filter: blur(10px);
   box-shadow: 0 20px 45px -36px rgba(12, 57, 168, 0.55);
   overflow: visible;
+}
+
+.controls-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.controls-title {
+  font-size: 0.82rem;
+  font-family: var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #43548a;
+}
+
+.controls-subtitle {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.controls-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.controls.collapsed .controls-head {
+  margin-bottom: 0;
+}
+
+.controls.collapsed .controls-subtitle {
+  display: none;
+}
+
+.controls.collapsed .controls-body {
+  display: none;
 }
 
 .control {
@@ -1055,9 +1096,17 @@ tbody td:nth-last-child(2) {
   }
 
   .controls {
+    padding: 10px;
+  }
+
+  .controls-body {
     grid-template-columns: 1fr;
     gap: 10px;
-    padding: 10px;
+  }
+
+  .controls-head {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .club-control {

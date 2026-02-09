@@ -60,60 +60,71 @@
         <button class="quick-link" data-target="methodPanel" type="button">Method</button>
       </nav>
 
-      <section class="controls">
-        <div class="control">
-          <label for="searchInput">Search</label>
-          <input id="searchInput" type="search" placeholder="Club name" />
-        </div>
-        <div class="control club-control" id="clubControl">
-          <label for="clubFilterSearch">Clubs</label>
-          <button class="multi-select-trigger" id="clubFilterTrigger" type="button" aria-expanded="false">
-            All clubs
-          </button>
-          <div class="multi-select-menu" id="clubFilterMenu" hidden>
-            <input id="clubFilterSearch" type="search" placeholder="Filter clubs..." />
-            <div class="multi-select-actions">
-              <button id="clubFilterAllBtn" type="button">All clubs</button>
-              <button id="clubFilterVisibleBtn" type="button">Select visible</button>
-            </div>
-            <div class="multi-select-options" id="clubFilterOptions"></div>
+      <section class="controls" id="filtersPanel">
+        <div class="controls-head">
+          <div>
+            <p class="controls-title">Filters</p>
+            <p class="controls-subtitle">Refine club scope, sorting, and spend view.</p>
           </div>
+          <button class="ghost ghost-small" id="toggleFiltersBtn" type="button" aria-expanded="true" aria-controls="filtersBody">
+            Collapse Filters
+          </button>
         </div>
-        <div class="control" id="leagueControl">
-          <label for="leagueSelect">League</label>
-          <select id="leagueSelect"></select>
-        </div>
-        <div class="control">
-          <label for="seasonSelect">Season</label>
-          <select id="seasonSelect"></select>
-        </div>
-        <div class="control">
-          <label for="currencySelect">Currency</label>
-          <select id="currencySelect">
-            <option value="GBP">GBP</option>
-            <option value="EUR">EUR</option>
-            <option value="USD">USD</option>
-          </select>
-        </div>
-        <div class="control">
-          <label for="sortSelect">Sort</label>
-          <select id="sortSelect">
-            <option value="team_name">Club (A-Z)</option>
-            <option value="totalSpendMetric">Total Spend</option>
-            <option value="wageBill">Wages</option>
-            <option value="netTransferMetric">Net Transfers</option>
-            <option value="transferInMetric">Transfers In</option>
-            <option value="transferOutRevenue">Transfer-Out Fees</option>
-            <option value="contractCoverage">Contract Coverage</option>
-            <option value="assumedDeals">Assumed Deals</option>
-          </select>
-        </div>
-        <div class="control">
-          <label for="viewModeSelect">Spend View</label>
-          <select id="viewModeSelect">
-            <option value="pnl_proxy">P&amp;L Proxy (Amortized In)</option>
-            <option value="cash">Cash View (Gross In/Out)</option>
-          </select>
+        <div class="controls-body" id="filtersBody">
+          <div class="control">
+            <label for="searchInput">Search</label>
+            <input id="searchInput" type="search" placeholder="Club name" />
+          </div>
+          <div class="control club-control" id="clubControl">
+            <label for="clubFilterSearch">Clubs</label>
+            <button class="multi-select-trigger" id="clubFilterTrigger" type="button" aria-expanded="false">
+              All clubs
+            </button>
+            <div class="multi-select-menu" id="clubFilterMenu" hidden>
+              <input id="clubFilterSearch" type="search" placeholder="Filter clubs..." />
+              <div class="multi-select-actions">
+                <button id="clubFilterAllBtn" type="button">All clubs</button>
+                <button id="clubFilterVisibleBtn" type="button">Select visible</button>
+              </div>
+              <div class="multi-select-options" id="clubFilterOptions"></div>
+            </div>
+          </div>
+          <div class="control" id="leagueControl">
+            <label for="leagueSelect">League</label>
+            <select id="leagueSelect"></select>
+          </div>
+          <div class="control">
+            <label for="seasonSelect">Season</label>
+            <select id="seasonSelect"></select>
+          </div>
+          <div class="control">
+            <label for="currencySelect">Currency</label>
+            <select id="currencySelect">
+              <option value="GBP">GBP</option>
+              <option value="EUR">EUR</option>
+              <option value="USD">USD</option>
+            </select>
+          </div>
+          <div class="control">
+            <label for="sortSelect">Sort</label>
+            <select id="sortSelect">
+              <option value="team_name">Club (A-Z)</option>
+              <option value="totalSpendMetric">Total Spend</option>
+              <option value="wageBill">Wages</option>
+              <option value="netTransferMetric">Net Transfers</option>
+              <option value="transferInMetric">Transfers In</option>
+              <option value="transferOutRevenue">Transfer-Out Fees</option>
+              <option value="contractCoverage">Contract Coverage</option>
+              <option value="assumedDeals">Assumed Deals</option>
+            </select>
+          </div>
+          <div class="control">
+            <label for="viewModeSelect">Spend View</label>
+            <select id="viewModeSelect">
+              <option value="pnl_proxy">P&amp;L Proxy (Amortized In)</option>
+              <option value="cash">Cash View (Gross In/Out)</option>
+            </select>
+          </div>
         </div>
       </section>
 
