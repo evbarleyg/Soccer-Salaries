@@ -373,6 +373,9 @@ const setFiltersCollapsed = (collapsed) => {
   elements.filtersPanel.classList.toggle("collapsed", collapsed);
   elements.toggleFiltersBtn.setAttribute("aria-expanded", String(!collapsed));
   elements.toggleFiltersBtn.textContent = collapsed ? "Expand Filters" : "Collapse Filters";
+  if (collapsed) {
+    toggleClubFilterMenu(false);
+  }
   localStorage.setItem(FILTERS_COLLAPSED_KEY, collapsed ? "1" : "0");
 };
 
@@ -447,9 +450,11 @@ const toggleClubFilterMenu = (open) => {
   if (shouldOpen) {
     elements.clubFilterMenu.removeAttribute("hidden");
     elements.clubFilterTrigger.setAttribute("aria-expanded", "true");
+    elements.filtersPanel.classList.add("club-menu-open");
   } else {
     elements.clubFilterMenu.setAttribute("hidden", "");
     elements.clubFilterTrigger.setAttribute("aria-expanded", "false");
+    elements.filtersPanel.classList.remove("club-menu-open");
   }
 };
 

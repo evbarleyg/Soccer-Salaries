@@ -380,7 +380,11 @@ h1 {
   padding: 14px;
   backdrop-filter: blur(10px);
   box-shadow: 0 20px 45px -36px rgba(12, 57, 168, 0.55);
-  overflow: hidden;
+  overflow: visible;
+}
+
+.controls.club-menu-open {
+  padding-bottom: 310px;
 }
 
 .controls-head {
@@ -457,6 +461,7 @@ h1 {
 
 .club-control {
   position: relative;
+  z-index: 12;
 }
 
 .multi-select-trigger {
@@ -489,10 +494,12 @@ h1 {
 }
 
 .multi-select-menu {
-  position: static;
-  margin-top: 8px;
-  width: 100%;
-  z-index: 2;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(360px, calc(100vw - 72px));
+  max-width: 100%;
+  z-index: 26;
   border: 1px solid #c5d8ff;
   border-radius: 14px;
   background: #fff;
@@ -1241,6 +1248,10 @@ tbody td:nth-last-child(2) {
     padding: 10px;
   }
 
+  .controls.club-menu-open {
+    padding-bottom: 10px;
+  }
+
   .controls-body {
     grid-template-columns: 1fr;
     gap: 10px;
@@ -1257,6 +1268,8 @@ tbody td:nth-last-child(2) {
 
   .multi-select-menu {
     position: static;
+    width: 100%;
+    max-width: 100%;
     margin-top: 6px;
   }
 
