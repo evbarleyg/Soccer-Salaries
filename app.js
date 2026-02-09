@@ -13,10 +13,11 @@ const state = {
   selected: new Set(),
   detailClubId: null,
   currency: "GBP",
+  transferMode: "pnl_proxy",
   league: "All",
   season: "All",
   search: "",
-  sortBy: "totalSpend",
+  sortBy: "totalSpendMetric",
 };
 
 const elements = {
@@ -43,9 +44,15 @@ const elements = {
   seasonSelect: document.getElementById("seasonSelect"),
   currencySelect: document.getElementById("currencySelect"),
   sortSelect: document.getElementById("sortSelect"),
+  viewModeSelect: document.getElementById("viewModeSelect"),
   searchInput: document.getElementById("searchInput"),
   lastUpdated: document.getElementById("lastUpdated"),
   refreshBtn: document.getElementById("refreshBtn"),
+  trendHint: document.getElementById("trendHint"),
+  transferInHeader: document.getElementById("transferInHeader"),
+  transferOutHeader: document.getElementById("transferOutHeader"),
+  netHeader: document.getElementById("netHeader"),
+  totalHeader: document.getElementById("totalHeader"),
   methodSummary: document.getElementById("methodSummary"),
   contractFallback: document.getElementById("contractFallback"),
   methodNotes: document.getElementById("methodNotes"),
@@ -66,6 +73,31 @@ const formatPercent = (value) => `${Math.round(value * 100)}%`;
 
 const capitalize = (value) => value.charAt(0).toUpperCase() + value.slice(1);
 
+const transferViewConfig = () => {
+  if (state.transferMode === "cash") {
+    return {
+      transferInLabel: "Gross Transfers In",
+      transferOutLabel: "Transfer-Out Fees",
+      netLabel: "Net Transfer Cash",
+      totalLabel: "Cash Spend",
+      trendHint: "Solid bars show net transfer cash. Positive is net cash spend, negative is net cash sales.",
+      methodologyNote:
+        "Cash view uses full transfer fees in and out in the selected season/window and does not amortize incoming fees.",
+    };
+  }
+
+  return {
+    transferInLabel: "Amortized Transfers In",
+    transferOutLabel: "Transfer-Out Fees",
+    netLabel: "Net Transfer Cost",
+    totalLabel: "Total Spend",
+    trendHint:
+      "Solid bars show net transfer cost proxy. Positive is spend, negative is transfer revenue surplus.",
+    methodologyNote:
+      "P&L proxy view amortizes incoming fees by contract length and offsets with full transfer-out fees (book value of sold players is not modeled).",
+  };
+};
+
 const escapeHtml = (value) =>
   String(value)
     .replaceAll("&", "&amp;")
@@ -75,6 +107,7 @@ const escapeHtml = (value) =>
     .replaceAll("'", "&#39;");
 
 const deriveClub = (club, fx) => {
+  const grossTransfersIn = club.transfers_in.reduce((sum, transfer) => sum + transfer.fee, 0);
   const amortizedTransfers = club.transfers_in.reduce((sum, transfer) => {
     const years = transfer.contract_years || 4;
     return sum + transfer.fee / years;
@@ -82,7 +115,7 @@ const deriveClub = (club, fx) => {
 
   const transferOutRevenue = club.transfers_out.reduce((sum, transfer) => sum + transfer.fee, 0);
   const netTransferCost = amortizedTransfers - transferOutRevenue;
-  const totalSpend = club.wage_bill + netTransferCost;
+  const grossNetTransfers = grossTransfersIn - transferOutRevenue;
 
   const incomingCount = club.transfers_in.length;
   const reportedContracts = club.transfers_in.filter((transfer) => HIGH_CONFIDENCE.has(transfer.contract_confidence)).length;
@@ -96,10 +129,11 @@ const deriveClub = (club, fx) => {
   return {
     ...club,
     wageBill: club.wage_bill * fx,
+    grossTransfersIn: grossTransfersIn * fx,
     amortizedTransfers: amortizedTransfers * fx,
     transferOutRevenue: transferOutRevenue * fx,
     netTransferCost: netTransferCost * fx,
-    totalSpend: totalSpend * fx,
+    grossNetTransfers: grossNetTransfers * fx,
     incomingCount,
     reportedContracts,
     assumedDeals,
@@ -117,7 +151,18 @@ const applyFilters = () => {
     .filter((club) => (state.league === "All" ? true : club.league === state.league))
     .filter((club) => (state.season === "All" ? true : club.season === state.season))
     .filter((club) => club.team_name.toLowerCase().includes(state.search))
-    .map((club) => deriveClub(club, fx))
+    .map((club) => {
+      const derived = deriveClub(club, fx);
+      const transferInMetric = state.transferMode === "cash" ? derived.grossTransfersIn : derived.amortizedTransfers;
+      const netTransferMetric = state.transferMode === "cash" ? derived.grossNetTransfers : derived.netTransferCost;
+      const totalSpendMetric = derived.wageBill + netTransferMetric;
+      return {
+        ...derived,
+        transferInMetric,
+        netTransferMetric,
+        totalSpendMetric,
+      };
+    })
     .sort((a, b) => b[state.sortBy] - a[state.sortBy]);
 };
 
@@ -188,13 +233,14 @@ const hoverRows = (club, fx, movement) => {
 const showHoverTooltip = (club, event) => {
   const fx = computeFx(state.currency);
   const coverage = formatPercent(club.contractCoverage);
-  const net = formatMoney(club.netTransferCost, state.currency);
+  const view = transferViewConfig();
+  const net = formatMoney(club.netTransferMetric, state.currency);
   const inRows = hoverRows(club, fx, "in");
   const outRows = hoverRows(club, fx, "out");
 
   elements.hoverTooltip.innerHTML = `
     <p class="hover-title">${escapeHtml(club.team_name)}</p>
-    <p class="hover-sub">Net transfer ${net} | Coverage ${coverage}</p>
+    <p class="hover-sub">${view.netLabel} ${net} | Coverage ${coverage}</p>
     <div class="hover-cols">
       <div>
         <h5>Top In</h5>
@@ -265,16 +311,17 @@ const bindHoverTargets = (root) => {
 };
 
 const renderSummary = () => {
-  const totalSpend = state.filtered.reduce((sum, club) => sum + club.totalSpend, 0);
+  const view = transferViewConfig();
+  const totalSpend = state.filtered.reduce((sum, club) => sum + club.totalSpendMetric, 0);
   const totalWages = state.filtered.reduce((sum, club) => sum + club.wageBill, 0);
-  const totalNetTransfer = state.filtered.reduce((sum, club) => sum + club.netTransferCost, 0);
+  const totalNetTransfer = state.filtered.reduce((sum, club) => sum + club.netTransferMetric, 0);
   const incoming = state.filtered.reduce((sum, club) => sum + club.incomingCount, 0);
   const reported = state.filtered.reduce((sum, club) => sum + club.reportedContracts, 0);
   const coverage = incoming ? reported / incoming : 1;
 
   const cards = [
     {
-      label: "Total Spend",
+      label: view.totalLabel,
       value: formatMoney(totalSpend, state.currency),
       hint: `Across ${state.filtered.length} clubs`,
     },
@@ -284,9 +331,12 @@ const renderSummary = () => {
       hint: "Estimated gross wage bill",
     },
     {
-      label: "Net Transfer Cost",
+      label: view.netLabel,
       value: formatMoney(totalNetTransfer, state.currency),
-      hint: "Amortized in minus transfer-out revenue",
+      hint:
+        state.transferMode === "cash"
+          ? "Gross transfers in minus transfer-out fees"
+          : "Amortized in minus transfer-out fees",
     },
     {
       label: "Reported Contract Coverage",
@@ -336,24 +386,33 @@ const renderPeriodBadge = () => {
   elements.periodBadge.textContent = `${leagueText} ${seasonText} | ${windowText}`;
 };
 
+const renderTransferViewLabels = () => {
+  const view = transferViewConfig();
+  elements.transferInHeader.textContent = view.transferInLabel;
+  elements.transferOutHeader.textContent = view.transferOutLabel;
+  elements.netHeader.textContent = view.netLabel;
+  elements.totalHeader.textContent = view.totalLabel;
+  elements.trendHint.textContent = view.trendHint;
+};
+
 const renderTrendChart = () => {
-  const rankedClubs = [...state.filtered].sort((a, b) => b.netTransferCost - a.netTransferCost);
-  const maxAbsNet = rankedClubs.reduce((max, club) => Math.max(max, Math.abs(club.netTransferCost)), 0) || 1;
+  const rankedClubs = [...state.filtered].sort((a, b) => b.netTransferMetric - a.netTransferMetric);
+  const maxAbsNet = rankedClubs.reduce((max, club) => Math.max(max, Math.abs(club.netTransferMetric)), 0) || 1;
 
   elements.spendChart.innerHTML = rankedClubs
     .map((club) => {
-      const absoluteShare = (Math.abs(club.netTransferCost) / maxAbsNet) * 50;
+      const absoluteShare = (Math.abs(club.netTransferMetric) / maxAbsNet) * 50;
       const width = Math.max(2, absoluteShare);
-      const left = club.netTransferCost >= 0 ? 50 : 50 - width;
-      const trendClass = club.netTransferCost >= 0 ? "buy" : "sell";
-      const transferTag = club.netTransferCost < 0 ? "Net revenue surplus" : "Net spend";
+      const left = club.netTransferMetric >= 0 ? 50 : 50 - width;
+      const trendClass = club.netTransferMetric >= 0 ? "buy" : "sell";
+      const transferTag = club.netTransferMetric < 0 ? "Net revenue surplus" : "Net spend";
       return `
         <div class="trend-row">
           <div class="trend-name">${club.team_name}<span class="trend-meta">${transferTag} | Wage share ${formatPercent(
             club.wageShareOfCommitment
           )}</span></div>
           <div class="trend-track"><span class="trend-fill ${trendClass}" style="left:${left}%;width:${width}%"></span></div>
-          <div class="trend-value">${formatMoney(club.netTransferCost, state.currency)}</div>
+          <div class="trend-value">${formatMoney(club.netTransferMetric, state.currency)}</div>
         </div>
       `;
     })
@@ -366,8 +425,9 @@ const renderFindings = () => {
     return;
   }
 
-  const bySpend = [...state.filtered].sort((a, b) => b.totalSpend - a.totalSpend);
-  const byNetTransfer = [...state.filtered].sort((a, b) => b.netTransferCost - a.netTransferCost);
+  const view = transferViewConfig();
+  const bySpend = [...state.filtered].sort((a, b) => b.totalSpendMetric - a.totalSpendMetric);
+  const byNetTransfer = [...state.filtered].sort((a, b) => b.netTransferMetric - a.netTransferMetric);
   const byCoverage = [...state.filtered].sort((a, b) => a.contractCoverage - b.contractCoverage);
   const byWageShare = [...state.filtered].sort((a, b) => b.wageShareOfCommitment - a.wageShareOfCommitment);
 
@@ -379,23 +439,23 @@ const renderFindings = () => {
 
   const cards = [
     {
-      label: "Highest Total Spend",
-      value: `${highestSpend.team_name} ${formatMoney(highestSpend.totalSpend, state.currency)}`,
-      note: `Wages ${formatMoney(highestSpend.wageBill, state.currency)} and net transfers ${formatMoney(
-        highestSpend.netTransferCost,
+      label: `Highest ${view.totalLabel}`,
+      value: `${highestSpend.team_name} ${formatMoney(highestSpend.totalSpendMetric, state.currency)}`,
+      note: `Wages ${formatMoney(highestSpend.wageBill, state.currency)} and ${view.netLabel.toLowerCase()} ${formatMoney(
+        highestSpend.netTransferMetric,
         state.currency
       )}.`,
     },
     {
       label: "Most Aggressive Net Buyer",
-      value: `${highestNetBuyer.team_name} ${formatMoney(highestNetBuyer.netTransferCost, state.currency)}`,
+      value: `${highestNetBuyer.team_name} ${formatMoney(highestNetBuyer.netTransferMetric, state.currency)}`,
       note: `${highestNetBuyer.assumedDeals} assumed deals across ${highestNetBuyer.incomingCount} incomings.`,
     },
     {
       label: "Largest Net Seller",
-      value: `${highestNetSeller.team_name} ${formatMoney(highestNetSeller.netTransferCost, state.currency)}`,
+      value: `${highestNetSeller.team_name} ${formatMoney(highestNetSeller.netTransferMetric, state.currency)}`,
       note: `Transfer-outs currently offset spend by ${formatMoney(
-        Math.abs(highestNetSeller.netTransferCost),
+        Math.abs(highestNetSeller.netTransferMetric),
         state.currency
       )}.`,
     },
@@ -476,7 +536,7 @@ const renderDetail = () => {
     "Player-level transfer fees and contract-length confidence used for amortized spend.";
   elements.detailCoveragePill.textContent = `Coverage ${formatPercent(selectedClub.contractCoverage)}`;
   elements.detailAssumedPill.textContent = `Assumed ${selectedClub.assumedDeals}/${selectedClub.incomingCount}`;
-  elements.detailSpendPill.textContent = `Total ${formatMoney(selectedClub.totalSpend, state.currency)}`;
+  elements.detailSpendPill.textContent = `Total ${formatMoney(selectedClub.totalSpendMetric, state.currency)}`;
 
   const incomingRows = selectedClub.transfers_in
     .map((transfer) => {
@@ -529,10 +589,10 @@ const renderTable = () => {
           </td>
           <td>${club.team_name}</td>
           <td>${formatMoney(club.wageBill, state.currency)}</td>
-          <td>${formatMoney(club.amortizedTransfers, state.currency)}</td>
+          <td>${formatMoney(club.transferInMetric, state.currency)}</td>
           <td>${formatMoney(club.transferOutRevenue, state.currency)}</td>
-          <td>${formatMoney(club.netTransferCost, state.currency)}</td>
-          <td>${formatMoney(club.totalSpend, state.currency)}</td>
+          <td>${formatMoney(club.netTransferMetric, state.currency)}</td>
+          <td>${formatMoney(club.totalSpendMetric, state.currency)}</td>
           <td><span class="coverage ${coverageClassName}">${formatPercent(club.contractCoverage)}</span></td>
           <td>${club.assumedDeals}</td>
           <td><button class="mini-btn drill-btn" data-drill-id="${club.team_id}">View players</button></td>
@@ -563,16 +623,16 @@ const renderMobileCards = () => {
           </div>
           <div class="mobile-club-grid">
             <div class="mobile-metric">
-              <span class="mobile-metric-label">Total Spend</span>
-              <span class="mobile-metric-value">${formatMoney(club.totalSpend, state.currency)}</span>
+              <span class="mobile-metric-label">${state.transferMode === "cash" ? "Cash Spend" : "Total Spend"}</span>
+              <span class="mobile-metric-value">${formatMoney(club.totalSpendMetric, state.currency)}</span>
             </div>
             <div class="mobile-metric">
               <span class="mobile-metric-label">Wages</span>
               <span class="mobile-metric-value">${formatMoney(club.wageBill, state.currency)}</span>
             </div>
             <div class="mobile-metric">
-              <span class="mobile-metric-label">Amortized In</span>
-              <span class="mobile-metric-value">${formatMoney(club.amortizedTransfers, state.currency)}</span>
+              <span class="mobile-metric-label">${state.transferMode === "cash" ? "Gross In" : "Amortized In"}</span>
+              <span class="mobile-metric-value">${formatMoney(club.transferInMetric, state.currency)}</span>
             </div>
             <div class="mobile-metric">
               <span class="mobile-metric-label">Transfer Out</span>
@@ -580,7 +640,7 @@ const renderMobileCards = () => {
             </div>
             <div class="mobile-metric">
               <span class="mobile-metric-label">Net Transfer</span>
-              <span class="mobile-metric-value">${formatMoney(club.netTransferCost, state.currency)}</span>
+              <span class="mobile-metric-value">${formatMoney(club.netTransferMetric, state.currency)}</span>
             </div>
             <div class="mobile-metric">
               <span class="mobile-metric-label">Contract Coverage</span>
@@ -609,17 +669,17 @@ const renderCompare = () => {
     ? `Comparing ${clubs.length} club${clubs.length > 1 ? "s" : ""}.`
     : "Pick clubs from the table.";
 
-  const maxSpend = clubs.reduce((max, club) => Math.max(max, club.totalSpend), 0) || 1;
+  const maxSpend = clubs.reduce((max, club) => Math.max(max, club.totalSpendMetric), 0) || 1;
 
   elements.compareCards.innerHTML = clubs
     .map((club) => {
-      const width = Math.round((club.totalSpend / maxSpend) * 100);
+      const width = Math.round((club.totalSpendMetric / maxSpend) * 100);
       return `
         <div class="compare-card">
           <h4>${club.team_name}</h4>
           <div class="compare-metric">
-            <span>Total Spend</span>
-            <strong>${formatMoney(club.totalSpend, state.currency)}</strong>
+            <span>${state.transferMode === "cash" ? "Cash Spend" : "Total Spend"}</span>
+            <strong>${formatMoney(club.totalSpendMetric, state.currency)}</strong>
           </div>
           <div class="bar"><span style="width:${width}%"></span></div>
           <div class="compare-metric">
@@ -628,7 +688,7 @@ const renderCompare = () => {
           </div>
           <div class="compare-metric">
             <span>Net Transfers</span>
-            <span>${formatMoney(club.netTransferCost, state.currency)}</span>
+            <span>${formatMoney(club.netTransferMetric, state.currency)}</span>
           </div>
           <div class="compare-metric">
             <span>Contract Coverage</span>
@@ -644,8 +704,9 @@ const renderMethodology = () => {
   const methodology = state.raw.methodology || {};
   const notes = methodology.notes || [];
   const sources = state.raw.sources || [];
+  const view = transferViewConfig();
 
-  elements.methodSummary.textContent = methodology.summary || "";
+  elements.methodSummary.textContent = `${methodology.summary || ""} ${view.methodologyNote}`;
   elements.contractFallback.textContent = methodology.contract_length_fallback || "";
 
   elements.methodNotes.innerHTML = notes.map((note) => `<li>${note}</li>`).join("");
@@ -690,6 +751,7 @@ const bindQuickNav = () => {
 
 const render = () => {
   applyFilters();
+  renderTransferViewLabels();
   renderPeriodBadge();
   renderSummary();
   renderFindings();
@@ -727,6 +789,11 @@ const bindEvents = () => {
 
   elements.currencySelect.addEventListener("change", (event) => {
     state.currency = event.target.value;
+    render();
+  });
+
+  elements.viewModeSelect.addEventListener("change", (event) => {
+    state.transferMode = event.target.value;
     render();
   });
 

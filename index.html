@@ -84,12 +84,19 @@
         <div class="control">
           <label for="sortSelect">Sort</label>
           <select id="sortSelect">
-            <option value="totalSpend">Total Spend</option>
+            <option value="totalSpendMetric">Total Spend</option>
             <option value="wageBill">Wages</option>
-            <option value="netTransferCost">Net Transfer Cost</option>
-            <option value="amortizedTransfers">Amortized Transfers In</option>
+            <option value="netTransferMetric">Net Transfers</option>
+            <option value="transferInMetric">Transfers In</option>
             <option value="contractCoverage">Contract Coverage</option>
             <option value="assumedDeals">Assumed Deals</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="viewModeSelect">Spend View</label>
+          <select id="viewModeSelect">
+            <option value="pnl_proxy">P&amp;L Proxy (Amortized In)</option>
+            <option value="cash">Cash View (Gross In/Out)</option>
           </select>
         </div>
       </section>
@@ -116,7 +123,7 @@
       <section class="panel trend" id="trendSection">
         <div class="panel-head">
           <h2>Net Spend by Club</h2>
-          <p>Solid bars show net transfer cost. Positive is spend, negative is transfer revenue surplus.</p>
+          <p id="trendHint">Solid bars show net transfer cost. Positive is spend, negative is transfer revenue surplus.</p>
         </div>
         <div class="trend-bars" id="spendChart"></div>
       </section>
@@ -135,10 +142,10 @@
                   <th></th>
                   <th>Club</th>
                   <th>Wages</th>
-                  <th>Amortized Transfers In</th>
-                  <th>Transfer-Out Revenue</th>
-                  <th>Net Transfer Cost</th>
-                  <th>Total Spend</th>
+                  <th id="transferInHeader">Amortized Transfers In</th>
+                  <th id="transferOutHeader">Transfer-Out Fees</th>
+                  <th id="netHeader">Net Transfer Cost</th>
+                  <th id="totalHeader">Total Spend</th>
                   <th>Contract Coverage</th>
                   <th>Assumed Deals</th>
                   <th>Drill Down</th>
