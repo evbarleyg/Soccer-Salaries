@@ -20,7 +20,6 @@ const state = {
   transferMode: "pnl_proxy",
   league: "All",
   season: "All",
-  search: "",
   sortBy: "totalSpendMetric",
   sortDir: "desc",
   detailIncomingSort: { key: "fee", dir: "desc" },
@@ -66,7 +65,6 @@ const elements = {
   clubFilterAllBtn: document.getElementById("clubFilterAllBtn"),
   clubFilterClearBtn: document.getElementById("clubFilterClearBtn"),
   clubFilterOptions: document.getElementById("clubFilterOptions"),
-  searchInput: document.getElementById("searchInput"),
   lastUpdated: document.getElementById("lastUpdated"),
   refreshBtn: document.getElementById("refreshBtn"),
   trendHint: document.getElementById("trendHint"),
@@ -193,7 +191,6 @@ const applyFilters = () => {
     .filter((club) => (state.league === "All" ? true : club.league === state.league))
     .filter((club) => (state.season === "All" ? true : club.season === state.season))
     .filter((club) => state.clubFilter.has(club.team_id))
-    .filter((club) => club.team_name.toLowerCase().includes(state.search))
     .map((club) => {
       const derived = deriveClub(club, fx);
       const transferInMetric = state.transferMode === "cash" ? derived.grossTransfersIn : derived.amortizedTransfers;
@@ -1133,11 +1130,6 @@ const bindEvents = () => {
       }
       renderDetail();
     });
-  });
-
-  elements.searchInput.addEventListener("input", (event) => {
-    state.search = event.target.value.toLowerCase();
-    render();
   });
 
   elements.refreshBtn.addEventListener("click", () => {
