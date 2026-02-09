@@ -1,0 +1,4374 @@
+{
+  "last_updated": "2026-02-09",
+  "generated_at_utc": "2026-02-09T06:00:55.128720+00:00",
+  "base_currency": "GBP",
+  "exchange_rates": {
+    "GBP": 1.0,
+    "EUR": 1.16,
+    "USD": 1.28
+  },
+  "scope": {
+    "league": "Premier League",
+    "season": "2025/26",
+    "season_year": 2025
+  },
+  "methodology": {
+    "summary": "Total spend = wage bill + amortized transfer-in fees - transfer-out revenue. Contract length is taken from published signed/expiration dates when available; otherwise profile-based assumptions are used.",
+    "contract_length_fallback": "Assumed contract years by profile: younger/high-fee signings skew longer terms; older/low-fee signings skew shorter terms; loans default to one year.",
+    "contract_coverage_reported_percent": 89.2,
+    "notes": [
+      "Capology values are estimates and may differ from official club filings.",
+      "Transfer fees are sourced from a public Transfermarkt-derived dataset mirror.",
+      "Outgoing transfers are treated as immediate revenue offset in net transfer cost."
+    ]
+  },
+  "sources": [
+    {
+      "id": "capology_payrolls",
+      "name": "Capology Premier League Payrolls",
+      "url": "https://www.capology.com/uk/premier-league/payrolls/",
+      "type": "wages"
+    },
+    {
+      "id": "capology_club_salaries",
+      "name": "Capology Club Salaries pages",
+      "url": "https://www.capology.com/club/arsenal/salaries/",
+      "type": "contract_dates"
+    },
+    {
+      "id": "transfermarkt_data_github",
+      "name": "Transfermarkt Data (GitHub mirror)",
+      "url": "https://raw.githubusercontent.com/eordo/transfermarkt-data/master/premier_league/2025.csv",
+      "type": "transfers"
+    }
+  ],
+  "clubs": [
+    {
+      "team_id": "arsenal_2025",
+      "team_name": "Arsenal",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 185692000,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Mart\u00edn Zubimendi",
+          "fee": 70000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "DM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Eberechi Eze",
+          "fee": 69300000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 27,
+          "position": "AM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Viktor Gy\u00f6keres",
+          "fee": 65800000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 27,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Noni Madueke",
+          "fee": 56000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Cristhian Mosquera",
+          "fee": 15000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 21,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Christian N\u00f8rgaard",
+          "fee": 11600000,
+          "contract_years": 2,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 31,
+          "position": "DM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kepa Arrizabalaga",
+          "fee": 5800000,
+          "contract_years": 3,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 30,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Piero Hincapi\u00e9",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "CB",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Nuno Tavares",
+          "fee": 5000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Marquinhos",
+          "fee": 3000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jakub Kiwior",
+          "fee": 2000000,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Albert Sambi Lokonga",
+          "fee": 300000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jorginho",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kieran Tierney",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Thomas Partey",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Oleksandr Zinchenko",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Reiss Nelson",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "F\u00e1bio Vieira",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Karl Hein",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Takehiro Tomiyasu",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Raheem Sterling",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Neto",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 8,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 0,
+        "incoming_count": 8
+      }
+    },
+    {
+      "team_id": "aston_villa_2025",
+      "team_name": "Aston Villa",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 141726000,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Evann Guessand",
+          "fee": 30000000,
+          "contract_years": 5,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 24,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Marco Bizot",
+          "fee": 500000,
+          "contract_years": 2,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 34,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Victor Lindel\u00f6f",
+          "fee": 0,
+          "contract_years": 2,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 31,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Harvey Elliott",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "AM",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jadon Sancho",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 25,
+          "position": "LW",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Jacob Ramsey",
+          "fee": 45150000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kaine Kesler-Hayden",
+          "fee": 4000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Enzo Barrenechea",
+          "fee": 3000000,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Leon Bailey",
+          "fee": 3000000,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Robin Olsen",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Philippe Coutinho",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "\u00c1lex Moreno",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Leander Dendoncker",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Lewis Dobbin",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Filip Marschall",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Samuel Iling-Junior",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Joe Gauci",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Oliwier Zych",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kortney Hause",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Axel Disasi",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Marco Asensio",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Marcus Rashford",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 4,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 1,
+        "incoming_count": 5
+      }
+    },
+    {
+      "team_id": "bournemouth_2025",
+      "team_name": "Bournemouth",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 57668000,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Bafod\u00e9 Diakit\u00e9",
+          "fee": 35000000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 24,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Djordje Petrovic",
+          "fee": 28900000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 25,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Ben Gannon-Doak",
+          "fee": 23200000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 19,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Amine Adli",
+          "fee": 21000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 25,
+          "position": "LW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Veljko Milosavljevic",
+          "fee": 15000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 18,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Adrien Truffert",
+          "fee": 13500000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "LB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "\u00c1lex Jim\u00e9nez",
+          "fee": 1500000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 20,
+          "position": "RB",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Ilya Zabarnyi",
+          "fee": 63000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Dean Huijsen",
+          "fee": 62500000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Milos Kerkez",
+          "fee": 46900000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Dango Ouattara",
+          "fee": 42800000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jaidon Anthony",
+          "fee": 9500000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Philip Billing",
+          "fee": 5000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Mark Travers",
+          "fee": 4600000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Luis Sinisterra",
+          "fee": 2500000,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Chris Mepham",
+          "fee": 1150000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Joe Rothwell",
+          "fee": 460000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Neto",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Romain Faivre",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Daniel Jebbison",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Hamed Traor\u00e9",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Alex Paulsen",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Max Aarons",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Ben Winterburn",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kepa Arrizabalaga",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 7,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 0,
+        "incoming_count": 7
+      }
+    },
+    {
+      "team_id": "brentford_2025",
+      "team_name": "Brentford",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 52039000,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Dango Ouattara",
+          "fee": 42800000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "LW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Antoni Milambo",
+          "fee": 20000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 20,
+          "position": "AM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Michael Kayode",
+          "fee": 17500000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 20,
+          "position": "RB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Caoimh\u00edn Kelleher",
+          "fee": 14800000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Romelle Donovan",
+          "fee": 3600000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 18,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jordan Henderson",
+          "fee": 0,
+          "contract_years": 2,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 35,
+          "position": "DM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Reiss Nelson",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 25,
+          "position": "LW",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Bryan Mbeumo",
+          "fee": 75000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Yoane Wissa",
+          "fee": 57700000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Christian N\u00f8rgaard",
+          "fee": 11600000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Mark Flekken",
+          "fee": 11000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Ben Mee",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Ben Winterbottom",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Mads Roerslev",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Ji-soo Kim",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Josh Dasilva",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Ryan Trevitt",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jayden Meghoma",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Michael Kayode",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 7,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 0,
+        "incoming_count": 7
+      }
+    },
+    {
+      "team_id": "brighton_2025",
+      "team_name": "Brighton",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 64155000,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [],
+      "transfers_out": [],
+      "confidence_summary": {
+        "reported_contracts": 0,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 0,
+        "incoming_count": 0
+      }
+    },
+    {
+      "team_id": "burnley_2025",
+      "team_name": "Burnley",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 55554000,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Lesley Ugochukwu",
+          "fee": 28700000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 21,
+          "position": "DM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Armando Broja",
+          "fee": 23000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Loum Tchaouna",
+          "fee": 15150000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 21,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Bashir Humphreys",
+          "fee": 14000000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Marcus Edwards",
+          "fee": 10000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Quilindschy Hartman",
+          "fee": 10000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "LB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jaidon Anthony",
+          "fee": 9500000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 25,
+          "position": "LW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Zian Flemming",
+          "fee": 8300000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jacob Bruun Larsen",
+          "fee": 4000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "LW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Max Wei\u00df",
+          "fee": 4000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 21,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Florentino",
+          "fee": 2000000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "DM",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Axel Tuanzebe",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 27,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Martin D\u00fabravka",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 36,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kyle Walker",
+          "fee": 0,
+          "contract_years": 2,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 35,
+          "position": "RB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "James Trafford",
+          "fee": 31200000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Han-Noah Massengo",
+          "fee": 3000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Dara Costelloe",
+          "fee": 400000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Andr\u00e9as Hountondji",
+          "fee": 400000,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Etienne Green",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Josh Brownhill",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "CJ Egan-Riley",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jonjo Shelvey",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Darko Churlinov",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Shurandy Sambo",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Aaron Ramsey",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Michael Obafemi",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Luca Koleosho",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Oluwaseun Adewumi",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Owen Dodgson",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Nathan Redmond",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Benson Manuel",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Zian Flemming",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Marcus Edwards",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jaidon Anthony",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Bashir Humphreys",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 14,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 0,
+        "incoming_count": 14
+      }
+    },
+    {
+      "team_id": "chelsea_2025",
+      "team_name": "Chelsea",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 146172000,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Jo\u00e3o Pedro",
+          "fee": 63700000,
+          "contract_years": 8,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jamie Gittens",
+          "fee": 56000000,
+          "contract_years": 5,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 20,
+          "position": "LW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Alejandro Garnacho",
+          "fee": 46200000,
+          "contract_years": 7,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 21,
+          "position": "LW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Est\u00eav\u00e3o",
+          "fee": 45000000,
+          "contract_years": 8,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 18,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jorrel Hato",
+          "fee": 44180000,
+          "contract_years": 7,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 19,
+          "position": "LB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Liam Delap",
+          "fee": 35500000,
+          "contract_years": 6,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "D\u00e1rio Essugo",
+          "fee": 22270000,
+          "contract_years": 8,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 20,
+          "position": "DM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Mamadou Sarr",
+          "fee": 14000000,
+          "contract_years": 8,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 19,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kendry P\u00e1ez",
+          "fee": 10000000,
+          "contract_years": 5,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 18,
+          "position": "AM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Facundo Buonanotte",
+          "fee": 2300000,
+          "contract_years": 1,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 20,
+          "position": "AM",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Noni Madueke",
+          "fee": 56000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Christopher Nkunku",
+          "fee": 37000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jo\u00e3o F\u00e9lix",
+          "fee": 30000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Djordje Petrovic",
+          "fee": 28900000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Lesley Ugochukwu",
+          "fee": 28700000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kiernan Dewsbury-Hall",
+          "fee": 28650000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Renato Veiga",
+          "fee": 24500000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Armando Broja",
+          "fee": 23000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Carney Chukwuemeka",
+          "fee": 20000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Nicolas Jackson",
+          "fee": 16500000,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Mathis Amougou",
+          "fee": 14500000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Bashir Humphreys",
+          "fee": 14000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kepa Arrizabalaga",
+          "fee": 5800000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Marcus Bettinelli",
+          "fee": 2400000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Alfie Gilchrist",
+          "fee": 2300000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Ben Chilwell",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Lucas Bergstr\u00f6m",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "David Datro Fofana",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Marc Guiu",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Mamadou Sarr",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kendry P\u00e1ez",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Mike Penders",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Aar\u00f3n Anselmino",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jadon Sancho",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 7,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 3,
+        "incoming_count": 10
+      }
+    },
+    {
+      "team_id": "crystal_palace_2025",
+      "team_name": "Crystal Palace",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 63928800,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Y\u00e9remy Pino",
+          "fee": 30000000,
+          "contract_years": 5,
+          "contract_confidence": "reported_fuzzy_match",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jaydee Canvot",
+          "fee": 23000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 19,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Borna Sosa",
+          "fee": 2300000,
+          "contract_years": 3,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 27,
+          "position": "LB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Walter Ben\u00edtez",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 32,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Christantus Uche",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "CF",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Eberechi Eze",
+          "fee": 69300000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Odsonne \u00c9douard",
+          "fee": 3700000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Malcolm Ebiowei",
+          "fee": 1150000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Luke Plange",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jeffrey Schlupp",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Rob Holding",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jesurun Rak-Sakyi",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Matheus Fran\u00e7a",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Hindolo Mustapha",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "David Ozoh",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Joe Whitworth",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Joel Ward",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Ben Chilwell",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Matt Turner",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 4,
+        "fuzzy_reported_contracts": 1,
+        "override_contracts": 0,
+        "assumed_contracts": 0,
+        "incoming_count": 5
+      }
+    },
+    {
+      "team_id": "everton_2025",
+      "team_name": "Everton",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 75753600,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Tyler Dibling",
+          "fee": 40500000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 19,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Thierno Barry",
+          "fee": 30000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kiernan Dewsbury-Hall",
+          "fee": 28650000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "CM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Carlos Alcaraz",
+          "fee": 15000000,
+          "contract_years": 2,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "CM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Adam Aznou",
+          "fee": 9000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 19,
+          "position": "LB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Mark Travers",
+          "fee": 4600000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Merlin R\u00f6hl",
+          "fee": 2000000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "AM",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Tom King",
+          "fee": 0,
+          "contract_years": 2,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 30,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jack Grealish",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 29,
+          "position": "LW",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Youssef Chermiti",
+          "fee": 8600000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Neal Maupay",
+          "fee": 4000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jo\u00e3o Virg\u00ednia",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Dominic Calvert-Lewin",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Asmir Begovic",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Mason Holgate",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Abdoulaye Doucour\u00e9",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Ashley Young",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Tyler Onyango",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Harrison Armstrong",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Billy Crellin",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Isaac Heath",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jack Harrison",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jack Grealish",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Carlos Alcaraz",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Armando Broja",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Orel Mangala",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jesper Lindstr\u00f8m",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 9,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 0,
+        "incoming_count": 9
+      }
+    },
+    {
+      "team_id": "fulham_2025",
+      "team_name": "Fulham",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 73619000,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Kevin",
+          "fee": 40000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "LW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jonah Kusi-Asare",
+          "fee": 4000000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 18,
+          "position": "CF",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Benjamin Lecomte",
+          "fee": 500000,
+          "contract_years": 2,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 34,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Samuel Chukwueze",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "RW",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Andreas Pereira",
+          "fee": 10000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Martial Godo",
+          "fee": 7000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Carlos Vin\u00edcius",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Steven Benda",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Luke Harris",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Willian",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Reiss Nelson",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 4,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 0,
+        "incoming_count": 4
+      }
+    },
+    {
+      "team_id": "leeds_2025",
+      "team_name": "Leeds",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 57252000,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Anton Stach",
+          "fee": 20000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "DM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Noah Okafor",
+          "fee": 19000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 25,
+          "position": "LW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jaka Bijol",
+          "fee": 18000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Lucas Perri",
+          "fee": 16000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 27,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Sean Longstaff",
+          "fee": 13800000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 27,
+          "position": "CM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Gabriel Gudmundsson",
+          "fee": 11600000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "LB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "James Justin",
+          "fee": 9300000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 27,
+          "position": "RB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Sebastiaan Bornauw",
+          "fee": 6000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Dominic Calvert-Lewin",
+          "fee": 0,
+          "contract_years": 3,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 28,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Lukas Nmecha",
+          "fee": 0,
+          "contract_years": 2,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Rasmus Kristensen",
+          "fee": 6000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Sam Greenwood",
+          "fee": 2000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Darko Gyabi",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Junior Firpo",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Joe Gelhardt",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Mateo Joseph",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Maximilian W\u00f6ber",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Isaac Schmidt",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Largie Ramazani",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Josuha Guilavogui",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Patrick Bamford",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Charlie Crew",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Manor Solomon",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Joe Rothwell",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 10,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 0,
+        "incoming_count": 10
+      }
+    },
+    {
+      "team_id": "liverpool_2025",
+      "team_name": "Liverpool",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 173492800,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Alexander Isak",
+          "fee": 145000000,
+          "contract_years": 6,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 25,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Florian Wirtz",
+          "fee": 125000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "AM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Hugo Ekitik\u00e9",
+          "fee": 95000000,
+          "contract_years": 6,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Milos Kerkez",
+          "fee": 46900000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 21,
+          "position": "LB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jeremie Frimpong",
+          "fee": 40000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 24,
+          "position": "RB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Giovanni Leoni",
+          "fee": 31000000,
+          "contract_years": 6,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 18,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Freddie Woodman",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 28,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Luis D\u00edaz",
+          "fee": 70000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Darwin N\u00fa\u00f1ez",
+          "fee": 53000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jarell Quansah",
+          "fee": 35000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Ben Gannon-Doak",
+          "fee": 23200000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Caoimh\u00edn Kelleher",
+          "fee": 14800000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Trent Alexander-Arnold",
+          "fee": 10000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Tyler Morton",
+          "fee": 10000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Nat Phillips",
+          "fee": 3500000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Harvey Davies",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Vitezslav Jaros",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Konstantinos Tsimikas",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Harvey Elliott",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 7,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 0,
+        "incoming_count": 7
+      }
+    },
+    {
+      "team_id": "manchester_city_2025",
+      "team_name": "Manchester City",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 234015600,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Tijjani Reijnders",
+          "fee": 55000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "CM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Rayan A\u00eft-Nouri",
+          "fee": 36800000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 24,
+          "position": "LB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Rayan Cherki",
+          "fee": 36500000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 21,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "James Trafford",
+          "fee": 31200000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Gianluigi Donnarumma",
+          "fee": 30000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Sverre Nypan",
+          "fee": 15000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 18,
+          "position": "CM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Marcus Bettinelli",
+          "fee": 2400000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 33,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "James McAtee",
+          "fee": 25500000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Yan Couto",
+          "fee": 20000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "M\u00e1ximo Perrone",
+          "fee": 13000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Ederson",
+          "fee": 11000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Manuel Akanji",
+          "fee": 1000000,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "\u0130lkay G\u00fcndo\u011fan",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kevin De Bruyne",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kyle Walker",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Issa Kabor\u00e9",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Josh Wilson-Esbrand",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Claudio Echeverri",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Sverre Nypan",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jack Grealish",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Vitor Reis",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Juma Bah",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Scott Carson",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 7,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 0,
+        "incoming_count": 7
+      }
+    },
+    {
+      "team_id": "manchester_united_2025",
+      "team_name": "Manchester United",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 162071000,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Benjamin \u0160e\u0161ko",
+          "fee": 76500000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Bryan Mbeumo",
+          "fee": 75000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 25,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Matheus Cunha",
+          "fee": 74200000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "SS",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Senne Lammens",
+          "fee": 21000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Diego Le\u00f3n",
+          "fee": 4000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 18,
+          "position": "LB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Alejandro Garnacho",
+          "fee": 46200000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Antony",
+          "fee": 22000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Rasmus H\u00f8jlund",
+          "fee": 6000000,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Victor Lindel\u00f6f",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Andr\u00e9 Onana",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Marcus Rashford",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Toby Collyer",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Harry Amass",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jadon Sancho",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jonny Evans",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Christian Eriksen",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 5,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 0,
+        "incoming_count": 5
+      }
+    },
+    {
+      "team_id": "newcastle_2025",
+      "team_name": "Newcastle",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 116792000,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Nick Woltemade",
+          "fee": 75000000,
+          "contract_years": 6,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Anthony Elanga",
+          "fee": 61400000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Yoane Wissa",
+          "fee": 57700000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 28,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jacob Ramsey",
+          "fee": 45150000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 24,
+          "position": "CM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Malick Thiaw",
+          "fee": 35000000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 24,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Aaron Ramsdale",
+          "fee": 4600000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 27,
+          "position": "GK",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Anto\u00f1ito Cordero",
+          "fee": 0,
+          "contract_years": 5,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 18,
+          "position": "LW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Alexander Isak",
+          "fee": 145000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Lloyd Kelly",
+          "fee": 17200000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Sean Longstaff",
+          "fee": 13800000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Isaac Hayden",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Callum Wilson",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Martin D\u00fabravka",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Odysseas Vlachodimos",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Anto\u00f1ito Cordero",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Joe White",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jamal Lewis",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Matt Targett",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 6,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 1,
+        "incoming_count": 7
+      }
+    },
+    {
+      "team_id": "nottingham_forest_2025",
+      "team_name": "Nottingham Forest",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 84149000,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Omari Hutchinson",
+          "fee": 43400000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 21,
+          "position": "AM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Dan Ndoye",
+          "fee": 42000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 24,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Dilane Bakwa",
+          "fee": 35000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Arnaud Kalimuendo",
+          "fee": 30000000,
+          "contract_years": 5,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 23,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "James McAtee",
+          "fee": 25500000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "AM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Igor Jesus",
+          "fee": 19000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 24,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Nicol\u00f2 Savona",
+          "fee": 13000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "RB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jair Cunha",
+          "fee": 12000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 20,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "John Victor",
+          "fee": 8000000,
+          "contract_years": 2,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 29,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Cuiabano",
+          "fee": 6000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "LB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Douglas Luiz",
+          "fee": 3000000,
+          "contract_years": 1,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 27,
+          "position": "CM",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Angus Gunn",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 29,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Oleksandr Zinchenko",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 28,
+          "position": "LB",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Anthony Elanga",
+          "fee": 61400000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Danilo",
+          "fee": 23000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Ram\u00f3n Sosa",
+          "fee": 12500000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Andrew Omobamidele",
+          "fee": 10500000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Matt Turner",
+          "fee": 8000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Carlos Miguel",
+          "fee": 5500000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Lewis O'Brien",
+          "fee": 3500000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jota Silva",
+          "fee": 2500000,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Harry Toffolo",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Josh Bowler",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jonathan Panzo",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Cuiabano",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Marko Stamenic",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "David Carmo",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Tyler Bindon",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Eric da Silva Moreira",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Emmanuel Dennis",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Wayne Hennessey",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Omar Richards",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "\u00c1lex Moreno",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 9,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 4,
+        "incoming_count": 13
+      }
+    },
+    {
+      "team_id": "sunderland_2025",
+      "team_name": "Sunderland",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 60632000,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Habib Diarra",
+          "fee": 31500000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 21,
+          "position": "CM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Simon Adingra",
+          "fee": 24400000,
+          "contract_years": 5,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 23,
+          "position": "LW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Enzo Le F\u00e9e",
+          "fee": 23000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 25,
+          "position": "CM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Brian Brobbey",
+          "fee": 20000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Chemsdine Talbi",
+          "fee": 20000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 20,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Noah Sadiki",
+          "fee": 17000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 20,
+          "position": "CM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Granit Xhaka",
+          "fee": 15000000,
+          "contract_years": 3,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 32,
+          "position": "DM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Nordi Mukiele",
+          "fee": 12000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 27,
+          "position": "RB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Omar Alderete",
+          "fee": 11600000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 28,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Robin Roefs",
+          "fee": 10500000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Bertrand Traor\u00e9",
+          "fee": 2900000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 29,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Reinildo Mandava",
+          "fee": 0,
+          "contract_years": 2,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 31,
+          "position": "LB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Arthur Masuaku",
+          "fee": 0,
+          "contract_years": 2,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 31,
+          "position": "LB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Lutsharel Geertruida",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 25,
+          "position": "RB",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Marc Guiu",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 19,
+          "position": "CF",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Jobe Bellingham",
+          "fee": 30500000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Tom Watson",
+          "fee": 12000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Pierre Ekwah",
+          "fee": 6000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Nectarios Triantis",
+          "fee": 2500000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Nathan Bishop",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Niall Huggins",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jenson Seelt",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Patrick Roberts",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Adil Aouchiche",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Nazariy Rusyn",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Milan Aleksic",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Alan Browne",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Lu\u00eds Semedo",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Marc Guiu",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Enzo Le F\u00e9e",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Salis Abdul Samed",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 12,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 3,
+        "incoming_count": 15
+      }
+    },
+    {
+      "team_id": "tottenham_2025",
+      "team_name": "Tottenham",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 126672000,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Xavi Simons",
+          "fee": 65000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 22,
+          "position": "AM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Mohammed Kudus",
+          "fee": 63800000,
+          "contract_years": 6,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 24,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Mathys Tel",
+          "fee": 35000000,
+          "contract_years": 6,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 20,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kevin Danso",
+          "fee": 25000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Luka Vuskovic",
+          "fee": 11000000,
+          "contract_years": 5,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 18,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kota Takai",
+          "fee": 5800000,
+          "contract_years": 5,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 20,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jo\u00e3o Palhinha",
+          "fee": 5000000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 30,
+          "position": "DM",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Randal Kolo Muani",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "CF",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Heung-min Son",
+          "fee": 22000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Pierre-Emile H\u00f8jbjerg",
+          "fee": 13500000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Bryan Gil",
+          "fee": 6000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Luka Vuskovic",
+          "fee": 1000000,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Alejo Veliz",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Manor Solomon",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Alfie Devine",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Min-hyeok Yang",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Mikey Moore",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Alfie Whiteman",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Sergio Reguil\u00f3n",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Fraser Forster",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Mathys Tel",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kevin Danso",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Timo Werner",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 6,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 2,
+        "incoming_count": 8
+      }
+    },
+    {
+      "team_id": "west_ham_2025",
+      "team_name": "West Ham",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 68203200,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "Mateus Fernandes",
+          "fee": 44000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 21,
+          "position": "CM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jean-Clair Todibo",
+          "fee": 40000000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 25,
+          "position": "CB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "El Hadji Malick Diouf",
+          "fee": 22000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 20,
+          "position": "LB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Mads Hermansen",
+          "fee": 20800000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 25,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Soungoutou Magassa",
+          "fee": 17000000,
+          "contract_years": 6,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 21,
+          "position": "DM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Callum Wilson",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 33,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kyle Walker-Peters",
+          "fee": 0,
+          "contract_years": 3,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 28,
+          "position": "RB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Igor Julio",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 27,
+          "position": "CB",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Lukasz Fabianski",
+          "fee": 0,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 40,
+          "position": "GK",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Mohammed Kudus",
+          "fee": 63800000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Nayef Aguerd",
+          "fee": 23000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Edson \u00c1lvarez",
+          "fee": 2000000,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Emerson",
+          "fee": 700000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Wes Foderingham",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Danny Ings",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Vladim\u00edr Coufal",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Aaron Cresswell",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kurt Zouma",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Kaelan Casey",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Maxwel Cornet",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Lukasz Fabianski",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Junior Robinson",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Evan Ferguson",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Carlos Soler",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jean-Clair Todibo",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 8,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 1,
+        "incoming_count": 9
+      }
+    },
+    {
+      "team_id": "wolverhampton_2025",
+      "team_name": "Wolverhampton",
+      "league": "Premier League",
+      "season": "2025/26",
+      "wage_bill": 65832000,
+      "wage_source": "capology_payrolls",
+      "transfers_in": [
+        {
+          "player": "J\u00f8rgen Strand Larsen",
+          "fee": 27000000,
+          "contract_years": 4,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 25,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Tolu Arokodare",
+          "fee": 26000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 24,
+          "position": "CF",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Fer L\u00f3pez",
+          "fee": 23000000,
+          "contract_years": 5,
+          "contract_confidence": "assumed_profile",
+          "contract_note": "Profile-based fallback (age/position/fee).",
+          "age": 21,
+          "position": "AM",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Ladislav Krejci",
+          "fee": 22500000,
+          "contract_years": 1,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 26,
+          "position": "CB",
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jhon Arias",
+          "fee": 17000000,
+          "contract_years": 4,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 27,
+          "position": "RW",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Jackson Tchatchoua",
+          "fee": 12500000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "RB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "David M\u00f8ller Wolfe",
+          "fee": 12000000,
+          "contract_years": 5,
+          "contract_confidence": "reported",
+          "contract_note": "Published signed/expiration dates from Capology.",
+          "age": 23,
+          "position": "LB",
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "transfers_out": [
+        {
+          "player": "Matheus Cunha",
+          "fee": 74200000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Rayan A\u00eft-Nouri",
+          "fee": 36800000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "F\u00e1bio Silva",
+          "fee": 22500000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Gon\u00e7alo Guedes",
+          "fee": 4000000,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "N\u00e9lson Semedo",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Chiquinho",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Pablo Sarabia",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Joe Hodge",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Chem Campbell",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Bastien Meupiyou",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Tom King",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Sasa Kalajdzic",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Boubacar Traor\u00e9",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Tommy Doyle",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Craig Dawson",
+          "fee": 0,
+          "is_loan": false,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Nasser Djiga",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Pedro Lima",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "Carlos Forbs",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        },
+        {
+          "player": "J\u00f8rgen Strand Larsen",
+          "fee": 0,
+          "is_loan": true,
+          "window": "summer",
+          "source": "transfermarkt_data_github"
+        }
+      ],
+      "confidence_summary": {
+        "reported_contracts": 5,
+        "fuzzy_reported_contracts": 0,
+        "override_contracts": 0,
+        "assumed_contracts": 2,
+        "incoming_count": 7
+      }
+    }
+  ]
+}

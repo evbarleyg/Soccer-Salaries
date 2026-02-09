@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>True Spend: Soccer Squad Cost Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="top">
+        <div>
+          <p class="eyebrow">True Spend Index</p>
+          <h1>Roster Cost, Properly Counted.</h1>
+          <p class="subtitle">
+            Compare Premier League clubs using amortized transfer spend, transfer-out revenue, and wages in one dashboard.
+          </p>
+        </div>
+        <div class="meta">
+          <div class="badge" id="lastUpdated">Loading data...</div>
+          <button class="ghost" id="refreshBtn" type="button">Refresh</button>
+        </div>
+      </header>
+
+      <section class="controls">
+        <div class="control">
+          <label for="searchInput">Search</label>
+          <input id="searchInput" type="search" placeholder="Club name" />
+        </div>
+        <div class="control" id="leagueControl">
+          <label for="leagueSelect">League</label>
+          <select id="leagueSelect"></select>
+        </div>
+        <div class="control">
+          <label for="seasonSelect">Season</label>
+          <select id="seasonSelect"></select>
+        </div>
+        <div class="control">
+          <label for="currencySelect">Currency</label>
+          <select id="currencySelect">
+            <option value="GBP">GBP</option>
+            <option value="EUR">EUR</option>
+            <option value="USD">USD</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="sortSelect">Sort</label>
+          <select id="sortSelect">
+            <option value="totalSpend">Total Spend</option>
+            <option value="wageBill">Wages</option>
+            <option value="netTransferCost">Net Transfer Cost</option>
+            <option value="amortizedTransfers">Amortized Transfers In</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="summary" id="summaryCards"></section>
+
+      <section class="panel trend">
+        <div class="panel-head">
+          <h2>Spend Ladder</h2>
+          <p>Top clubs by total spend in current filter.</p>
+        </div>
+        <div class="trend-bars" id="spendChart"></div>
+      </section>
+
+      <section class="grid">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Club Spend Table</h2>
+            <p>Select up to 4 clubs to compare in detail. On mobile this becomes card view.</p>
+          </div>
+          <div class="mobile-club-cards" id="mobileClubCards"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>Club</th>
+                  <th>Wages</th>
+                  <th>Amortized Transfers In</th>
+                  <th>Transfer-Out Revenue</th>
+                  <th>Net Transfer Cost</th>
+                  <th>Total Spend</th>
+                  <th>Contract Coverage</th>
+                </tr>
+              </thead>
+              <tbody id="clubTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel compare" id="comparePanel">
+          <div class="panel-head">
+            <h2>Comparison</h2>
+            <p id="compareHint">Pick clubs from the table.</p>
+          </div>
+          <div id="compareCards" class="compare-cards"></div>
+        </div>
+      </section>
+
+      <section class="panel insight">
+        <div class="panel-head">
+          <h2>Method &amp; Sources</h2>
+        </div>
+        <p class="disclaimer" id="methodSummary"></p>
+        <p class="disclaimer" id="contractFallback"></p>
+        <div class="formula">
+          <div>
+            <h3>Amortized Transfers In</h3>
+            <p>Sum of each incoming transfer fee divided by contract length.</p>
+          </div>
+          <div>
+            <h3>Net Transfer Cost</h3>
+            <p>Amortized Transfers In minus Transfer-Out Revenue.</p>
+          </div>
+          <div>
+            <h3>Total Spend</h3>
+            <p>Wage Bill plus Net Transfer Cost.</p>
+          </div>
+        </div>
+        <div class="meta-grid">
+          <div>
+            <h3>Assumption Notes</h3>
+            <ul id="methodNotes"></ul>
+          </div>
+          <div>
+            <h3>Data Sources</h3>
+            <ul id="sourceList"></ul>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
