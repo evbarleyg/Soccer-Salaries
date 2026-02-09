@@ -47,6 +47,10 @@ const elements = {
   periodBadge: document.getElementById("periodBadge"),
   compareCards: document.getElementById("compareCards"),
   compareHint: document.getElementById("compareHint"),
+  overviewHelpWrap: document.getElementById("overviewHelpWrap"),
+  overviewHelpBtn: document.getElementById("overviewHelpBtn"),
+  overviewHelpTooltip: document.getElementById("overviewHelpTooltip"),
+  overviewHelpClose: document.getElementById("overviewHelpClose"),
   leagueControl: document.getElementById("leagueControl"),
   leagueSelect: document.getElementById("leagueSelect"),
   seasonSelect: document.getElementById("seasonSelect"),
@@ -229,6 +233,20 @@ const confidenceLabel = (confidence) => {
 const hideHoverTooltip = () => {
   elements.hoverTooltip.classList.remove("visible");
   elements.hoverTooltip.setAttribute("aria-hidden", "true");
+};
+
+let overviewHelpPinned = false;
+const showOverviewHelp = () => {
+  elements.overviewHelpTooltip.classList.add("visible");
+  elements.overviewHelpTooltip.setAttribute("aria-hidden", "false");
+  elements.overviewHelpBtn.setAttribute("aria-expanded", "true");
+};
+
+const hideOverviewHelp = (force = false) => {
+  if (overviewHelpPinned && !force) return;
+  elements.overviewHelpTooltip.classList.remove("visible");
+  elements.overviewHelpTooltip.setAttribute("aria-hidden", "true");
+  elements.overviewHelpBtn.setAttribute("aria-expanded", "false");
 };
 
 const positionHoverTooltip = (x, y) => {
@@ -962,6 +980,30 @@ const bindEvents = () => {
     setFiltersCollapsed(!collapsed);
   });
 
+  elements.overviewHelpBtn.addEventListener("mouseenter", () => {
+    if (!overviewHelpPinned) showOverviewHelp();
+  });
+
+  elements.overviewHelpWrap.addEventListener("mouseleave", () => {
+    hideOverviewHelp();
+  });
+
+  elements.overviewHelpBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    overviewHelpPinned = !overviewHelpPinned;
+    if (overviewHelpPinned) {
+      showOverviewHelp();
+    } else {
+      hideOverviewHelp(true);
+    }
+  });
+
+  elements.overviewHelpClose.addEventListener("click", (event) => {
+    event.stopPropagation();
+    overviewHelpPinned = false;
+    hideOverviewHelp(true);
+  });
+
   elements.clubFilterTrigger.addEventListener("click", () => {
     toggleClubFilterMenu();
     if (!elements.clubFilterMenu.hasAttribute("hidden")) {
@@ -970,8 +1012,19 @@ const bindEvents = () => {
   });
 
   document.addEventListener("click", (event) => {
+    if (!elements.overviewHelpWrap.contains(event.target)) {
+      overviewHelpPinned = false;
+      hideOverviewHelp(true);
+    }
     if (!elements.clubControl.contains(event.target)) {
       toggleClubFilterMenu(false);
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      overviewHelpPinned = false;
+      hideOverviewHelp(true);
     }
   });
 

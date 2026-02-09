@@ -53,7 +53,7 @@
       </header>
 
       <nav class="quick-nav" id="quickNav">
-        <button class="quick-link" data-target="summaryCards" type="button">Overview</button>
+        <button class="quick-link" data-target="landingOverview" type="button">Overview</button>
         <button class="quick-link" data-target="insightSection" type="button">Findings</button>
         <button class="quick-link" data-target="trendSection" type="button">Net Spend</button>
         <button class="quick-link" data-target="clubsSection" type="button">Club Table</button>
@@ -61,6 +61,56 @@
         <button class="quick-link" data-target="qualitySection" type="button">Data Quality</button>
         <button class="quick-link" data-target="methodPanel" type="button">Method</button>
       </nav>
+
+      <section class="panel landing" id="landingOverview">
+        <div class="landing-head">
+          <div>
+            <h2>
+              Dashboard Overview
+              <span class="help-wrap" id="overviewHelpWrap">
+                <button
+                  class="help-trigger"
+                  id="overviewHelpBtn"
+                  type="button"
+                  aria-label="Show dashboard instructions"
+                  aria-expanded="false"
+                >
+                  ?
+                </button>
+                <div class="help-pop" id="overviewHelpTooltip" aria-hidden="true">
+                  <p class="help-pop-title">How To Use This Dashboard</p>
+                  <ol class="help-pop-list">
+                    <li>Open filters and set clubs, season, and spend view.</li>
+                    <li>Sort the club table columns to rank teams quickly.</li>
+                    <li>Use Player Drilldown to inspect incoming and outgoing deals.</li>
+                    <li>Use Data Quality table to check coverage and assumption pressure.</li>
+                  </ol>
+                  <button class="help-close" id="overviewHelpClose" type="button">Hide</button>
+                </div>
+              </span>
+            </h2>
+            <p>Start here if this is your first visit. This view explains the fastest workflow.</p>
+          </div>
+        </div>
+        <div class="overview-grid">
+          <article class="overview-card">
+            <p class="overview-kicker">1. Set Scope</p>
+            <p>Filter clubs and season, then choose P&amp;L proxy or cash view.</p>
+          </article>
+          <article class="overview-card">
+            <p class="overview-kicker">2. Rank Clubs</p>
+            <p>Click column headers in Club Spend Table to sort by spend drivers.</p>
+          </article>
+          <article class="overview-card">
+            <p class="overview-kicker">3. Inspect Players</p>
+            <p>Use Team selector in Player Drilldown for transfer-level detail.</p>
+          </article>
+          <article class="overview-card">
+            <p class="overview-kicker">4. Validate Quality</p>
+            <p>Review the Data Quality table to see assumption rates and pressure scores.</p>
+          </article>
+        </div>
+      </section>
 
       <section class="controls" id="filtersPanel">
         <div class="controls-head">
