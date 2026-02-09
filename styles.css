@@ -246,33 +246,6 @@ h1 {
   background: #ecf3ff;
 }
 
-.overview-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 10px;
-}
-
-.overview-card {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 12px;
-  background: #fbfdff;
-}
-
-.overview-kicker {
-  font-size: 0.74rem;
-  font-family: var(--mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #4a5e93;
-  margin-bottom: 6px;
-}
-
-.overview-card p:last-child {
-  font-size: 0.9rem;
-  color: var(--ink-soft);
-}
-
 .mini-btn {
   border: 1px solid #bfd4ff;
   background: #fff;
