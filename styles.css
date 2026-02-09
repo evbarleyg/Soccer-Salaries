@@ -713,6 +713,33 @@ tbody td:nth-last-child(2) {
   margin-bottom: 26px;
 }
 
+.detail-selector {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.detail-selector label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+.detail-selector select {
+  min-width: 220px;
+  max-width: 100%;
+  border-radius: 10px;
+  border: 1px solid #cadcff;
+  background: #fff;
+  color: var(--ink-soft);
+  padding: 9px 11px;
+  font-family: var(--sans);
+  font-size: 0.9rem;
+}
+
 .detail-metrics {
   display: flex;
   gap: 8px;
@@ -1048,6 +1075,11 @@ tbody td:nth-last-child(2) {
   .detail-pill {
     font-size: 0.72rem;
     padding: 5px 8px;
+  }
+
+  .detail-selector {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .grid .table-wrap {

@@ -35,6 +35,7 @@ const elements = {
   qualityRows: document.getElementById("qualityRows"),
   detailClubName: document.getElementById("detailClubName"),
   detailSubtitle: document.getElementById("detailSubtitle"),
+  detailClubSelect: document.getElementById("detailClubSelect"),
   detailCoveragePill: document.getElementById("detailCoveragePill"),
   detailAssumedPill: document.getElementById("detailAssumedPill"),
   detailSpendPill: document.getElementById("detailSpendPill"),
@@ -320,6 +321,8 @@ const bindDrillButtons = (root) => {
   root.querySelectorAll(".drill-btn[data-drill-id]").forEach((button) => {
     button.addEventListener("click", (event) => {
       state.detailClubId = event.currentTarget.dataset.drillId;
+      renderTable();
+      renderMobileCards();
       renderDetail();
     });
   });
@@ -638,6 +641,9 @@ const renderDetail = () => {
   if (!state.filtered.length) {
     elements.detailClubName.textContent = "Club Player Drilldown";
     elements.detailSubtitle.textContent = "No clubs in current filter.";
+    elements.detailClubSelect.innerHTML = '<option value="">No clubs</option>';
+    elements.detailClubSelect.value = "";
+    elements.detailClubSelect.disabled = true;
     elements.detailCoveragePill.textContent = "Coverage --";
     elements.detailAssumedPill.textContent = "Assumed --";
     elements.detailSpendPill.textContent = "Spend --";
@@ -650,6 +656,12 @@ const renderDetail = () => {
   const defaultClub = state.filtered[0];
   const selectedClub = state.filtered.find((club) => club.team_id === state.detailClubId) || defaultClub;
   state.detailClubId = selectedClub.team_id;
+  elements.detailClubSelect.disabled = false;
+  elements.detailClubSelect.innerHTML = [...state.filtered]
+    .sort((a, b) => a.team_name.localeCompare(b.team_name, undefined, { sensitivity: "base" }))
+    .map((club) => `<option value="${club.team_id}">${escapeHtml(club.team_name)}</option>`)
+    .join("");
+  elements.detailClubSelect.value = selectedClub.team_id;
 
   const fx = computeFx(state.currency);
 
@@ -975,6 +987,13 @@ const bindEvents = () => {
     state.sortBy = event.target.value;
     state.sortDir = defaultSortDir(state.sortBy);
     render();
+  });
+
+  elements.detailClubSelect.addEventListener("change", (event) => {
+    state.detailClubId = event.target.value;
+    renderTable();
+    renderMobileCards();
+    renderDetail();
   });
 
   document.querySelectorAll(".sort-btn[data-sort]").forEach((button) => {
