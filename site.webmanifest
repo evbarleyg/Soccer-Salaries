@@ -1,0 +1,16 @@
+{
+  "name": "True Spend Index",
+  "short_name": "TrueSpend",
+  "description": "Premier League roster spend dashboard using wages and amortized net transfer cost.",
+  "start_url": "/Soccer-Salaries/",
+  "display": "standalone",
+  "background_color": "#f4f0ea",
+  "theme_color": "#f4f0ea",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

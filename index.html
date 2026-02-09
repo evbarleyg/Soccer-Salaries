@@ -3,7 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Premier League 2025/26 true-spend dashboard combining wage bill, amortized transfer spend, and transfer-out revenue."
+    />
+    <meta name="theme-color" content="#f4f0ea" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="True Spend Index" />
+    <meta property="og:title" content="True Spend: Soccer Squad Cost Dashboard" />
+    <meta
+      property="og:description"
+      content="Compare Premier League clubs with wage bill + amortized transfers in - transfer-out revenue."
+    />
+    <meta property="og:url" content="https://evbarleyg.github.io/Soccer-Salaries/" />
+    <meta property="og:image" content="https://evbarleyg.github.io/Soccer-Salaries/preview-card.svg" />
+    <meta property="og:image:type" content="image/svg+xml" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="True Spend: Soccer Squad Cost Dashboard" />
+    <meta
+      name="twitter:description"
+      content="Premier League club spend using wages, amortized transfer costs, and transfer-out revenue."
+    />
+    <meta name="twitter:image" content="https://evbarleyg.github.io/Soccer-Salaries/preview-card.svg" />
     <title>True Spend: Soccer Squad Cost Dashboard</title>
+    <link rel="canonical" href="https://evbarleyg.github.io/Soccer-Salaries/" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="shortcut icon" href="./favicon.svg" />
+    <link rel="manifest" href="./site.webmanifest" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -17,6 +45,7 @@
           </p>
         </div>
         <div class="meta">
+          <div class="badge period-badge" id="periodBadge">Coverage period loading...</div>
           <div class="badge" id="lastUpdated">Loading data...</div>
           <button class="ghost" id="refreshBtn" type="button">Refresh</button>
         </div>

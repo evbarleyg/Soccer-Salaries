@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">True Spend Index</title>
+  <desc id="desc">Premier League 2025 slash 26 spend dashboard using wages plus amortized transfers minus transfer out revenue.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f7efe4" />
+      <stop offset="100%" stop-color="#efe3d3" />
+    </linearGradient>
+    <linearGradient id="barPos" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#e76f51" />
+      <stop offset="100%" stop-color="#c94f2f" />
+    </linearGradient>
+    <linearGradient id="barNeg" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#2a9d8f" />
+      <stop offset="100%" stop-color="#197c6f" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)" />
+  <circle cx="145" cy="90" r="170" fill="#ffffff" fill-opacity="0.34" />
+  <circle cx="1085" cy="560" r="220" fill="#ffffff" fill-opacity="0.25" />
+
+  <g transform="translate(78 86)">
+    <text x="0" y="0" font-family="'Space Grotesk', 'Avenir Next', sans-serif" font-size="27" letter-spacing="0.15em" fill="#8e2f1b">
+      TRUE SPEND INDEX
+    </text>
+    <text x="0" y="86" font-family="'Space Grotesk', 'Avenir Next', sans-serif" font-weight="700" font-size="66" fill="#1f1b16">
+      Premier League Spend
+    </text>
+    <text x="0" y="154" font-family="'Space Grotesk', 'Avenir Next', sans-serif" font-weight="700" font-size="66" fill="#1f1b16">
+      Wages + Amortized Net Transfers
+    </text>
+    <text x="0" y="212" font-family="'Space Grotesk', 'Avenir Next', sans-serif" font-size="30" fill="#5e5248">
+      2025/26 season | transfer-outs counted as revenue
+    </text>
+  </g>
+
+  <g transform="translate(80 356)">
+    <rect x="0" y="0" width="1040" height="190" rx="18" fill="#ffffff" fill-opacity="0.76" />
+    <line x1="520" y1="28" x2="520" y2="166" stroke="#cdb9a8" stroke-width="2" />
+
+    <text x="26" y="40" font-family="'IBM Plex Mono', 'Courier New', monospace" font-size="20" fill="#6d5f54">Net spend by club</text>
+
+    <rect x="520" y="58" width="325" height="24" rx="10" fill="url(#barPos)" />
+    <rect x="520" y="94" width="270" height="24" rx="10" fill="url(#barPos)" />
+    <rect x="520" y="130" width="210" height="24" rx="10" fill="url(#barPos)" />
+
+    <rect x="255" y="58" width="265" height="24" rx="10" fill="url(#barNeg)" />
+    <rect x="312" y="94" width="208" height="24" rx="10" fill="url(#barNeg)" />
+    <rect x="380" y="130" width="140" height="24" rx="10" fill="url(#barNeg)" />
+
+    <text x="875" y="76" font-family="'IBM Plex Mono', 'Courier New', monospace" font-size="16" fill="#5e5248">Net buyers</text>
+    <text x="128" y="76" font-family="'IBM Plex Mono', 'Courier New', monospace" font-size="16" fill="#5e5248">Net sellers</text>
+  </g>
+</svg>

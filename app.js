@@ -35,6 +35,7 @@ const elements = {
   detailIncomingBody: document.getElementById("detailIncomingBody"),
   detailOutgoingBody: document.getElementById("detailOutgoingBody"),
   summary: document.getElementById("summaryCards"),
+  periodBadge: document.getElementById("periodBadge"),
   compareCards: document.getElementById("compareCards"),
   compareHint: document.getElementById("compareHint"),
   leagueControl: document.getElementById("leagueControl"),
@@ -62,6 +63,8 @@ const formatMoney = (value, currency) => {
 };
 
 const formatPercent = (value) => `${Math.round(value * 100)}%`;
+
+const capitalize = (value) => value.charAt(0).toUpperCase() + value.slice(1);
 
 const escapeHtml = (value) =>
   String(value)
@@ -303,6 +306,34 @@ const renderSummary = () => {
       `
     )
     .join("");
+};
+
+const renderPeriodBadge = () => {
+  const scope = state.raw.scope || {};
+  const currentClubs = state.filtered.length ? state.filtered : state.raw.clubs || [];
+  const windows = new Set();
+
+  currentClubs.forEach((club) => {
+    club.transfers_in.forEach((transfer) => {
+      if (transfer.window) windows.add(String(transfer.window).toLowerCase());
+    });
+    club.transfers_out.forEach((transfer) => {
+      if (transfer.window) windows.add(String(transfer.window).toLowerCase());
+    });
+  });
+
+  const windowList = [...windows];
+  const windowText =
+    windowList.length === 0
+      ? "Window not tagged"
+      : windowList.length === 1
+        ? `${capitalize(windowList[0])} window`
+        : `${windowList.map(capitalize).join(" + ")} windows`;
+
+  const leagueText = state.league === "All" ? scope.league || "All leagues" : state.league;
+  const seasonText = state.season === "All" ? scope.season || "All seasons" : state.season;
+
+  elements.periodBadge.textContent = `${leagueText} ${seasonText} | ${windowText}`;
 };
 
 const renderTrendChart = () => {
@@ -659,6 +690,7 @@ const bindQuickNav = () => {
 
 const render = () => {
   applyFilters();
+  renderPeriodBadge();
   renderSummary();
   renderFindings();
   renderQualitySurface();
