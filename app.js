@@ -22,6 +22,7 @@ const state = {
 const elements = {
   table: document.getElementById("clubTable"),
   quickNav: document.getElementById("quickNav"),
+  hoverTooltip: document.getElementById("hoverTooltip"),
   mobileCards: document.getElementById("mobileClubCards"),
   spendChart: document.getElementById("spendChart"),
   findingsGrid: document.getElementById("findingsGrid"),
@@ -50,6 +51,8 @@ const elements = {
   sourceList: document.getElementById("sourceList"),
 };
 
+const supportsHover = window.matchMedia("(hover: hover)").matches;
+
 const formatMoney = (value, currency) => {
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
@@ -59,6 +62,14 @@ const formatMoney = (value, currency) => {
 };
 
 const formatPercent = (value) => `${Math.round(value * 100)}%`;
+
+const escapeHtml = (value) =>
+  String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 
 const deriveClub = (club, fx) => {
   const amortizedTransfers = club.transfers_in.reduce((sum, transfer) => {
@@ -128,6 +139,77 @@ const confidenceLabel = (confidence) => {
   }
 };
 
+const hideHoverTooltip = () => {
+  elements.hoverTooltip.classList.remove("visible");
+  elements.hoverTooltip.setAttribute("aria-hidden", "true");
+};
+
+const positionHoverTooltip = (x, y) => {
+  const box = elements.hoverTooltip;
+  const pad = 10;
+  const rect = box.getBoundingClientRect();
+
+  let left = x + 16;
+  let top = y + 14;
+
+  if (left + rect.width + pad > window.innerWidth) {
+    left = x - rect.width - 16;
+  }
+  if (top + rect.height + pad > window.innerHeight) {
+    top = window.innerHeight - rect.height - pad;
+  }
+
+  left = Math.max(pad, left);
+  top = Math.max(pad, top);
+
+  box.style.left = `${left}px`;
+  box.style.top = `${top}px`;
+};
+
+const hoverRows = (club, fx, movement) => {
+  const rows = movement === "in" ? club.transfers_in : club.transfers_out;
+  const sorted = [...rows].sort((a, b) => (b.fee || 0) - (a.fee || 0)).slice(0, 3);
+  if (!sorted.length) {
+    return '<li><span class="hover-name">No deals</span><span class="hover-value">--</span></li>';
+  }
+
+  return sorted
+    .map((row) => {
+      const fee = formatMoney((row.fee || 0) * fx, state.currency);
+      const suffix = movement === "in" ? ` | ${row.contract_years || "--"}y` : "";
+      return `<li><span class="hover-name">${escapeHtml(row.player || "Unknown")}</span><span class="hover-value">${fee}${suffix}</span></li>`;
+    })
+    .join("");
+};
+
+const showHoverTooltip = (club, event) => {
+  const fx = computeFx(state.currency);
+  const coverage = formatPercent(club.contractCoverage);
+  const net = formatMoney(club.netTransferCost, state.currency);
+  const inRows = hoverRows(club, fx, "in");
+  const outRows = hoverRows(club, fx, "out");
+
+  elements.hoverTooltip.innerHTML = `
+    <p class="hover-title">${escapeHtml(club.team_name)}</p>
+    <p class="hover-sub">Net transfer ${net} | Coverage ${coverage}</p>
+    <div class="hover-cols">
+      <div>
+        <h5>Top In</h5>
+        <ul class="hover-list">${inRows}</ul>
+      </div>
+      <div>
+        <h5>Top Out</h5>
+        <ul class="hover-list">${outRows}</ul>
+      </div>
+    </div>
+    <p class="hover-foot">Click "View players" for the full table.</p>
+  `;
+
+  elements.hoverTooltip.classList.add("visible");
+  elements.hoverTooltip.setAttribute("aria-hidden", "false");
+  positionHoverTooltip(event.clientX, event.clientY);
+};
+
 const syncSelectionFromEvent = (event) => {
   const id = event.target.dataset.id;
   if (event.target.checked) {
@@ -157,6 +239,25 @@ const bindDrillButtons = (root) => {
       state.detailClubId = event.currentTarget.dataset.drillId;
       renderDetail();
     });
+  });
+};
+
+const bindHoverTargets = (root) => {
+  if (!supportsHover) return;
+
+  root.querySelectorAll("[data-hover-id]").forEach((target) => {
+    target.addEventListener("mouseenter", (event) => {
+      const club = state.filtered.find((entry) => entry.team_id === event.currentTarget.dataset.hoverId);
+      if (!club) return;
+      showHoverTooltip(club, event);
+    });
+
+    target.addEventListener("mousemove", (event) => {
+      if (!elements.hoverTooltip.classList.contains("visible")) return;
+      positionHoverTooltip(event.clientX, event.clientY);
+    });
+
+    target.addEventListener("mouseleave", hideHoverTooltip);
   });
 };
 
@@ -382,13 +483,14 @@ const renderDetail = () => {
 };
 
 const renderTable = () => {
+  hideHoverTooltip();
   elements.table.innerHTML = state.filtered
     .map((club) => {
       const checked = state.selected.has(club.team_id);
       const coverageClassName = coverageClass(club.contractCoverage);
       const isDetail = state.detailClubId === club.team_id;
       return `
-        <tr ${isDetail ? 'style="background:#fff7eb;"' : ""}>
+        <tr data-hover-id="${club.team_id}" ${isDetail ? 'style="background:#fff7eb;"' : ""}>
           <td>
             <label class="checkbox">
               <input type="checkbox" data-id="${club.team_id}" ${checked ? "checked" : ""} />
@@ -410,6 +512,7 @@ const renderTable = () => {
 
   bindSelectionInputs(elements.table);
   bindDrillButtons(elements.table);
+  bindHoverTargets(elements.table);
 };
 
 const renderMobileCards = () => {
@@ -610,6 +713,11 @@ const bindEvents = () => {
       elements.lastUpdated.textContent = error.message;
     });
   });
+
+  if (supportsHover) {
+    window.addEventListener("scroll", hideHoverTooltip, true);
+    window.addEventListener("resize", hideHoverTooltip);
+  }
 };
 
 bindEvents();
