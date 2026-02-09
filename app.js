@@ -25,6 +25,7 @@ const state = {
   sortDir: "desc",
   detailIncomingSort: { key: "fee", dir: "desc" },
   detailOutgoingSort: { key: "fee", dir: "desc" },
+  detailEconomicsSort: { key: "annual_total_cost", dir: "desc" },
 };
 
 const elements = {
@@ -43,6 +44,7 @@ const elements = {
   detailSpendPill: document.getElementById("detailSpendPill"),
   detailIncomingBody: document.getElementById("detailIncomingBody"),
   detailOutgoingBody: document.getElementById("detailOutgoingBody"),
+  detailEconomicsBody: document.getElementById("detailEconomicsBody"),
   summary: document.getElementById("summaryCards"),
   periodBadge: document.getElementById("periodBadge"),
   compareCards: document.getElementById("compareCards"),
@@ -130,14 +132,14 @@ const transferViewConfig = () => {
   }
 
   return {
-    transferInLabel: "Amortized Transfers In",
+    transferInLabel: "Active Amortized Transfers In",
     transferOutLabel: "Transfer-Out Fees",
     netLabel: "Net Transfer Cost",
     totalLabel: "Total Spend",
     trendHint:
       "Solid bars show net transfer cost proxy. Positive is spend, negative is transfer revenue surplus.",
     methodologyNote:
-      "P&L proxy view amortizes incoming fees by contract length and offsets with full transfer-out fees (book value of sold players is not modeled).",
+      "P&L proxy view uses active annual amortization (current + prior windows still on books) and offsets with full transfer-out fees (book value of sold players is not modeled).",
   };
 };
 
@@ -151,10 +153,14 @@ const escapeHtml = (value) =>
 
 const deriveClub = (club, fx) => {
   const grossTransfersIn = club.transfers_in.reduce((sum, transfer) => sum + transfer.fee, 0);
-  const amortizedTransfers = club.transfers_in.reduce((sum, transfer) => {
+  const fallbackAmortizedCurrent = club.transfers_in.reduce((sum, transfer) => {
     const years = transfer.contract_years || 4;
     return sum + transfer.fee / years;
   }, 0);
+  const amortizationSummary = club.amortization_summary || {};
+  const amortizedCurrent = Number(amortizationSummary.annual_current_window ?? fallbackAmortizedCurrent);
+  const amortizedCarryover = Number(amortizationSummary.annual_prior_windows ?? 0);
+  const amortizedTransfers = Number(amortizationSummary.annual_total_assets ?? amortizedCurrent + amortizedCarryover);
 
   const transferOutRevenue = club.transfers_out.reduce((sum, transfer) => sum + transfer.fee, 0);
   const netTransferCost = amortizedTransfers - transferOutRevenue;
@@ -174,6 +180,8 @@ const deriveClub = (club, fx) => {
     wageBill: club.wage_bill * fx,
     grossTransfersIn: grossTransfersIn * fx,
     amortizedTransfers: amortizedTransfers * fx,
+    amortizedCurrent: amortizedCurrent * fx,
+    amortizedCarryover: amortizedCarryover * fx,
     transferOutRevenue: transferOutRevenue * fx,
     netTransferCost: netTransferCost * fx,
     grossNetTransfers: grossNetTransfers * fx,
@@ -486,6 +494,12 @@ const renderDetailSortState = () => {
     button.classList.toggle("active", isActive);
     button.dataset.dir = isActive ? state.detailOutgoingSort.dir : "";
   });
+
+  document.querySelectorAll(".econ-sort-btn[data-econ-sort]").forEach((button) => {
+    const isActive = button.dataset.econSort === state.detailEconomicsSort.key;
+    button.classList.toggle("active", isActive);
+    button.dataset.dir = isActive ? state.detailEconomicsSort.dir : "";
+  });
 };
 
 const renderSummary = () => {
@@ -514,7 +528,7 @@ const renderSummary = () => {
       hint:
         state.transferMode === "cash"
           ? "Gross transfers in minus transfer-out fees"
-          : "Amortized in minus transfer-out fees",
+          : "Active amortization (current + carryover) minus transfer-out fees",
     },
     {
       label: "Reported Contract Coverage",
@@ -712,6 +726,7 @@ const renderDetail = () => {
     elements.detailSpendPill.textContent = "Spend --";
     elements.detailIncomingBody.innerHTML = '<tr><td class="detail-empty" colspan="5">No incoming transfers.</td></tr>';
     elements.detailOutgoingBody.innerHTML = '<tr><td class="detail-empty" colspan="4">No outgoing transfers.</td></tr>';
+    elements.detailEconomicsBody.innerHTML = '<tr><td class="detail-empty" colspan="7">No player economics rows.</td></tr>';
     renderDetailSortState();
     return;
   }
@@ -730,10 +745,10 @@ const renderDetail = () => {
 
   elements.detailClubName.textContent = `${selectedClub.team_name} Player Drilldown`;
   elements.detailSubtitle.textContent =
-    "Player-level transfer fees and contract-length confidence used for amortized spend. Click headers to sort.";
+    "Player-level view of transfers and annual player cost (wage + active amortization, including prior windows).";
   elements.detailCoveragePill.textContent = `Coverage ${formatPercent(selectedClub.contractCoverage)}`;
   elements.detailAssumedPill.textContent = `Assumed ${selectedClub.assumedDeals}/${selectedClub.incomingCount}`;
-  elements.detailSpendPill.textContent = `Total ${formatMoney(selectedClub.totalSpendMetric, state.currency)}`;
+  elements.detailSpendPill.textContent = `Amortized ${formatMoney(selectedClub.amortizedTransfers, state.currency)}`;
 
   const incomingRows = [...selectedClub.transfers_in]
     .sort((a, b) => compareValues(a, b, state.detailIncomingSort.key, state.detailIncomingSort.dir))
@@ -766,10 +781,36 @@ const renderDetail = () => {
     })
     .join("");
 
+  const economicsRows = [...(selectedClub.amortization_assets || [])]
+    .sort((a, b) => compareValues(a, b, state.detailEconomicsSort.key, state.detailEconomicsSort.dir))
+    .map((asset) => {
+      const annualWage =
+        asset.annual_wage_gbp == null ? "--" : formatMoney((asset.annual_wage_gbp || 0) * fx, state.currency);
+      const annualAmortization = formatMoney((asset.annual_amortization || 0) * fx, state.currency);
+      const annualTotalCost = formatMoney((asset.annual_total_cost || 0) * fx, state.currency);
+      const seasonStart = Number(asset.source_season || 0);
+      const seasonLabel =
+        seasonStart > 0 ? `${seasonStart}/${String(seasonStart + 1).slice(2)}` : String(asset.source_season || "--");
+      return `
+        <tr>
+          <td>${asset.player || "--"}</td>
+          <td>${annualWage}</td>
+          <td>${annualAmortization}</td>
+          <td>${annualTotalCost}</td>
+          <td>${seasonLabel}</td>
+          <td>${asset.years_remaining || "--"}</td>
+          <td>${confidenceLabel(asset.contract_confidence)}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
   elements.detailIncomingBody.innerHTML =
     incomingRows || '<tr><td class="detail-empty" colspan="5">No incoming transfers.</td></tr>';
   elements.detailOutgoingBody.innerHTML =
     outgoingRows || '<tr><td class="detail-empty" colspan="4">No outgoing transfers.</td></tr>';
+  elements.detailEconomicsBody.innerHTML =
+    economicsRows || '<tr><td class="detail-empty" colspan="7">No active amortization assets for this club.</td></tr>';
   renderDetailSortState();
 };
 
@@ -832,7 +873,7 @@ const renderMobileCards = () => {
               <span class="mobile-metric-value">${formatMoney(club.wageBill, state.currency)}</span>
             </div>
             <div class="mobile-metric">
-              <span class="mobile-metric-label">${state.transferMode === "cash" ? "Gross In" : "Amortized In"}</span>
+              <span class="mobile-metric-label">${state.transferMode === "cash" ? "Gross In" : "Active Amortized In"}</span>
               <span class="mobile-metric-value">${formatMoney(club.transferInMetric, state.currency)}</span>
             </div>
             <div class="mobile-metric">
@@ -1144,6 +1185,19 @@ const bindEvents = () => {
         state.detailOutgoingSort.dir = state.detailOutgoingSort.dir === "asc" ? "desc" : "asc";
       } else {
         state.detailOutgoingSort = { key, dir: defaultSortDir(key) };
+      }
+      renderDetail();
+    });
+  });
+
+  document.querySelectorAll(".econ-sort-btn[data-econ-sort]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.econSort;
+      if (!key) return;
+      if (state.detailEconomicsSort.key === key) {
+        state.detailEconomicsSort.dir = state.detailEconomicsSort.dir === "asc" ? "desc" : "asc";
+      } else {
+        state.detailEconomicsSort = { key, dir: defaultSortDir(key) };
       }
       renderDetail();
     });

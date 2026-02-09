@@ -301,7 +301,7 @@
         <div class="panel-head">
           <h2 id="detailClubName">Club Player Drilldown</h2>
           <p id="detailSubtitle">
-            Choose a club from the table or mobile cards to inspect player-level transfers. Click player-table headers to sort.
+            Choose a club from the table or mobile cards to inspect player-level transfers and annual player economics.
           </p>
         </div>
         <div class="detail-selector">
@@ -393,6 +393,60 @@
             </div>
           </article>
         </div>
+        <article class="detail-block detail-block-wide">
+          <h3>Player Economics (Active Amortization + Wage)</h3>
+          <div class="table-wrap">
+            <table class="detail-table">
+              <thead>
+                <tr>
+                  <th class="sortable-th">
+                    <button class="sort-btn econ-sort-btn" data-econ-sort="player" type="button">
+                      Player
+                      <span class="sort-indicator"></span>
+                    </button>
+                  </th>
+                  <th class="sortable-th">
+                    <button class="sort-btn econ-sort-btn" data-econ-sort="annual_wage_gbp" type="button">
+                      Annual Wage
+                      <span class="sort-indicator"></span>
+                    </button>
+                  </th>
+                  <th class="sortable-th">
+                    <button class="sort-btn econ-sort-btn" data-econ-sort="annual_amortization" type="button">
+                      Annual Amortization
+                      <span class="sort-indicator"></span>
+                    </button>
+                  </th>
+                  <th class="sortable-th">
+                    <button class="sort-btn econ-sort-btn" data-econ-sort="annual_total_cost" type="button">
+                      Annual Total Cost
+                      <span class="sort-indicator"></span>
+                    </button>
+                  </th>
+                  <th class="sortable-th">
+                    <button class="sort-btn econ-sort-btn" data-econ-sort="source_season" type="button">
+                      Source Season
+                      <span class="sort-indicator"></span>
+                    </button>
+                  </th>
+                  <th class="sortable-th">
+                    <button class="sort-btn econ-sort-btn" data-econ-sort="years_remaining" type="button">
+                      Years Left
+                      <span class="sort-indicator"></span>
+                    </button>
+                  </th>
+                  <th class="sortable-th">
+                    <button class="sort-btn econ-sort-btn" data-econ-sort="contract_confidence" type="button">
+                      Confidence
+                      <span class="sort-indicator"></span>
+                    </button>
+                  </th>
+                </tr>
+              </thead>
+              <tbody id="detailEconomicsBody"></tbody>
+            </table>
+          </div>
+        </article>
       </section>
 
       <section class="panel insight" id="methodPanel">
@@ -403,8 +457,8 @@
         <p class="disclaimer" id="contractFallback"></p>
         <div class="formula">
           <div>
-            <h3>Amortized Transfers In</h3>
-            <p>Sum of each incoming transfer fee divided by contract length.</p>
+            <h3>Active Amortized Transfers In</h3>
+            <p>Annual amortization from current and prior-window incomings still on books.</p>
           </div>
           <div>
             <h3>Net Transfer Cost</h3>

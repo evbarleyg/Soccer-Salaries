@@ -1014,6 +1014,10 @@ tbody td:nth-last-child(2) {
   background: #fbfdff;
 }
 
+.detail-block-wide {
+  margin-top: 14px;
+}
+
 .detail-block h3 {
   margin-bottom: 10px;
   font-size: 0.98rem;

@@ -216,6 +216,10 @@ def parse_capology_salary_contracts(page: str) -> Dict[str, dict]:
         years_match = re.search(r"'years'\s*:\s*\"([^\"]*)\"", row)
         position_match = re.search(r"'position'\s*:\s*\"([^\"]*)\"", row)
         age_match = re.search(r"'age'\s*:\s*Math\.round\(\"([^\"]*)\"\)", row)
+        annual_gross_match = re.search(
+            r"'annual_gross_gbp'\s*:\s*accounting\.formatMoney\(\"([0-9.\-]+)\"",
+            row,
+        )
         active_match = re.search(r"'active'\s*:\s*\"([^\"]*)\"", row)
 
         if not name_match:
@@ -245,6 +249,7 @@ def parse_capology_salary_contracts(page: str) -> Dict[str, dict]:
             "remaining_years": remaining_years,
             "position": position_match.group(1) if position_match else "",
             "age": age,
+            "annual_gross_gbp": float(annual_gross_match.group(1)) if annual_gross_match else None,
         }
 
     return by_name
@@ -336,7 +341,8 @@ def parse_transfers_csv(csv_text: str, season_year: int, canonical_map: Dict[str
     for row in reader:
         if row.get("league") != PL_LEAGUE:
             continue
-        if int(row.get("season") or 0) != season_year:
+        row_season = safe_int(row.get("season") or "")
+        if row_season != season_year:
             continue
 
         club = normalize_club(row.get("club", ""), canonical_map)
@@ -359,6 +365,7 @@ def parse_transfers_csv(csv_text: str, season_year: int, canonical_map: Dict[str
             "market_value": safe_float(row.get("market_value", "0")),
             "is_loan": is_loan,
             "window": (row.get("window") or "").strip().lower(),
+            "season": row_season,
             "source": "transfermarkt_data_github",
         }
 
@@ -366,6 +373,79 @@ def parse_transfers_csv(csv_text: str, season_year: int, canonical_map: Dict[str
         by_club[club][movement].append(item)
 
     return by_club
+
+
+def merge_transfer_rows(base: Dict[str, dict], extra: Dict[str, dict]) -> None:
+    for club, movement_rows in extra.items():
+        bucket = base.setdefault(club, {"in": [], "out": []})
+        bucket["in"].extend(movement_rows.get("in", []))
+        bucket["out"].extend(movement_rows.get("out", []))
+
+
+def resolve_contract_terms(
+    move: dict,
+    club: str,
+    contracts: Dict[str, dict],
+    overrides: Dict[str, dict],
+) -> dict:
+    player = move["player"]
+    fee = move["fee"]
+    age = move["age"]
+    position = move["position"]
+
+    contract_years: Optional[int] = None
+    confidence = "assumed_profile"
+    reason = "Profile-based fallback (age/position/fee)."
+    contract_record = None
+
+    club_override = overrides.get(normalize_text(club), {})
+    player_override = club_override.get(normalize_text(player))
+    if player_override and player_override.get("contract_years"):
+        contract_years = int(player_override["contract_years"])
+        confidence = "override"
+        reason = player_override.get("note", "Manual override.")
+    else:
+        contract_record, match_type = match_player_contract(player, contracts)
+        if contract_record:
+            reported_years = infer_contract_years_from_dates(
+                contract_record.get("signed"), contract_record.get("expiration")
+            )
+            if reported_years:
+                contract_years = reported_years
+                confidence = "reported" if match_type == "exact" else "reported_fuzzy_match"
+                reason = "Published signed/expiration dates from Capology."
+            elif move["is_loan"]:
+                contract_years = 1
+                confidence = "reported_loan"
+                reason = "Loan deal treated as one-year amortization."
+
+    if contract_years is None:
+        contract_years = infer_contract_years_from_profile(age, position, fee, move["is_loan"])
+
+    return {
+        "contract_years": int(contract_years),
+        "contract_confidence": confidence,
+        "contract_note": reason,
+        "annual_wage_gbp": (
+            int(round(float(contract_record.get("annual_gross_gbp") or 0)))
+            if contract_record and contract_record.get("annual_gross_gbp") is not None
+            else None
+        ),
+    }
+
+
+def player_left_club_after_incoming(
+    incoming_player: str,
+    incoming_season: int,
+    outgoing_by_player: Dict[str, List[int]],
+    target_season: int,
+) -> bool:
+    norm = normalize_text(incoming_player)
+    out_seasons = outgoing_by_player.get(norm, [])
+    for out_season in out_seasons:
+        if incoming_season < out_season <= target_season:
+            return True
+    return False
 
 
 def safe_float(value: str) -> float:
@@ -397,7 +477,7 @@ def load_contract_overrides(path: Path) -> Dict[str, dict]:
     return normalized
 
 
-def build_dataset(output_path: Path, season_year: int, overrides_path: Path) -> None:
+def build_dataset(output_path: Path, season_year: int, overrides_path: Path, history_years: int) -> None:
     fetched_at = dt.datetime.now(dt.timezone.utc)
 
     payroll_page = fetch_text(PAYROLL_URL)
@@ -408,8 +488,17 @@ def build_dataset(output_path: Path, season_year: int, overrides_path: Path) -> 
     clubs = sorted({row["club"] for row in payroll_rows})
     canonical_map = {normalize_text(club): club for club in clubs}
 
-    transfer_csv = fetch_text(TRANSFERS_URL.format(season=season_year))
-    transfer_rows = parse_transfers_csv(transfer_csv, season_year=season_year, canonical_map=canonical_map)
+    transfer_rows: Dict[str, dict] = {}
+    transfer_start_year = max(1992, season_year - max(0, history_years))
+    fetched_transfer_seasons: List[int] = []
+    for transfer_year in range(transfer_start_year, season_year + 1):
+        try:
+            transfer_csv = fetch_text(TRANSFERS_URL.format(season=transfer_year))
+            season_rows = parse_transfers_csv(transfer_csv, season_year=transfer_year, canonical_map=canonical_map)
+            merge_transfer_rows(transfer_rows, season_rows)
+            fetched_transfer_seasons.append(transfer_year)
+        except RuntimeError as exc:
+            print(f"Warning: skipping transfer season {transfer_year}: {exc}")
 
     overrides = load_contract_overrides(overrides_path)
 
@@ -432,9 +521,17 @@ def build_dataset(output_path: Path, season_year: int, overrides_path: Path) -> 
     total_reported = 0
 
     for club in clubs:
-        incoming = transfer_rows.get(club, {}).get("in", [])
-        outgoing = transfer_rows.get(club, {}).get("out", [])
+        all_incoming = transfer_rows.get(club, {}).get("in", [])
+        all_outgoing = transfer_rows.get(club, {}).get("out", [])
+        incoming = [move for move in all_incoming if int(move.get("season") or 0) == season_year]
+        outgoing = [move for move in all_outgoing if int(move.get("season") or 0) == season_year]
         contracts = salary_contracts.get(club, {})
+        outgoing_by_player: Dict[str, List[int]] = {}
+        for out_move in all_outgoing:
+            season = int(out_move.get("season") or 0)
+            if season <= 0:
+                continue
+            outgoing_by_player.setdefault(normalize_text(out_move["player"]), []).append(season)
 
         club_in_rows: List[dict] = []
         reported = 0
@@ -444,61 +541,41 @@ def build_dataset(output_path: Path, season_year: int, overrides_path: Path) -> 
 
         for move in incoming:
             total_incoming += 1
-            player = move["player"]
-            fee = move["fee"]
-            age = move["age"]
-            position = move["position"]
+            terms = resolve_contract_terms(move, club, contracts, overrides)
+            contract_years = terms["contract_years"]
+            confidence = terms["contract_confidence"]
+            reason = terms["contract_note"]
+            annual_wage = terms["annual_wage_gbp"]
+            annual_amortization = int(round((move["fee"] or 0) / max(1, contract_years)))
 
-            contract_years: Optional[int] = None
-            confidence = "assumed_profile"
-            reason = "Profile-based fallback (age/position/fee)."
-
-            club_override = overrides.get(normalize_text(club), {})
-            player_override = club_override.get(normalize_text(player))
-            if player_override and player_override.get("contract_years"):
-                contract_years = int(player_override["contract_years"])
-                confidence = "override"
-                reason = player_override.get("note", "Manual override.")
+            if confidence == "override":
                 overridden += 1
-            else:
-                contract_record, match_type = match_player_contract(player, contracts)
-                if contract_record:
-                    reported_years = infer_contract_years_from_dates(
-                        contract_record.get("signed"), contract_record.get("expiration")
-                    )
-                    if reported_years:
-                        contract_years = reported_years
-                        if match_type == "exact":
-                            confidence = "reported"
-                            reported += 1
-                        else:
-                            confidence = "reported_fuzzy_match"
-                            fuzzy += 1
-                        reason = "Published signed/expiration dates from Capology."
-                    elif move["is_loan"]:
-                        contract_years = 1
-                        confidence = "reported_loan"
-                        reason = "Loan deal treated as one-year amortization."
-                        reported += 1
-
-            if contract_years is None:
-                contract_years = infer_contract_years_from_profile(age, position, fee, move["is_loan"])
+            elif confidence == "reported":
+                reported += 1
+            elif confidence == "reported_loan":
+                reported += 1
+            elif confidence == "reported_fuzzy_match":
+                fuzzy += 1
+            elif confidence == "assumed_profile":
                 assumed += 1
 
-            if confidence in {"reported", "reported_fuzzy_match", "reported_loan"}:
+            if confidence in {"reported", "reported_fuzzy_match", "reported_loan", "override"}:
                 total_reported += 1
 
             club_in_rows.append(
                 {
-                    "player": player,
-                    "fee": int(round(fee)),
+                    "player": move["player"],
+                    "fee": int(round(move["fee"])),
                     "contract_years": int(contract_years),
                     "contract_confidence": confidence,
                     "contract_note": reason,
-                    "age": age,
-                    "position": position,
+                    "annual_amortization": annual_amortization,
+                    "annual_wage_gbp": annual_wage,
+                    "age": move["age"],
+                    "position": move["position"],
                     "is_loan": move["is_loan"],
                     "window": move["window"],
+                    "season": int(move.get("season") or season_year),
                     "source": move["source"],
                 }
             )
@@ -509,6 +586,56 @@ def build_dataset(output_path: Path, season_year: int, overrides_path: Path) -> 
                 {
                     "player": move["player"],
                     "fee": int(round(move["fee"])),
+                    "is_loan": move["is_loan"],
+                    "window": move["window"],
+                    "source": move["source"],
+                }
+            )
+
+        amortization_assets: List[dict] = []
+        annual_amortization_total = 0
+        annual_amortization_current = 0
+        annual_amortization_carryover = 0
+
+        for move in all_incoming:
+            source_season = int(move.get("season") or 0)
+            if source_season <= 0 or source_season > season_year:
+                continue
+            if (move.get("fee") or 0) <= 0:
+                continue
+            if player_left_club_after_incoming(move["player"], source_season, outgoing_by_player, season_year):
+                continue
+
+            terms = resolve_contract_terms(move, club, contracts, overrides)
+            contract_years = int(terms["contract_years"])
+            years_elapsed = season_year - source_season
+            if years_elapsed < 0 or years_elapsed >= contract_years:
+                continue
+
+            annual_amortization = int(round((move["fee"] or 0) / max(1, contract_years)))
+            years_remaining = max(1, contract_years - years_elapsed)
+            annual_wage = terms["annual_wage_gbp"]
+            total_annual_cost = annual_amortization + (annual_wage or 0)
+
+            annual_amortization_total += annual_amortization
+            if source_season == season_year:
+                annual_amortization_current += annual_amortization
+            else:
+                annual_amortization_carryover += annual_amortization
+
+            amortization_assets.append(
+                {
+                    "player": move["player"],
+                    "source_season": source_season,
+                    "fee": int(round(move["fee"])),
+                    "contract_years": contract_years,
+                    "years_elapsed": years_elapsed,
+                    "years_remaining": years_remaining,
+                    "annual_amortization": annual_amortization,
+                    "annual_wage_gbp": annual_wage,
+                    "annual_total_cost": total_annual_cost,
+                    "contract_confidence": terms["contract_confidence"],
+                    "contract_note": terms["contract_note"],
                     "is_loan": move["is_loan"],
                     "window": move["window"],
                     "source": move["source"],
@@ -526,6 +653,17 @@ def build_dataset(output_path: Path, season_year: int, overrides_path: Path) -> 
                 "wage_source": "capology_payrolls",
                 "transfers_in": sorted(club_in_rows, key=lambda row: row["fee"], reverse=True),
                 "transfers_out": sorted(club_out_rows, key=lambda row: row["fee"], reverse=True),
+                "amortization_assets": sorted(
+                    amortization_assets,
+                    key=lambda row: (row["annual_amortization"], row["fee"]),
+                    reverse=True,
+                ),
+                "amortization_summary": {
+                    "annual_current_window": annual_amortization_current,
+                    "annual_prior_windows": annual_amortization_carryover,
+                    "annual_total_assets": annual_amortization_total,
+                    "active_asset_count": len(amortization_assets),
+                },
                 "confidence_summary": {
                     "reported_contracts": reported,
                     "fuzzy_reported_contracts": fuzzy,
@@ -539,6 +677,12 @@ def build_dataset(output_path: Path, season_year: int, overrides_path: Path) -> 
     reported_pct = 0.0
     if total_incoming > 0:
         reported_pct = (total_reported / total_incoming) * 100.0
+    loaded_seasons_text = "none"
+    if fetched_transfer_seasons:
+        loaded_seasons_text = (
+            f"{min(fetched_transfer_seasons)}-{max(fetched_transfer_seasons)} "
+            f"({len(fetched_transfer_seasons)} season files)"
+        )
 
     payload = {
         "last_updated": fetched_at.strftime("%Y-%m-%d"),
@@ -553,12 +697,14 @@ def build_dataset(output_path: Path, season_year: int, overrides_path: Path) -> 
             "league": PL_LEAGUE,
             "season": SEASON_LABEL,
             "season_year": season_year,
+            "transfer_history_start_year": transfer_start_year,
+            "transfer_history_end_year": season_year,
         },
         "methodology": {
             "summary": (
-                "Total spend = wage bill + amortized transfer-in fees - transfer-out revenue. "
-                "Contract length is taken from published signed/expiration dates when available; "
-                "otherwise profile-based assumptions are used."
+                "Total spend = wage bill + active annual transfer amortization - transfer-out revenue. "
+                "Active amortization includes current-window deals plus prior-window signings still "
+                "within their inferred contract term and not sold."
             ),
             "contract_length_fallback": (
                 "Assumed contract years by profile: younger/high-fee signings skew longer terms; "
@@ -569,6 +715,7 @@ def build_dataset(output_path: Path, season_year: int, overrides_path: Path) -> 
                 "Capology values are estimates and may differ from official club filings.",
                 "Transfer fees are sourced from a public Transfermarkt-derived dataset mirror.",
                 "Outgoing transfers are treated as immediate revenue offset in net transfer cost.",
+                f"Transfer history seasons loaded: {loaded_seasons_text}.",
             ],
         },
         "sources": [
@@ -587,7 +734,7 @@ def build_dataset(output_path: Path, season_year: int, overrides_path: Path) -> 
             {
                 "id": "transfermarkt_data_github",
                 "name": "Transfermarkt Data (GitHub mirror)",
-                "url": TRANSFERS_URL.format(season=season_year),
+                "url": f"https://raw.githubusercontent.com/eordo/transfermarkt-data/master/premier_league/{transfer_start_year}.csv .. {season_year}.csv",
                 "type": "transfers",
             },
         ],
@@ -604,6 +751,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Update Premier League spend data")
     parser.add_argument("--season-year", type=int, default=2025, help="Transfer CSV season year (default: 2025)")
     parser.add_argument(
+        "--history-years",
+        type=int,
+        default=6,
+        help="How many prior seasons to include for active amortization carryover (default: 6)",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("data/teams.json"),
@@ -617,7 +770,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    build_dataset(output_path=args.output, season_year=args.season_year, overrides_path=args.overrides)
+    build_dataset(
+        output_path=args.output,
+        season_year=args.season_year,
+        overrides_path=args.overrides,
+        history_years=args.history_years,
+    )
 
 
 if __name__ == "__main__":
