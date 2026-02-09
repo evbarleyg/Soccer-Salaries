@@ -13,6 +13,7 @@ const state = {
   filtered: [],
   selected: new Set(),
   clubFilter: new Set(),
+  clubFilterInitialized: false,
   clubFilterSearch: "",
   detailClubId: null,
   currency: "GBP",
@@ -59,7 +60,7 @@ const elements = {
   clubFilterMenu: document.getElementById("clubFilterMenu"),
   clubFilterSearch: document.getElementById("clubFilterSearch"),
   clubFilterAllBtn: document.getElementById("clubFilterAllBtn"),
-  clubFilterVisibleBtn: document.getElementById("clubFilterVisibleBtn"),
+  clubFilterClearBtn: document.getElementById("clubFilterClearBtn"),
   clubFilterOptions: document.getElementById("clubFilterOptions"),
   searchInput: document.getElementById("searchInput"),
   lastUpdated: document.getElementById("lastUpdated"),
@@ -187,7 +188,7 @@ const applyFilters = () => {
   state.filtered = state.raw.clubs
     .filter((club) => (state.league === "All" ? true : club.league === state.league))
     .filter((club) => (state.season === "All" ? true : club.season === state.season))
-    .filter((club) => (state.clubFilter.size ? state.clubFilter.has(club.team_id) : true))
+    .filter((club) => state.clubFilter.has(club.team_id))
     .filter((club) => club.team_name.toLowerCase().includes(state.search))
     .map((club) => {
       const derived = deriveClub(club, fx);
@@ -363,24 +364,44 @@ const scopedClubs = () =>
     .filter((club) => (state.season === "All" ? true : club.season === state.season))
     .sort((a, b) => a.team_name.localeCompare(b.team_name, undefined, { sensitivity: "base" }));
 
-const renderClubFilter = () => {
+const syncClubFilterSelection = ({ forceAll = false } = {}) => {
   const clubs = scopedClubs();
   const scopedIds = new Set(clubs.map((club) => club.team_id));
 
-  state.clubFilter.forEach((id) => {
-    if (!scopedIds.has(id)) {
-      state.clubFilter.delete(id);
-    }
-  });
+  if (forceAll || !state.clubFilterInitialized) {
+    state.clubFilter = new Set(scopedIds);
+    state.clubFilterInitialized = true;
+    return clubs;
+  }
+
+  const previousCount = state.clubFilter.size;
+  const next = new Set([...state.clubFilter].filter((id) => scopedIds.has(id)));
+
+  if (previousCount > 0 && next.size === 0 && scopedIds.size > 0) {
+    state.clubFilter = new Set(scopedIds);
+  } else {
+    state.clubFilter = next;
+  }
+
+  return clubs;
+};
+
+const renderClubFilter = () => {
+  const clubs = syncClubFilterSelection();
 
   const search = state.clubFilterSearch.trim().toLowerCase();
   const visible = clubs.filter((club) => club.team_name.toLowerCase().includes(search));
   const selectedCount = state.clubFilter.size;
   const scopedCount = clubs.length;
+  const allSelected = scopedCount > 0 && selectedCount === scopedCount;
 
   elements.clubFilterTrigger.textContent =
-    selectedCount === 0
+    scopedCount === 0
+      ? "No clubs available"
+      : allSelected
       ? `All clubs (${scopedCount})`
+      : selectedCount === 0
+        ? "No clubs selected"
       : selectedCount === 1
         ? `${clubs.find((club) => state.clubFilter.has(club.team_id))?.team_name || "1 club"}`
         : `${selectedCount} clubs selected`;
@@ -878,6 +899,7 @@ const populateFilters = () => {
     state.league = "All";
   }
 
+  syncClubFilterSelection({ forceAll: true });
   elements.sortSelect.value = state.sortBy;
   renderClubFilter();
 };
@@ -970,26 +992,24 @@ const bindEvents = () => {
   });
 
   elements.clubFilterAllBtn.addEventListener("click", () => {
-    state.clubFilter.clear();
+    state.clubFilter = new Set(scopedClubs().map((club) => club.team_id));
     render();
   });
 
-  elements.clubFilterVisibleBtn.addEventListener("click", () => {
-    const search = state.clubFilterSearch.trim().toLowerCase();
-    const visibleIds = scopedClubs()
-      .filter((club) => club.team_name.toLowerCase().includes(search))
-      .map((club) => club.team_id);
-    state.clubFilter = new Set(visibleIds);
+  elements.clubFilterClearBtn.addEventListener("click", () => {
+    state.clubFilter.clear();
     render();
   });
 
   elements.leagueSelect.addEventListener("change", (event) => {
     state.league = event.target.value;
+    syncClubFilterSelection();
     render();
   });
 
   elements.seasonSelect.addEventListener("change", (event) => {
     state.season = event.target.value;
+    syncClubFilterSelection();
     render();
   });
 
