@@ -246,6 +246,66 @@ h1 {
   background: #ecf3ff;
 }
 
+.overview-readme {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.overview-summary {
+  color: var(--muted);
+  max-width: 860px;
+}
+
+.readme-toggle {
+  justify-self: start;
+}
+
+.readme-body {
+  border: 1px solid #d4e1ff;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fcfdff 0%, #f4f8ff 100%);
+  padding: 12px;
+}
+
+.readme-body[hidden] {
+  display: none;
+}
+
+.readme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.readme-card {
+  border: 1px solid #d6e2ff;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.readme-card h3 {
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+  color: #2b437f;
+}
+
+.readme-card p,
+.readme-card li {
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.readme-card ul,
+.readme-card ol {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
 .mini-btn {
   border: 1px solid #bfd4ff;
   background: #fff;
@@ -1265,6 +1325,10 @@ tbody td:nth-last-child(2) {
 
   .landing-head h2 {
     align-items: flex-start;
+  }
+
+  .readme-grid {
+    grid-template-columns: 1fr;
   }
 
   .help-pop {

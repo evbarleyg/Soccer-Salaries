@@ -1,5 +1,6 @@
 const DATA_URL = "./data/teams.json";
 const FILTERS_COLLAPSED_KEY = "true_spend_filters_collapsed";
+const OVERVIEW_README_OPEN_KEY = "true_spend_overview_readme_open";
 
 const HIGH_CONFIDENCE = new Set([
   "reported",
@@ -50,6 +51,8 @@ const elements = {
   overviewHelpBtn: document.getElementById("overviewHelpBtn"),
   overviewHelpTooltip: document.getElementById("overviewHelpTooltip"),
   overviewHelpClose: document.getElementById("overviewHelpClose"),
+  overviewReadmeToggle: document.getElementById("overviewReadmeToggle"),
+  overviewReadmeBody: document.getElementById("overviewReadmeBody"),
   leagueControl: document.getElementById("leagueControl"),
   leagueSelect: document.getElementById("leagueSelect"),
   seasonSelect: document.getElementById("seasonSelect"),
@@ -374,6 +377,13 @@ const setFiltersCollapsed = (collapsed) => {
     toggleClubFilterMenu(false);
   }
   localStorage.setItem(FILTERS_COLLAPSED_KEY, collapsed ? "1" : "0");
+};
+
+const setOverviewReadmeOpen = (open) => {
+  elements.overviewReadmeBody.toggleAttribute("hidden", !open);
+  elements.overviewReadmeToggle.setAttribute("aria-expanded", String(open));
+  elements.overviewReadmeToggle.textContent = open ? "Hide detail" : "Click for more detail";
+  localStorage.setItem(OVERVIEW_README_OPEN_KEY, open ? "1" : "0");
 };
 
 const scopedClubs = () =>
@@ -975,7 +985,9 @@ const loadData = async () => {
 
 const bindEvents = () => {
   const savedFiltersCollapsed = localStorage.getItem(FILTERS_COLLAPSED_KEY) === "1";
+  const savedReadmeOpen = localStorage.getItem(OVERVIEW_README_OPEN_KEY) === "1";
   setFiltersCollapsed(savedFiltersCollapsed);
+  setOverviewReadmeOpen(savedReadmeOpen);
 
   elements.toggleFiltersBtn.addEventListener("click", () => {
     const collapsed = elements.filtersPanel.classList.contains("collapsed");
@@ -1004,6 +1016,11 @@ const bindEvents = () => {
     event.stopPropagation();
     overviewHelpPinned = false;
     hideOverviewHelp(true);
+  });
+
+  elements.overviewReadmeToggle.addEventListener("click", () => {
+    const isOpen = !elements.overviewReadmeBody.hasAttribute("hidden");
+    setOverviewReadmeOpen(!isOpen);
   });
 
   elements.clubFilterTrigger.addEventListener("click", () => {
