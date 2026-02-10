@@ -9,6 +9,7 @@ on:
       - index.html
       - app.js
       - styles.css
+      - favicon.ico
       - favicon.svg
       - site.webmanifest
       - preview-card.svg
@@ -39,7 +40,7 @@ jobs:
         run: |
           mkdir -p _site
           cp index.html app.js styles.css _site/
-          cp favicon.svg site.webmanifest preview-card.svg _site/
+          cp favicon.ico favicon.svg site.webmanifest preview-card.svg _site/
           cp -R data _site/
           touch _site/.nojekyll
 
