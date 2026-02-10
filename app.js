@@ -1,6 +1,7 @@
 const DATA_URL = "./data/teams.json";
 const FILTERS_COLLAPSED_KEY = "true_spend_filters_collapsed";
 const OVERVIEW_README_OPEN_KEY = "true_spend_overview_readme_open";
+const THEME_KEY = "true_spend_theme";
 
 const HIGH_CONFIDENCE = new Set([
   "reported",
@@ -71,6 +72,7 @@ const elements = {
   clubFilterClearBtn: document.getElementById("clubFilterClearBtn"),
   clubFilterOptions: document.getElementById("clubFilterOptions"),
   lastUpdated: document.getElementById("lastUpdated"),
+  themeToggle: document.getElementById("themeToggle"),
   refreshBtn: document.getElementById("refreshBtn"),
   trendHint: document.getElementById("trendHint"),
   transferInHeader: document.getElementById("transferInHeader"),
@@ -392,6 +394,27 @@ const setOverviewReadmeOpen = (open) => {
   elements.overviewReadmeToggle.setAttribute("aria-expanded", String(open));
   elements.overviewReadmeToggle.textContent = open ? "Hide detail" : "Click for more detail";
   localStorage.setItem(OVERVIEW_README_OPEN_KEY, open ? "1" : "0");
+};
+
+const applyTheme = (theme) => {
+  const normalized = theme === "dark" ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", normalized);
+  elements.themeToggle.textContent = normalized === "dark" ? "Day Mode" : "Night Mode";
+  elements.themeToggle.setAttribute("aria-pressed", String(normalized === "dark"));
+  const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeColorMeta) {
+    themeColorMeta.setAttribute("content", normalized === "dark" ? "#0d1426" : "#f4f0ea");
+  }
+};
+
+const initializeTheme = () => {
+  const storedTheme = localStorage.getItem(THEME_KEY);
+  if (storedTheme === "light" || storedTheme === "dark") {
+    applyTheme(storedTheme);
+    return;
+  }
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  applyTheme(prefersDark ? "dark" : "light");
 };
 
 const scopedClubs = () =>
@@ -821,8 +844,9 @@ const renderTable = () => {
       const checked = state.selected.has(club.team_id);
       const coverageClassName = coverageClass(club.contractCoverage);
       const isDetail = state.detailClubId === club.team_id;
+      const detailClassName = isDetail ? "is-detail-row" : "";
       return `
-        <tr data-hover-id="${club.team_id}" ${isDetail ? 'style="background:#fff7eb;"' : ""}>
+        <tr class="${detailClassName}" data-hover-id="${club.team_id}">
           <td>
             <label class="checkbox">
               <input type="checkbox" data-id="${club.team_id}" ${checked ? "checked" : ""} />
@@ -854,9 +878,10 @@ const renderMobileCards = () => {
       const checked = state.selected.has(club.team_id);
       const coverageClassName = coverageClass(club.contractCoverage);
       const isDetail = state.detailClubId === club.team_id;
+      const detailClassName = isDetail ? "is-detail-card" : "";
 
       return `
-        <article class="mobile-club-card" ${isDetail ? 'style="border-color:#e3bca4;"' : ""}>
+        <article class="mobile-club-card ${detailClassName}">
           <div class="mobile-club-head">
             <h4>${club.team_name}</h4>
             <label class="checkbox">
@@ -1027,12 +1052,20 @@ const loadData = async () => {
 const bindEvents = () => {
   const savedFiltersCollapsed = localStorage.getItem(FILTERS_COLLAPSED_KEY) === "1";
   const savedReadmeOpen = localStorage.getItem(OVERVIEW_README_OPEN_KEY) === "1";
+  initializeTheme();
   setFiltersCollapsed(savedFiltersCollapsed);
   setOverviewReadmeOpen(savedReadmeOpen);
 
   elements.toggleFiltersBtn.addEventListener("click", () => {
     const collapsed = elements.filtersPanel.classList.contains("collapsed");
     setFiltersCollapsed(!collapsed);
+  });
+
+  elements.themeToggle.addEventListener("click", () => {
+    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+    const nextTheme = isDark ? "light" : "dark";
+    applyTheme(nextTheme);
+    localStorage.setItem(THEME_KEY, nextTheme);
   });
 
   elements.overviewHelpBtn.addEventListener("mouseenter", () => {
