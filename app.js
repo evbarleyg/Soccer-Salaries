@@ -56,6 +56,8 @@ const elements = {
   overviewHelpClose: document.getElementById("overviewHelpClose"),
   overviewReadmeToggle: document.getElementById("overviewReadmeToggle"),
   overviewReadmeBody: document.getElementById("overviewReadmeBody"),
+  leagueSpotlight: document.getElementById("leagueSpotlight"),
+  leagueSpotlightButtons: document.getElementById("leagueSpotlightButtons"),
   leagueControl: document.getElementById("leagueControl"),
   leagueSelect: document.getElementById("leagueSelect"),
   seasonSelect: document.getElementById("seasonSelect"),
@@ -982,18 +984,43 @@ const renderMethodology = () => {
     .join("");
 };
 
+const renderLeagueSpotlight = () => {
+  const leagues = ["All", ...new Set(state.raw.clubs.map((club) => club.league))];
+  const showSpotlight = leagues.length > 2;
+  if (!showSpotlight) {
+    elements.leagueSpotlight.setAttribute("hidden", "");
+    return;
+  }
+
+  elements.leagueSpotlight.removeAttribute("hidden");
+  elements.leagueSpotlightButtons.innerHTML = leagues
+    .map((league) => {
+      const isActive = state.league === league;
+      const label = league === "All" ? "All Leagues" : league;
+      return `
+        <button
+          class="league-chip ${isActive ? "active" : ""}"
+          data-league-chip="${escapeHtml(league)}"
+          type="button"
+          aria-pressed="${isActive ? "true" : "false"}"
+        >
+          ${escapeHtml(label)}
+        </button>
+      `;
+    })
+    .join("");
+};
+
 const populateFilters = () => {
   const leagues = ["All", ...new Set(state.raw.clubs.map((club) => club.league))];
   const seasons = ["All", ...new Set(state.raw.clubs.map((club) => club.season))];
 
   elements.leagueSelect.innerHTML = leagues.map((league) => `<option value="${league}">${league}</option>`).join("");
   elements.seasonSelect.innerHTML = seasons.map((season) => `<option value="${season}">${season}</option>`).join("");
-
-  const onlyOneLeague = leagues.length <= 2;
-  elements.leagueControl.style.display = onlyOneLeague ? "none" : "flex";
-  if (onlyOneLeague) {
-    state.league = "All";
-  }
+  if (!leagues.includes(state.league)) state.league = "All";
+  elements.leagueSelect.value = state.league;
+  elements.leagueControl.style.display = "none";
+  renderLeagueSpotlight();
 
   syncClubFilterSelection({ forceAll: true });
   elements.sortSelect.value = state.sortBy;
@@ -1035,6 +1062,7 @@ const render = () => {
   renderDetail();
   renderCompare();
   renderMethodology();
+  renderLeagueSpotlight();
 };
 
 const loadData = async () => {
@@ -1066,6 +1094,17 @@ const bindEvents = () => {
     const nextTheme = isDark ? "light" : "dark";
     applyTheme(nextTheme);
     localStorage.setItem(THEME_KEY, nextTheme);
+  });
+
+  elements.leagueSpotlightButtons.addEventListener("click", (event) => {
+    const target = event.target.closest("[data-league-chip]");
+    if (!target) return;
+    const league = target.dataset.leagueChip;
+    if (!league || league === state.league) return;
+    state.league = league;
+    elements.leagueSelect.value = state.league;
+    syncClubFilterSelection();
+    render();
   });
 
   elements.overviewHelpBtn.addEventListener("mouseenter", () => {

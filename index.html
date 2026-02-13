@@ -41,9 +41,9 @@
       <header class="top">
         <div>
           <p class="eyebrow">True Spend Index</p>
-          <h1>Roster Cost, Properly Counted.</h1>
+          <h1>Roster Cost, Properly Counted Across Leagues.</h1>
           <p class="subtitle">
-            Compare Premier League and LaLiga clubs using amortized transfer spend, transfer-out revenue, and wages in one dashboard.
+            Compare clubs across multiple leagues with amortized transfer spend, transfer-out revenue, and wages in one dashboard.
           </p>
         </div>
         <div class="meta">
@@ -64,6 +64,14 @@
         <button class="quick-link" data-target="methodPanel" type="button">Method</button>
       </nav>
 
+      <section class="league-spotlight" id="leagueSpotlight" hidden>
+        <div class="league-spotlight-copy">
+          <p class="league-spotlight-label">League Scope</p>
+          <p class="league-spotlight-sub">High-profile toggle for multi-league comparison.</p>
+        </div>
+        <div class="league-spotlight-buttons" id="leagueSpotlightButtons" role="group" aria-label="League scope toggle"></div>
+      </section>
+
       <section class="panel landing" id="landingOverview">
         <div class="landing-head">
           <div>
@@ -82,7 +90,7 @@
                 <div class="help-pop" id="overviewHelpTooltip" aria-hidden="true">
                   <p class="help-pop-title">How To Use This Dashboard</p>
                   <ol class="help-pop-list">
-                    <li>Open filters and set clubs, season, and spend view.</li>
+                    <li>Use the top league toggle, then set clubs, season, and spend view.</li>
                     <li>Sort the club table columns to rank teams quickly.</li>
                     <li>Use Player Drilldown to inspect incoming and outgoing deals.</li>
                     <li>Use Data Quality table to check coverage and assumption pressure.</li>
@@ -128,7 +136,7 @@
                     <h3>How To Use</h3>
                     <ol>
                       <li>Select clubs from the multi-select dropdown and pick season/spend view.</li>
-                      <li>Sort columns in Club Spend Table to rank key spend drivers.</li>
+                      <li>Sort columns in Multi-League Club Spend Table to rank key spend drivers.</li>
                       <li>Use Player Drilldown to inspect individual transfer assumptions and confidence.</li>
                       <li>Review Data Quality to understand where assumptions may affect conclusions.</li>
                     </ol>
@@ -144,7 +152,7 @@
         <div class="controls-head">
           <div>
             <p class="controls-title">Filters</p>
-            <p class="controls-subtitle">Refine club scope in one place, plus season, sorting, and spend view.</p>
+            <p class="controls-subtitle">Use top league toggle, then refine club scope, season, sorting, and spend view.</p>
           </div>
           <button class="ghost ghost-small" id="toggleFiltersBtn" type="button" aria-expanded="true" aria-controls="filtersBody">
             Collapse Filters
@@ -216,7 +224,7 @@
 
       <section class="panel trend" id="trendSection">
         <div class="panel-head">
-          <h2>Net Spend by Club</h2>
+          <h2>Net Spend by Club (Multi-League)</h2>
           <p id="trendHint">Solid bars show net transfer cost. Positive is spend, negative is transfer revenue surplus.</p>
         </div>
         <div class="trend-bars" id="spendChart"></div>
@@ -225,7 +233,7 @@
       <section class="grid" id="clubsSection">
         <div class="panel">
           <div class="panel-head">
-            <h2>Club Spend Table</h2>
+            <h2>Multi-League Club Spend Table</h2>
             <p>Select up to 4 clubs to compare in detail. Click any column header to sort. On mobile this becomes card view.</p>
           </div>
           <div class="mobile-club-cards" id="mobileClubCards"></div>

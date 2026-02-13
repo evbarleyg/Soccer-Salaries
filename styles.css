@@ -178,6 +178,69 @@ h1 {
   background: #edf4ff;
 }
 
+.league-spotlight {
+  margin-bottom: 14px;
+  border-radius: 16px;
+  border: 1px solid #d5e3ff;
+  background: linear-gradient(130deg, #f7fbff 0%, #eef5ff 100%);
+  box-shadow: 0 18px 38px -30px rgba(10, 43, 130, 0.4);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.league-spotlight-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.league-spotlight-label {
+  font-family: var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.74rem;
+  color: #4260a3;
+}
+
+.league-spotlight-sub {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.league-spotlight-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.league-chip {
+  border: 1px solid #c1d5ff;
+  background: #ffffff;
+  color: var(--ink-soft);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.9rem;
+  font-family: var(--sans);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.league-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+  background: #edf4ff;
+}
+
+.league-chip.active {
+  border-color: var(--accent);
+  color: #ffffff;
+  background: linear-gradient(135deg, #2a63ea 0%, #3b7cff 100%);
+  box-shadow: 0 8px 20px -14px rgba(31, 79, 210, 0.9);
+}
+
 .landing {
   margin-bottom: 16px;
 }
@@ -1329,6 +1392,34 @@ tbody td:nth-last-child(2) {
   background: #1f2f54;
 }
 
+:root[data-theme="dark"] .league-spotlight {
+  border-color: #2d426d;
+  background: linear-gradient(130deg, #132240 0%, #182b4f 100%);
+  box-shadow: 0 20px 40px -32px rgba(0, 0, 0, 0.9);
+}
+
+:root[data-theme="dark"] .league-spotlight-label {
+  color: #a3bbea;
+}
+
+:root[data-theme="dark"] .league-chip {
+  border-color: #355089;
+  background: #121f3a;
+  color: #d7e5ff;
+}
+
+:root[data-theme="dark"] .league-chip:hover {
+  border-color: #7ca5ff;
+  color: #ebf2ff;
+  background: #1f3158;
+}
+
+:root[data-theme="dark"] .league-chip.active {
+  border-color: #7ca5ff;
+  background: linear-gradient(135deg, #325fbf 0%, #4a7de0 100%);
+  color: #ffffff;
+}
+
 :root[data-theme="dark"] .help-trigger {
   border-color: #355089;
   background: #192744;
@@ -1542,6 +1633,15 @@ tbody td:nth-last-child(2) {
   .period-badge {
     text-align: left;
   }
+
+  .league-spotlight {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .league-spotlight-buttons {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1588,6 +1688,11 @@ tbody td:nth-last-child(2) {
   .quick-link {
     font-size: 0.72rem;
     padding: 6px 10px;
+  }
+
+  .league-chip {
+    font-size: 0.82rem;
+    padding: 7px 12px;
   }
 
   .landing-head h2 {
