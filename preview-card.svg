@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
   <title id="title">True Spend Index</title>
-  <desc id="desc">Premier League 2025 slash 26 spend dashboard using wages plus amortized transfers minus transfer out revenue.</desc>
+  <desc id="desc">Premier League and LaLiga 2025 slash 26 spend dashboard using wages plus amortized transfers minus transfer out revenue.</desc>
   <defs>
     <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
       <stop offset="0%" stop-color="#f7efe4" />
@@ -25,7 +25,7 @@
       TRUE SPEND INDEX
     </text>
     <text x="0" y="86" font-family="'Space Grotesk', 'Avenir Next', sans-serif" font-weight="700" font-size="66" fill="#1f1b16">
-      Premier League Spend
+      Premier League + LaLiga Spend
     </text>
     <text x="0" y="154" font-family="'Space Grotesk', 'Avenir Next', sans-serif" font-weight="700" font-size="66" fill="#1f1b16">
       Wages + Amortized Net Transfers

@@ -1,6 +1,6 @@
-# True Spend: Premier League Dashboard
+# True Spend: Premier League + LaLiga Dashboard
 
-Static dashboard for comparing Premier League squad spend using:
+Static dashboard for comparing Premier League and LaLiga squad spend using:
 
 - Wage bill (estimated gross annual payroll)
 - Active annual amortization (current + prior-window incomings still on books)
@@ -9,9 +9,13 @@ Static dashboard for comparing Premier League squad spend using:
 
 ## Data Sources
 
-- Capology payrolls page for club wage bills: https://www.capology.com/uk/premier-league/payrolls/
+- Capology payroll pages for club wage bills:
+  - Premier League: https://www.capology.com/uk/premier-league/payrolls/
+  - LaLiga: https://www.capology.com/es/la-liga/payrolls/
 - Capology club salary pages for signed/expiration dates: https://www.capology.com/club/arsenal/salaries/
-- Transfermarkt-derived transfer dataset (GitHub mirror), multi-season history: https://raw.githubusercontent.com/eordo/transfermarkt-data/master/premier_league/2025.csv
+- Transfermarkt-derived transfer datasets (GitHub mirror), multi-season history:
+  - Premier League: https://raw.githubusercontent.com/eordo/transfermarkt-data/master/premier_league/2025.csv
+  - LaLiga: https://raw.githubusercontent.com/eordo/transfermarkt-data/master/laliga/2025.csv
 
 ## Method
 

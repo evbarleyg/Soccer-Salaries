@@ -1,4 +1,4 @@
-name: Refresh Premier League Data
+name: Refresh League Data
 
 on:
   workflow_dispatch:
@@ -34,5 +34,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/teams.json
-          git commit -m "chore: refresh PL spend data"
+          git commit -m "chore: refresh league spend data"
           git push

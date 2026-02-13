@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Build Premier League spend dataset from free web sources.
+"""Build multi-league spend dataset from free web sources.
 
 Sources:
-- Capology PL payrolls page (club annual wage bills)
+- Capology league payrolls pages (club annual wage bills)
 - Capology club salary pages (published signed/expiration for contract terms)
 - Transfermarkt-derived open CSV mirror (player-level in/out transfer fees)
 """
@@ -22,12 +22,25 @@ import unicodedata
 from pathlib import Path
 from typing import Dict, List, Optional
 
-PAYROLL_URL = "https://www.capology.com/uk/premier-league/payrolls/"
 CLUB_SALARIES_URL = "https://www.capology.com/club/{slug}/salaries/"
-TRANSFERS_URL = "https://raw.githubusercontent.com/eordo/transfermarkt-data/master/premier_league/{season}.csv"
+TRANSFERS_URL = "https://raw.githubusercontent.com/eordo/transfermarkt-data/master/{league_path}/{season}.csv"
 
-PL_LEAGUE = "Premier League"
-SEASON_LABEL = "2025/26"
+LEAGUES = [
+    {
+        "id": "premier_league",
+        "label": "Premier League",
+        "payroll_url": "https://www.capology.com/uk/premier-league/payrolls/",
+        "transfer_path": "premier_league",
+        "transfer_names": {"premier league"},
+    },
+    {
+        "id": "laliga",
+        "label": "LaLiga",
+        "payroll_url": "https://www.capology.com/es/la-liga/payrolls/",
+        "transfer_path": "laliga",
+        "transfer_names": {"laliga", "la liga"},
+    },
+]
 
 CLUB_ALIASES = {
     "afc bournemouth": "Bournemouth",
@@ -50,6 +63,23 @@ CLUB_ALIASES = {
     "tottenham hotspur": "Tottenham",
     "west ham united": "West Ham",
     "wolverhampton wanderers": "Wolverhampton",
+    # LaLiga aliases
+    "athletic bilbao": "Athletic Club",
+    "atletico de madrid": "Atletico Madrid",
+    "ca osasuna": "Osasuna",
+    "celta de vigo": "Celta Vigo",
+    "deportivo alaves": "Alaves",
+    "elche cf": "Elche",
+    "fc barcelona": "Barcelona",
+    "getafe cf": "Getafe",
+    "girona fc": "Girona",
+    "levante ud": "Levante",
+    "rcd espanyol barcelona": "Espanyol",
+    "rcd mallorca": "Mallorca",
+    "real betis balompie": "Real Betis",
+    "sevilla fc": "Sevilla",
+    "valencia cf": "Valencia",
+    "villarreal cf": "Villarreal",
 }
 
 
@@ -74,12 +104,14 @@ def fetch_text(url: str) -> str:
         url,
     ]
     errors: List[str] = []
-    for _ in range(3):
+    for attempt in range(5):
         completed = subprocess.run(cmd, capture_output=True, text=True)
         if completed.returncode == 0:
             return completed.stdout
-        errors.append(completed.stderr.strip() or f"curl exit code {completed.returncode}")
-        time.sleep(1)
+        err = completed.stderr.strip() or f"curl exit code {completed.returncode}"
+        errors.append(err)
+        wait_seconds = (2 ** attempt) if "429" in err else 1
+        time.sleep(wait_seconds)
     raise RuntimeError(f"Unable to fetch {url}: {' | '.join(errors)}")
 
 
@@ -334,12 +366,19 @@ def normalize_club(raw_club: str, canonical_map: Dict[str, str]) -> Optional[str
     return None
 
 
-def parse_transfers_csv(csv_text: str, season_year: int, canonical_map: Dict[str, str]) -> Dict[str, dict]:
+def parse_transfers_csv(
+    csv_text: str,
+    season_year: int,
+    canonical_map: Dict[str, str],
+    transfer_names: set[str],
+) -> Dict[str, dict]:
     by_club: Dict[str, dict] = {}
     reader = csv.DictReader(csv_text.splitlines())
+    allowed_names = {name.lower() for name in transfer_names}
 
     for row in reader:
-        if row.get("league") != PL_LEAGUE:
+        row_league = (row.get("league") or "").strip().lower()
+        if row_league not in allowed_names:
             continue
         row_season = safe_int(row.get("season") or "")
         if row_season != season_year:
@@ -479,210 +518,259 @@ def load_contract_overrides(path: Path) -> Dict[str, dict]:
 
 def build_dataset(output_path: Path, season_year: int, overrides_path: Path, history_years: int) -> None:
     fetched_at = dt.datetime.now(dt.timezone.utc)
-
-    payroll_page = fetch_text(PAYROLL_URL)
-    payroll_rows = parse_capology_payrolls(payroll_page)
-    if not payroll_rows:
-        raise RuntimeError("Could not parse Capology payroll rows.")
-
-    clubs = sorted({row["club"] for row in payroll_rows})
-    canonical_map = {normalize_text(club): club for club in clubs}
-
-    transfer_rows: Dict[str, dict] = {}
     transfer_start_year = max(1992, season_year - max(0, history_years))
-    fetched_transfer_seasons: List[int] = []
-    for transfer_year in range(transfer_start_year, season_year + 1):
-        try:
-            transfer_csv = fetch_text(TRANSFERS_URL.format(season=transfer_year))
-            season_rows = parse_transfers_csv(transfer_csv, season_year=transfer_year, canonical_map=canonical_map)
-            merge_transfer_rows(transfer_rows, season_rows)
-            fetched_transfer_seasons.append(transfer_year)
-        except RuntimeError as exc:
-            print(f"Warning: skipping transfer season {transfer_year}: {exc}")
-
+    season_label = f"{season_year}/{str(season_year + 1)[-2:]}"
     overrides = load_contract_overrides(overrides_path)
 
-    salary_contracts: Dict[str, Dict[str, dict]] = {}
-    wage_by_club: Dict[str, float] = {}
-    slug_by_club: Dict[str, str] = {}
-
-    for row in payroll_rows:
-        club = row["club"]
-        wage_by_club[club] = row["annual_gross_gbp"]
-        slug_by_club[club] = row["slug"]
-
-    for club in clubs:
-        slug = slug_by_club[club]
-        salary_page = fetch_text(CLUB_SALARIES_URL.format(slug=slug))
-        salary_contracts[club] = parse_capology_salary_contracts(salary_page)
-
     output_clubs: List[dict] = []
+    source_rows: List[dict] = []
+    loaded_seasons_by_league: Dict[str, List[int]] = {}
     total_incoming = 0
     total_reported = 0
 
-    for club in clubs:
-        all_incoming = transfer_rows.get(club, {}).get("in", [])
-        all_outgoing = transfer_rows.get(club, {}).get("out", [])
-        incoming = [move for move in all_incoming if int(move.get("season") or 0) == season_year]
-        outgoing = [move for move in all_outgoing if int(move.get("season") or 0) == season_year]
-        contracts = salary_contracts.get(club, {})
-        outgoing_by_player: Dict[str, List[int]] = {}
-        for out_move in all_outgoing:
-            season = int(out_move.get("season") or 0)
-            if season <= 0:
-                continue
-            outgoing_by_player.setdefault(normalize_text(out_move["player"]), []).append(season)
+    for league_cfg in LEAGUES:
+        league_id = league_cfg["id"]
+        league_label = league_cfg["label"]
+        payroll_url = league_cfg["payroll_url"]
+        transfer_path = league_cfg["transfer_path"]
+        transfer_names = set(league_cfg["transfer_names"])
 
-        club_in_rows: List[dict] = []
-        reported = 0
-        fuzzy = 0
-        assumed = 0
-        overridden = 0
+        payroll_page = fetch_text(payroll_url)
+        payroll_rows = parse_capology_payrolls(payroll_page)
+        if not payroll_rows:
+            print(f"Warning: no payroll rows parsed for {league_label}")
+            continue
 
-        for move in incoming:
-            total_incoming += 1
-            terms = resolve_contract_terms(move, club, contracts, overrides)
-            contract_years = terms["contract_years"]
-            confidence = terms["contract_confidence"]
-            reason = terms["contract_note"]
-            annual_wage = terms["annual_wage_gbp"]
-            annual_amortization = int(round((move["fee"] or 0) / max(1, contract_years)))
+        clubs = sorted({row["club"] for row in payroll_rows})
+        canonical_map = {normalize_text(club): club for club in clubs}
 
-            if confidence == "override":
-                overridden += 1
-            elif confidence == "reported":
-                reported += 1
-            elif confidence == "reported_loan":
-                reported += 1
-            elif confidence == "reported_fuzzy_match":
-                fuzzy += 1
-            elif confidence == "assumed_profile":
-                assumed += 1
+        transfer_rows: Dict[str, dict] = {}
+        fetched_transfer_seasons: List[int] = []
+        for transfer_year in range(transfer_start_year, season_year + 1):
+            try:
+                transfer_csv = fetch_text(TRANSFERS_URL.format(league_path=transfer_path, season=transfer_year))
+                season_rows = parse_transfers_csv(
+                    transfer_csv,
+                    season_year=transfer_year,
+                    canonical_map=canonical_map,
+                    transfer_names=transfer_names,
+                )
+                merge_transfer_rows(transfer_rows, season_rows)
+                fetched_transfer_seasons.append(transfer_year)
+            except RuntimeError as exc:
+                print(f"Warning: skipping {league_label} transfer season {transfer_year}: {exc}")
+        loaded_seasons_by_league[league_label] = fetched_transfer_seasons
 
-            if confidence in {"reported", "reported_fuzzy_match", "reported_loan", "override"}:
-                total_reported += 1
+        salary_contracts: Dict[str, Dict[str, dict]] = {}
+        wage_by_club: Dict[str, float] = {}
+        slug_by_club: Dict[str, str] = {}
 
-            club_in_rows.append(
+        for row in payroll_rows:
+            club = row["club"]
+            wage_by_club[club] = row["annual_gross_gbp"]
+            slug_by_club[club] = row["slug"]
+
+        for club in clubs:
+            slug = slug_by_club[club]
+            try:
+                salary_page = fetch_text(CLUB_SALARIES_URL.format(slug=slug))
+                salary_contracts[club] = parse_capology_salary_contracts(salary_page)
+            except RuntimeError as exc:
+                print(f"Warning: no salary contracts for {league_label} {club}: {exc}")
+                salary_contracts[club] = {}
+            time.sleep(0.25)
+
+        for club in clubs:
+            all_incoming = transfer_rows.get(club, {}).get("in", [])
+            all_outgoing = transfer_rows.get(club, {}).get("out", [])
+            incoming = [move for move in all_incoming if int(move.get("season") or 0) == season_year]
+            outgoing = [move for move in all_outgoing if int(move.get("season") or 0) == season_year]
+            contracts = salary_contracts.get(club, {})
+            outgoing_by_player: Dict[str, List[int]] = {}
+            for out_move in all_outgoing:
+                season = int(out_move.get("season") or 0)
+                if season <= 0:
+                    continue
+                outgoing_by_player.setdefault(normalize_text(out_move["player"]), []).append(season)
+
+            club_in_rows: List[dict] = []
+            reported = 0
+            fuzzy = 0
+            assumed = 0
+            overridden = 0
+
+            for move in incoming:
+                total_incoming += 1
+                terms = resolve_contract_terms(move, club, contracts, overrides)
+                contract_years = terms["contract_years"]
+                confidence = terms["contract_confidence"]
+                reason = terms["contract_note"]
+                annual_wage = terms["annual_wage_gbp"]
+                annual_amortization = int(round((move["fee"] or 0) / max(1, contract_years)))
+
+                if confidence == "override":
+                    overridden += 1
+                elif confidence in {"reported", "reported_loan"}:
+                    reported += 1
+                elif confidence == "reported_fuzzy_match":
+                    fuzzy += 1
+                elif confidence == "assumed_profile":
+                    assumed += 1
+
+                if confidence in {"reported", "reported_fuzzy_match", "reported_loan", "override"}:
+                    total_reported += 1
+
+                club_in_rows.append(
+                    {
+                        "player": move["player"],
+                        "fee": int(round(move["fee"])),
+                        "contract_years": int(contract_years),
+                        "contract_confidence": confidence,
+                        "contract_note": reason,
+                        "annual_amortization": annual_amortization,
+                        "annual_wage_gbp": annual_wage,
+                        "age": move["age"],
+                        "position": move["position"],
+                        "is_loan": move["is_loan"],
+                        "window": move["window"],
+                        "season": int(move.get("season") or season_year),
+                        "source": move["source"],
+                    }
+                )
+
+            club_out_rows: List[dict] = []
+            for move in outgoing:
+                club_out_rows.append(
+                    {
+                        "player": move["player"],
+                        "fee": int(round(move["fee"])),
+                        "is_loan": move["is_loan"],
+                        "window": move["window"],
+                        "source": move["source"],
+                    }
+                )
+
+            amortization_assets: List[dict] = []
+            annual_amortization_total = 0
+            annual_amortization_current = 0
+            annual_amortization_carryover = 0
+
+            for move in all_incoming:
+                source_season = int(move.get("season") or 0)
+                if source_season <= 0 or source_season > season_year:
+                    continue
+                if (move.get("fee") or 0) <= 0:
+                    continue
+                if player_left_club_after_incoming(move["player"], source_season, outgoing_by_player, season_year):
+                    continue
+
+                terms = resolve_contract_terms(move, club, contracts, overrides)
+                contract_years = int(terms["contract_years"])
+                years_elapsed = season_year - source_season
+                if years_elapsed < 0 or years_elapsed >= contract_years:
+                    continue
+
+                annual_amortization = int(round((move["fee"] or 0) / max(1, contract_years)))
+                years_remaining = max(1, contract_years - years_elapsed)
+                annual_wage = terms["annual_wage_gbp"]
+                total_annual_cost = annual_amortization + (annual_wage or 0)
+
+                annual_amortization_total += annual_amortization
+                if source_season == season_year:
+                    annual_amortization_current += annual_amortization
+                else:
+                    annual_amortization_carryover += annual_amortization
+
+                amortization_assets.append(
+                    {
+                        "player": move["player"],
+                        "source_season": source_season,
+                        "fee": int(round(move["fee"])),
+                        "contract_years": contract_years,
+                        "years_elapsed": years_elapsed,
+                        "years_remaining": years_remaining,
+                        "annual_amortization": annual_amortization,
+                        "annual_wage_gbp": annual_wage,
+                        "annual_total_cost": total_annual_cost,
+                        "contract_confidence": terms["contract_confidence"],
+                        "contract_note": terms["contract_note"],
+                        "is_loan": move["is_loan"],
+                        "window": move["window"],
+                        "source": move["source"],
+                    }
+                )
+
+            club_id = f"{normalize_text(club).replace(' ', '_')}_{league_id}_{season_year}"
+            output_clubs.append(
                 {
-                    "player": move["player"],
-                    "fee": int(round(move["fee"])),
-                    "contract_years": int(contract_years),
-                    "contract_confidence": confidence,
-                    "contract_note": reason,
-                    "annual_amortization": annual_amortization,
-                    "annual_wage_gbp": annual_wage,
-                    "age": move["age"],
-                    "position": move["position"],
-                    "is_loan": move["is_loan"],
-                    "window": move["window"],
-                    "season": int(move.get("season") or season_year),
-                    "source": move["source"],
+                    "team_id": club_id,
+                    "team_name": club,
+                    "league": league_label,
+                    "season": season_label,
+                    "wage_bill": int(round(wage_by_club.get(club, 0))),
+                    "wage_source": f"capology_payrolls_{league_id}",
+                    "transfers_in": sorted(club_in_rows, key=lambda row: row["fee"], reverse=True),
+                    "transfers_out": sorted(club_out_rows, key=lambda row: row["fee"], reverse=True),
+                    "amortization_assets": sorted(
+                        amortization_assets,
+                        key=lambda row: (row["annual_amortization"], row["fee"]),
+                        reverse=True,
+                    ),
+                    "amortization_summary": {
+                        "annual_current_window": annual_amortization_current,
+                        "annual_prior_windows": annual_amortization_carryover,
+                        "annual_total_assets": annual_amortization_total,
+                        "active_asset_count": len(amortization_assets),
+                    },
+                    "confidence_summary": {
+                        "reported_contracts": reported,
+                        "fuzzy_reported_contracts": fuzzy,
+                        "override_contracts": overridden,
+                        "assumed_contracts": assumed,
+                        "incoming_count": len(club_in_rows),
+                    },
                 }
             )
 
-        club_out_rows: List[dict] = []
-        for move in outgoing:
-            club_out_rows.append(
-                {
-                    "player": move["player"],
-                    "fee": int(round(move["fee"])),
-                    "is_loan": move["is_loan"],
-                    "window": move["window"],
-                    "source": move["source"],
-                }
-            )
-
-        amortization_assets: List[dict] = []
-        annual_amortization_total = 0
-        annual_amortization_current = 0
-        annual_amortization_carryover = 0
-
-        for move in all_incoming:
-            source_season = int(move.get("season") or 0)
-            if source_season <= 0 or source_season > season_year:
-                continue
-            if (move.get("fee") or 0) <= 0:
-                continue
-            if player_left_club_after_incoming(move["player"], source_season, outgoing_by_player, season_year):
-                continue
-
-            terms = resolve_contract_terms(move, club, contracts, overrides)
-            contract_years = int(terms["contract_years"])
-            years_elapsed = season_year - source_season
-            if years_elapsed < 0 or years_elapsed >= contract_years:
-                continue
-
-            annual_amortization = int(round((move["fee"] or 0) / max(1, contract_years)))
-            years_remaining = max(1, contract_years - years_elapsed)
-            annual_wage = terms["annual_wage_gbp"]
-            total_annual_cost = annual_amortization + (annual_wage or 0)
-
-            annual_amortization_total += annual_amortization
-            if source_season == season_year:
-                annual_amortization_current += annual_amortization
-            else:
-                annual_amortization_carryover += annual_amortization
-
-            amortization_assets.append(
-                {
-                    "player": move["player"],
-                    "source_season": source_season,
-                    "fee": int(round(move["fee"])),
-                    "contract_years": contract_years,
-                    "years_elapsed": years_elapsed,
-                    "years_remaining": years_remaining,
-                    "annual_amortization": annual_amortization,
-                    "annual_wage_gbp": annual_wage,
-                    "annual_total_cost": total_annual_cost,
-                    "contract_confidence": terms["contract_confidence"],
-                    "contract_note": terms["contract_note"],
-                    "is_loan": move["is_loan"],
-                    "window": move["window"],
-                    "source": move["source"],
-                }
-            )
-
-        club_id = f"{normalize_text(club).replace(' ', '_')}_{season_year}"
-        output_clubs.append(
+        source_rows.append(
             {
-                "team_id": club_id,
-                "team_name": club,
-                "league": PL_LEAGUE,
-                "season": SEASON_LABEL,
-                "wage_bill": int(round(wage_by_club.get(club, 0))),
-                "wage_source": "capology_payrolls",
-                "transfers_in": sorted(club_in_rows, key=lambda row: row["fee"], reverse=True),
-                "transfers_out": sorted(club_out_rows, key=lambda row: row["fee"], reverse=True),
-                "amortization_assets": sorted(
-                    amortization_assets,
-                    key=lambda row: (row["annual_amortization"], row["fee"]),
-                    reverse=True,
-                ),
-                "amortization_summary": {
-                    "annual_current_window": annual_amortization_current,
-                    "annual_prior_windows": annual_amortization_carryover,
-                    "annual_total_assets": annual_amortization_total,
-                    "active_asset_count": len(amortization_assets),
-                },
-                "confidence_summary": {
-                    "reported_contracts": reported,
-                    "fuzzy_reported_contracts": fuzzy,
-                    "override_contracts": overridden,
-                    "assumed_contracts": assumed,
-                    "incoming_count": len(club_in_rows),
-                },
+                "id": f"capology_payrolls_{league_id}",
+                "name": f"Capology {league_label} Payrolls",
+                "url": payroll_url,
+                "type": "wages",
             }
         )
+        source_rows.append(
+            {
+                "id": f"transfermarkt_data_github_{league_id}",
+                "name": f"Transfermarkt Data (GitHub mirror) - {league_label}",
+                "url": (
+                    "https://raw.githubusercontent.com/eordo/transfermarkt-data/master/"
+                    f"{transfer_path}/{transfer_start_year}.csv .. {season_year}.csv"
+                ),
+                "type": "transfers",
+            }
+        )
+
+    if not output_clubs:
+        raise RuntimeError("No club rows were generated for configured leagues.")
 
     reported_pct = 0.0
     if total_incoming > 0:
         reported_pct = (total_reported / total_incoming) * 100.0
-    loaded_seasons_text = "none"
-    if fetched_transfer_seasons:
-        loaded_seasons_text = (
-            f"{min(fetched_transfer_seasons)}-{max(fetched_transfer_seasons)} "
-            f"({len(fetched_transfer_seasons)} season files)"
-        )
+
+    loaded_chunks: List[str] = []
+    for league_cfg in LEAGUES:
+        league_label = league_cfg["label"]
+        fetched = loaded_seasons_by_league.get(league_label, [])
+        if not fetched:
+            loaded_chunks.append(f"{league_label}: none")
+            continue
+        loaded_chunks.append(f"{league_label}: {min(fetched)}-{max(fetched)} ({len(fetched)} season files)")
+    loaded_seasons_text = "; ".join(loaded_chunks)
+
+    active_leagues = [cfg["label"] for cfg in LEAGUES if any(c["league"] == cfg["label"] for c in output_clubs)]
+    league_scope_label = " + ".join(active_leagues)
 
     payload = {
         "last_updated": fetched_at.strftime("%Y-%m-%d"),
@@ -694,8 +782,8 @@ def build_dataset(output_path: Path, season_year: int, overrides_path: Path, his
             "USD": 1.28,
         },
         "scope": {
-            "league": PL_LEAGUE,
-            "season": SEASON_LABEL,
+            "league": league_scope_label,
+            "season": season_label,
             "season_year": season_year,
             "transfer_history_start_year": transfer_start_year,
             "transfer_history_end_year": season_year,
@@ -719,26 +807,15 @@ def build_dataset(output_path: Path, season_year: int, overrides_path: Path, his
             ],
         },
         "sources": [
-            {
-                "id": "capology_payrolls",
-                "name": "Capology Premier League Payrolls",
-                "url": PAYROLL_URL,
-                "type": "wages",
-            },
+            *source_rows,
             {
                 "id": "capology_club_salaries",
                 "name": "Capology Club Salaries pages",
                 "url": "https://www.capology.com/club/arsenal/salaries/",
                 "type": "contract_dates",
             },
-            {
-                "id": "transfermarkt_data_github",
-                "name": "Transfermarkt Data (GitHub mirror)",
-                "url": f"https://raw.githubusercontent.com/eordo/transfermarkt-data/master/premier_league/{transfer_start_year}.csv .. {season_year}.csv",
-                "type": "transfers",
-            },
         ],
-        "clubs": sorted(output_clubs, key=lambda row: row["team_name"]),
+        "clubs": sorted(output_clubs, key=lambda row: (row["league"], row["team_name"])),
     }
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -748,7 +825,7 @@ def build_dataset(output_path: Path, season_year: int, overrides_path: Path, his
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Update Premier League spend data")
+    parser = argparse.ArgumentParser(description="Update league spend data (Premier League + LaLiga)")
     parser.add_argument("--season-year", type=int, default=2025, help="Transfer CSV season year (default: 2025)")
     parser.add_argument(
         "--history-years",
