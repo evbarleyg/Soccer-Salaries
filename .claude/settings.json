@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(pwd)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(rg *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git branch *)",
+      "Bash(npm run lint)",
+      "Bash(npm run typecheck)",
+      "Bash(npm run test)",
+      "Bash(npm run build)",
+      "Bash(npm run ci)",
+      "Bash(node --check *)",
+      "Bash(python3 -m py_compile *)"
+    ],
+    "ask": [
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(gh *)",
+      "Bash(npm install *)",
+      "Bash(npm ci)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(rm *)",
+      "Bash(open *)",
+      "Bash(python3 scripts/update_pl_data.py *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Bash(git reset --hard *)",
+      "Bash(git checkout -- *)",
+      "Bash(git clean *)",
+      "Bash(rm -rf *)",
+      "Bash(rm -fr *)"
+    ]
+  }
+}
