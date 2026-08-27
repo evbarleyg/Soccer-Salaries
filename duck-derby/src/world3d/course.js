@@ -200,7 +200,7 @@ export function buildCourse(points = CONTROL_POINTS) {
     tunnelInS: toS(tags.tunnelIn),
     tunnelOutS: toS(tags.tunnelOut),
     harborInS: toS(tags.harborIn),
-    itemBoxes: [toS(tags.box1), toS(tags.box2), toS(tags.box3)],
+    itemBoxes: [0.263, 0.44, 0.72].map((f) => f * length), // after the first S-bend, mid lily pond (resolved before The Drop), just past the tunnel exit
     endS: toS(tags.end ?? totalArc),
   };
 

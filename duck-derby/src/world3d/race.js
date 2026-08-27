@@ -21,6 +21,8 @@ import { ITEM_ORDER, ITEM_TUNING as IT, rollItem, makeBrain, brainWantsToFire } 
 export const SIM_HZ = 60;
 export const DT = 1 / SIM_HZ;
 export const DEFAULTS = { duration: 40, candidates: 4 };
+/** Bump when tuning changes race outcomes, so shared links can announce a mismatch. */
+export const ENGINE_VERSION = 2;
 
 /** Engine tuning knobs (fractions of base speed v0 unless noted). */
 export const TUNING = {
@@ -34,7 +36,7 @@ export const TUNING = {
   maxHotdogs: 2,
   hotdogGap: 9, // min seconds between hot dogs
   tunnelCurrent: 0.05, // everyone rides the flume a touch faster
-  rapids: { noise: 2.2, stumble: 1.7, burst: 1.3 },
+  rapids: { noise: 1.6, stumble: 1.3, burst: 1.3 },
   lily: { stumble: 1.4 },
   splashSlow: { dur: 0.3, amp: 0.18 }, // brief check on splashdown (same for everyone)
 };
@@ -73,8 +75,9 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
       cruise: v0 * (1 + rng.normal(0, TUNING.cruiseSd)),
       waves,
       reaction: rng.range(0.05, 0.4),
-      kick: rng.range(0, 0.13) * v0,
-      kickStart: rng.range(0.78, 0.88),
+      kick: rng.range(0, 0.1) * v0,
+      kickStart: rng.range(0.74, 0.86),
+      kicked: false,
       burstRate: rng.range(0.08, 0.14), // per second
       stumbleRate: rng.range(0.04, 0.08),
       brain: makeBrain(rng),
@@ -241,17 +244,18 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
         break;
       }
       case 'mud': {
-        const victims = [];
+        const ahead = [];
         for (let j = 0; j < count; j++) {
           if (j === i) continue;
           const o = ducks[j];
-          if (o.finishTime !== null) continue;
-          if (o.s > d.s && o.s - d.s < IT.mud.range) {
-            if (isStar(o)) continue;
-            o.mudUntil = t + IT.mud.dur;
-            openWindow(j, 'mud', IT.mud.dur, { by: i });
-            victims.push(j);
-          }
+          if (o.finishTime !== null || isStar(o)) continue;
+          if (o.s > d.s && o.s - d.s < IT.mud.range) ahead.push(j);
+        }
+        ahead.sort((a, b) => ducks[a].s - ducks[b].s || ducks[a].tieKey - ducks[b].tieKey);
+        const victims = ahead.slice(0, IT.mud.maxVictims || ahead.length);
+        for (const j of victims) {
+          ducks[j].mudUntil = t + IT.mud.dur;
+          openWindow(j, 'mud', IT.mud.dur, { by: i });
         }
         ev.victims = victims;
         break;
@@ -287,7 +291,7 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
     }
     const meanS = sumS / count;
     const leaderProg = maxS / L;
-    const bandFade = 1 - smoothstep(0.6, 0.86, leaderProg);
+    const bandFade = 1 - smoothstep(0.5, 0.82, leaderProg); // rubber band relaxes for the run-in
 
     // ---- B. crowd hazard: a hot dog lobbed at whoever leads ----
     if (
@@ -297,7 +301,7 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
       t > 7 &&
       t - lastHotdog > TUNING.hotdogGap &&
       leaderProg > 0.16 &&
-      leaderProg < 0.86 &&
+      leaderProg < 0.66 &&
       !ducks[leader].airborne &&
       !(ducks[leader].s > F.tunnelInS - 25 && ducks[leader].s < F.tunnelOutS + 10) && // nobody can throw into the tunnel
       rng.chance(TUNING.hotdogRate * DT)
@@ -398,6 +402,7 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
             p.target = tgtI;
             const tgt = tgtI >= 0 ? ducks[tgtI] : null;
             if (!tgt) finish(p, 'fizzle');
+            else if (tgt.s / L > 0.9) finish(p, 'fizzle');
             else {
               p.s = Math.min(p.s + IT.seagull.speed * v0 * DT, tgt.s);
               p.lat += (tgt.lat - p.lat) * Math.min(1, DT * 2);
@@ -455,7 +460,7 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
         const e = (t - d.burst.t0) / d.burst.dur;
         if (e >= 1) d.burst = null;
         else boost = d.burst.amp * burstShape(e);
-      } else if (!d.airborne && t > 1.5 && rng.chance(d.burstRate * DT * (prog > 0.9 ? 0.4 : 1) * (inRapids ? TUNING.rapids.burst : 1))) {
+      } else if (!d.airborne && t > 1.5 && rng.chance(d.burstRate * DT * (prog > 0.88 ? 0.5 : 1) * (inRapids ? TUNING.rapids.burst : 1))) {
         d.burst = { t0: t, dur: rng.range(1.0, 1.7), amp: rng.range(0.26, 0.46) * v0 };
         events.push({ t, type: 'burst', duck: i, section: sec });
         openWindow(i, 'burst', d.burst.dur, {});
@@ -466,7 +471,7 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
         const e = (t - d.stumble.t0) / d.stumble.dur;
         if (e >= 1) d.stumble = null;
         else drag = d.stumble.amp * Math.sin(Math.PI * e);
-      } else if (!d.burst && !d.airborne && !star && t > 2.5 && prog < 0.97) {
+      } else if (!d.burst && !d.airborne && !star && t > 2.5 && prog < 0.9) {
         const mul = inRapids ? TUNING.rapids.stumble : sec === 'lily' ? TUNING.lily.stumble : 1;
         if (rng.chance(d.stumbleRate * DT * mul)) {
           d.stumble = { t0: t, dur: rng.range(0.7, 1.1), amp: rng.range(0.3, 0.5) * v0, cause: null };
@@ -481,7 +486,11 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
       if (t < d.splashUntil) drag += TUNING.splashSlow.amp * v0;
 
       const rb = clamp(TUNING.band * ((meanS - d.s) / L), -0.15, 0.19) * v0 * bandFade;
-      const kick = d.kick * smoothstep(d.kickStart, d.kickStart + 0.1, prog);
+      const kick = d.kick * smoothstep(d.kickStart, d.kickStart + 0.12, prog);
+      if (!d.kicked && prog >= d.kickStart) {
+        d.kicked = true;
+        if (d.kick > 0.06 * v0) events.push({ t, type: 'kick', duck: i, rank: rank[i], amp: d.kick / v0 });
+      }
       const launch = smoothstep(d.reaction, d.reaction + 1.3, t);
       const current = sec === 'tunnel' ? TUNING.tunnelCurrent * v0 : 0;
 
@@ -495,13 +504,14 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
       d.s += v * DT;
       d.lat = lateralFor(d, d.s, t + DT);
 
-      // golden feather plows through anyone it passes close to
+      // golden feather plows through anyone it passes close to (positions as at the start of the tick, so index order can't matter)
       if (star) {
         for (let j = 0; j < count; j++) {
           if (j === i) continue;
           const o = ducks[j];
           if (o.finishTime !== null || isStar(o)) continue;
-          if (o.s > prevS && o.s <= d.s + 0.8 && Math.abs(o.lat - d.lat) < IT.feather.plowLat && t >= o.wobbleUntil) {
+          const os = tick > 0 ? pos[j][tick - 1] + 0 : o.s;
+          if (os > prevS && os <= d.s + 0.8 && Math.abs(o.lat - d.lat) < IT.feather.plowLat && t >= o.wobbleUntil) {
             o.wobbleUntil = t + IT.feather.wobble.dur;
             events.push({ t, type: 'plow', duck: j, by: i });
             openWindow(j, 'wobble', IT.feather.wobble.dur, { by: i });
@@ -613,7 +623,8 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
     finishTimes,
     order,
     margin,
-    photoFinish: margin < 0.18,
+    photoFinish: margin < 0.08,
+    close: margin < 0.35,
     leadChanges,
     events,
     projectiles,
@@ -628,26 +639,43 @@ function burstShape(e) {
 }
 
 /**
- * Score a simulation for entertainment value. Symmetric across ducks, so
- * keeping the most dramatic of several candidate sub-seeds stays fair.
+ * Score a simulation for entertainment value ("structured TV race"): a few
+ * real lead changes, decided in the run-in rather than on the line, a winner
+ * who was in the picture at three-quarters, a close (not always photo) finish,
+ * item drama at the front that is not a late pile-up, and a comeback bonus.
+ * A pure function of positions/events, symmetric under any permutation of the
+ * ducks, so keeping the best of several candidate sub-seeds stays fair.
  */
 export function dramaScore(sim) {
+  const n = sim.count;
   const ft = sim.order.map((i) => sim.finishTimes[i]);
-  const winnerT = ft[0];
-  let score = Math.min(sim.leadChanges, 7) * 1.0;
-  if (sim.margin < 0.18) score += 1.5;
-  else if (sim.margin < 0.6) score += 1.0;
-  else if (sim.margin > 2.0) score -= 1;
-  const top3 = ft[Math.min(2, ft.length - 1)] - winnerT;
-  if (top3 < 1.6) score += 1;
-  const lastGap = ft[ft.length - 1] - winnerT;
-  if (lastGap > sim.duration * 0.28) score -= 2;
-  const late = sim.events.filter((e) => e.type === 'lead' && e.t > winnerT * 0.7).length;
-  score += Math.min(late, 3) * 1.3;
-  // item drama near the front is fun, a pile-up is not
-  const frontHits = sim.events.filter((e) => e.type === 'hit' && e.rank <= 2).length;
-  score += Math.min(frontHits, 3) * 0.6 - Math.max(0, frontHits - 5) * 0.5;
-  return score;
+  const winT = ft[0];
+  const winner = sim.order[0];
+  let s = 0;
+  const lc = sim.leadChanges;
+  s += Math.min(lc, 5) * 0.7 - Math.max(0, lc - 7) * 0.6; // 3–6 changes, not 9+
+  const leads = sim.events.filter((e) => e.type === 'lead');
+  const last = leads.length ? leads[leads.length - 1].t / winT : 0;
+  s += last > 0.8 && last <= 0.97 ? 2 : last > 0.97 ? 0.5 : last < 0.6 ? -1.5 : 0; // decided in the run-in, not on the line
+  if (new Set(leads.map((e) => e.duck)).size >= 3) s += 1; // three or more protagonists
+  const wr = standingsAt(sim, winT * 0.75).findIndex((row) => row.i === winner);
+  s += wr <= 1 ? 1.5 : wr <= 3 ? 1 : wr <= 5 ? -0.5 : -2; // the winner earned it (with the odd steal)
+  const m = sim.margin;
+  s += m < 0.08 ? 1.2 : m < 0.6 ? 1.5 : m < 1.2 ? 0.5 : m > 2 ? -1.5 : 0; // close > photo > blowout
+  if (ft[Math.min(2, n - 1)] - winT < 1.4) s += 0.5;
+  if (ft[n - 1] - winT > sim.duration * 0.28) s -= 2; // nobody wants to wait for a straggler
+  const hits = sim.events.filter((e) => e.type === 'hit');
+  const front = hits.filter((e) => e.rank <= 2);
+  const lateFront = front.filter((e) => positionAt(sim, e.duck, e.t) > 0.84 * sim.trackLength).length;
+  s += Math.min(front.length - lateFront, 3) * 0.6 - Math.max(0, lateFront - 1) * 1.2 - Math.max(0, hits.length - (n * 0.6 + 2)) * 0.3;
+  const st50 = standingsAt(sim, winT * 0.5); // a comeback story is a bonus
+  for (let k = 0; k < Math.min(3, n); k++) {
+    if (st50.findIndex((x) => x.i === sim.order[k]) >= Math.ceil((2 * n) / 3)) {
+      s += 0.8;
+      break;
+    }
+  }
+  return s;
 }
 
 /**

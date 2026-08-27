@@ -10,7 +10,7 @@ export const VIEWS = ['chase', 'tv', 'free'];
 /** @param {string|URLSearchParams} search */
 export function parseParams(search) {
   const p = search instanceof URLSearchParams ? search : new URLSearchParams(search);
-  const out = { names: null, seed: null, rule: 'w', hazards: true, items: true, cam: null, view: null, autostart: false, muted: false, t: null, salt: 0, go: null };
+  const out = { names: null, seed: null, rule: 'w', hazards: true, items: true, cam: null, view: null, autostart: false, muted: false, t: null, salt: 0, go: null, v: null };
   const namesRaw = p.get('names');
   if (namesRaw) {
     const names = namesRaw.split('~').map((s) => s.trim().slice(0, 22)).filter((s) => s.length);
@@ -27,6 +27,8 @@ export function parseParams(search) {
   if (cam) out.cam = cam;
   out.autostart = p.get('autostart') === '1';
   out.muted = p.get('sound') === '0';
+  const v = Number(p.get('v'));
+  if (Number.isInteger(v) && v > 0) out.v = v;
   const go = Number(p.get('go'));
   if (p.get('go') !== null && Number.isFinite(go) && go > 1e12) out.go = go;
   const salt = Number(p.get('salt'));
@@ -50,7 +52,7 @@ export function resolveCam(cam, names) {
 }
 
 /** Build the shareable query string for a race (no cam: everyone picks their own). */
-export function buildQuery({ names, seed, rule = 'w', hazards = true, items = true, cam = null, view = null, salt = 0, go = null }) {
+export function buildQuery({ names, seed, rule = 'w', hazards = true, items = true, cam = null, view = null, salt = 0, go = null, v = null }) {
   const p = new URLSearchParams();
   p.set('names', names.join('~'));
   if (seed != null) p.set('seed', seedToCode(seed));
@@ -59,6 +61,7 @@ export function buildQuery({ names, seed, rule = 'w', hazards = true, items = tr
   if (!items) p.set('items', '0');
   if (salt) p.set('salt', String(salt));
   if (go) p.set('go', String(Math.round(go)));
+  if (v) p.set('v', String(v));
   if (cam != null && cam !== '') p.set('cam', String(cam));
   if (view) p.set('view', view);
   return p.toString();

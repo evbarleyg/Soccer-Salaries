@@ -102,6 +102,9 @@ export class WorldCommentator {
         if (ev.result === 'fizzle' && ev.kind === 'stone') return this.er() < 0.5 ? 'The stone skips out harmlessly.' : null;
         if (ev.result === 'fizzle' && ev.kind === 'hornet') return 'The hornet loses interest and buzzes off.';
         return null;
+      case 'kick':
+        if (ev.rank <= 2 || mine) return this.pick([`${name} kicks for home!`, `${name} finds a finishing kick!`, `Here comes ${name}!`]);
+        return null;
       case 'takeoff':
         if (standings[0] && standings[0].i === ev.duck) return this.pick([`${name} launches off THE DROP!`, `Over the weir goes ${name}!`]);
         return mine ? 'Wheeee!' : null;

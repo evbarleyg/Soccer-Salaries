@@ -6,7 +6,7 @@ import { assignLooks, SAMPLE_NAMES, MIN_DUCKS, MAX_DUCKS, TOWELS } from '../duck
 import { randomSeed, seedToCode, codeToSeed, clamp, lerp, smoothstep } from '../rng.js';
 import { ordinal } from '../commentary.js';
 import { getCourse, SECTIONS } from './course.js';
-import { createRace, positionAt, lateralAt, speedAt, standingsAt, heldAt, activeWindows } from './race.js';
+import { createRace, positionAt, lateralAt, speedAt, standingsAt, heldAt, activeWindows, ENGINE_VERSION } from './race.js';
 import { parseParams, buildQuery, resolveCam, draftOrder } from './params.js';
 import { detectQuality, createRenderer, makeSky, makeLights, PAL } from './gfx.js';
 import { Track } from './track.js';
@@ -219,6 +219,10 @@ function renderJoin() {
 }
 
 function initSetupUi() {
+  if (state.shared && params.v && params.v !== ENGINE_VERSION) {
+    els.shareBanner.hidden = false;
+    els.shareBanner.textContent = `This link was made with an older race engine (v${params.v}); results here use v${ENGINE_VERSION} and may differ from what the sender saw.`;
+  }
   if (state.shared) { $('#join').hidden = false; $('#setup-form').hidden = true; document.body.classList.add('joining'); renderJoin(); }
   els.optRule.value = state.rule;
   els.optView.value = state.view === 'tv' ? 'tv' : 'chase';
@@ -766,6 +770,9 @@ function handleEvent(ev) {
       fx.splash(tmpV.copy(duckPos(i)).setY(track.surfaceY(state.duckStates[i].s, state.duckStates[i].lat) + 0.2), 1.6);
       if (isT) { audio.bigSplash(); rig.kick(Q.reducedMotion ? 0.2 : 0.7); buzz(40); if (state.view === 'chase') hud.splashLens(); } else if (nearCam(i)) audio.splash(0.3);
       break;
+    case 'kick':
+      if (isT) { hud.callout('KICK FOR HOME!', '#ffd23f'); audio.whoosh(0.25); }
+      break;
     case 'halfway':
       break;
     case 'stretch':
@@ -786,11 +793,11 @@ function handleEvent(ev) {
         setTimeout(() => { audio.duckMusic(2.2); audio.fanfare(); }, 700);
         // freeze-frame: hold the clock for a beat with letterbox bars and the verdict
         if (state.phase === 'race' && !state.jumping) {
-          state.freezeUntil = state.realTime + (Q.reducedMotion ? 0.2 : 0.38);
+          state.freezeUntil = state.realTime + 0.38;
           state.letterboxed = true;
-          letterbox(true, race.photoFinish ? `PHOTO FINISH · ${name} by ${race.margin.toFixed(2)} s` : `${name} WINS · ${fmtTime(ev.t)}`);
+          letterbox(true, race.photoFinish ? `PHOTO FINISH · ${name} by ${race.margin.toFixed(2)} s` : race.close ? `${name} BY A BEAK · ${race.margin.toFixed(2)} s` : `${name} WINS · by ${race.margin.toFixed(2)} s`);
         }
-        hud.card(race.photoFinish ? `${name} BY A BEAK!` : `${name} WINS!`, 1.6);
+        hud.card(race.photoFinish ? `PHOTO! ${name}!` : race.close ? `${name} BY A BEAK!` : `${name} WINS!`, 1.6);
         const arch = track.toWorld(L, 0, 6);
         fx.confetti(arch, 1.5);
         fx.confetti(track.toWorld(L, 8, 2), 1.2);
@@ -916,7 +923,7 @@ function raceHighlights(race) {
 }
 
 function shareQuery(withCam = false) {
-  return buildQuery({ names: state.raceNames, seed: state.seed, rule: state.rule, hazards: state.hazards, items: state.items, salt: state.salt, go: state.go, cam: withCam && state.follow === 'fixed' ? state.target + 1 : null, view: withCam && state.view === 'tv' ? 'tv' : null });
+  return buildQuery({ names: state.raceNames, seed: state.seed, rule: state.rule, hazards: state.hazards, items: state.items, salt: state.salt, go: state.go, v: ENGINE_VERSION, cam: withCam && state.follow === 'fixed' ? state.target + 1 : null, view: withCam && state.view === 'tv' ? 'tv' : null });
 }
 function shareUrl() {
   const u = new URL(location.href);
@@ -927,8 +934,7 @@ function shareUrl() {
 function twoDQuery() {
   const p = new URLSearchParams();
   p.set('names', state.raceNames.join('~'));
-  if (state.seed != null) p.set('seed', seedToCode(state.seed));
-  p.set('rule', state.rule);
+  p.set('rule', state.rule); // (no seed: the 2D pond race is a different engine, so it is a different race)
   if (!state.hazards) p.set('hz', '0');
   if (state.salt) p.set('salt', String(state.salt));
   return p.toString();
@@ -1182,7 +1188,7 @@ function step(dt) {
       if (race && state.firstFinishT === null && lead) {
         const second = state.standings[1] ? state.duckStates[state.standings[1].i] : null;
         const gap = second ? lead.s - second.s : 99;
-        if (lead.s > L - 18 && gap < 7 && !Q.reducedMotion) {
+        if (lead.s > L - 18 && gap < 7 && (race.photoFinish || race.close)) {
           rate = race.photoFinish && lead.s > L - 5 ? 0.25 : 0.55;
           ease = 10;
           if (!state.photoCalled && race.photoFinish) { state.photoCalled = true; hud.card('PHOTO FINISH'); }

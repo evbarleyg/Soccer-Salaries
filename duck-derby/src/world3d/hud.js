@@ -154,9 +154,11 @@ export class Hud {
         const decisive = !other || Math.abs(other.s - d.s) > 1.0 || d.finished;
         if (realTime - this.pendSince > 0.35 || decisive || ctx.phase !== 'race') rank = raw;
       }
+      if (t > 0.5 && this._preStart) { this._preStart = false; this.lastRank = -1; }
+      if (t <= 0.5) this._preStart = true;
       if (rank !== this.lastRank) {
         const prev = this.lastRank;
-        this.el.posNum.textContent = rank + 1;
+        this.el.posNum.textContent = t <= 0.5 && ctx.phase !== 'finish' && ctx.phase !== 'results' ? '–' : rank + 1;
         this.el.posNum.classList.remove('bump', 'up', 'down');
         void this.el.posNum.offsetWidth;
         const racing = ctx.phase === 'race' && t > 1.5 && prev >= 0 && this.lastTarget === target;

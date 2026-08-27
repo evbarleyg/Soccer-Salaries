@@ -1,9 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { simulateRace, createRace, standingsAt, positionAt, lateralAt, heldAt, activeWindows, TUNING, DEFAULTS } from '../src/world3d/race.js';
+import { simulateRace, createRace, standingsAt, positionAt, lateralAt, heldAt, activeWindows, dramaScore, TUNING, DEFAULTS, ENGINE_VERSION } from '../src/world3d/race.js';
 import { getCourse } from '../src/world3d/course.js';
 
 const course = getCourse();
+
+// Expected outcomes per engine version (order | finish times) for a few fixed seeds.
+const GOLDEN = {
+  2: {
+      "1": "6,4,7,1,9,2,8,0,5,3|40.873,40.041,40.178,41.347,38.990,40.949,38.959,39.272,40.868,40.077",
+      "777": "6,0,7,8,1,9,3,4,2,5|38.355,39.896,41.184,40.101,40.498,41.256,38.107,38.610,39.438,39.952",
+      "123456789": "1,6,4,9,8,3,2,7,0,5|41.381,38.659,40.716,39.732,38.963,41.893,38.949,40.806,39.623,39.362"
+  },
+};
 
 test('same seed => identical race (positions, events, items, projectiles)', () => {
   const a = createRace({ count: 12, seed: 123456 });
@@ -199,4 +208,33 @@ test('an unused bubble shield expires and frees the item slot', () => {
     }
   }
   assert.ok(sawExpire > 5, 'shields should expire sometimes');
+});
+
+test('dramaScore is symmetric under a permutation of the ducks (curation cannot favour a lane)', () => {
+  const sim = simulateRace({ count: 9, seed: 4242 });
+  const perm = [3, 7, 0, 8, 1, 5, 2, 6, 4]; // new index k holds old duck perm[k]
+  const inv = new Array(9);
+  perm.forEach((oldI, k) => (inv[oldI] = k));
+  const p = {
+    ...sim,
+    pos: perm.map((oldI) => sim.pos[oldI]),
+    lat: perm.map((oldI) => sim.lat[oldI]),
+    vel: perm.map((oldI) => sim.vel[oldI]),
+    finishTimes: perm.map((oldI) => sim.finishTimes[oldI]),
+    order: sim.order.map((oldI) => inv[oldI]),
+    events: sim.events.map((e) => ({ ...e, duck: e.duck === undefined || e.duck < 0 ? e.duck : inv[e.duck] })),
+  };
+  assert.equal(dramaScore(p).toFixed(6), dramaScore(sim).toFixed(6));
+});
+
+test('golden races: tuning changes that alter shared-link outcomes must bump ENGINE_VERSION', () => {
+  const golden = {};
+  for (const seed of [1, 777, 123456789]) {
+    const sim = createRace({ count: 10, seed });
+    golden[seed] = sim.order.join(',') + '|' + sim.finishTimes.map((x) => x.toFixed(3)).join(',');
+  }
+  // Regenerate these strings (and bump ENGINE_VERSION in race.js) whenever the engine's behaviour changes on purpose.
+  const expected = GOLDEN[ENGINE_VERSION];
+  assert.ok(expected, `no golden data for ENGINE_VERSION ${ENGINE_VERSION} — add it: ${JSON.stringify(golden)}`);
+  assert.deepEqual(golden, expected);
 });
