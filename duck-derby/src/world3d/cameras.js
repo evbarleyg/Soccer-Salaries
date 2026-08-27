@@ -36,6 +36,29 @@ export class CameraRig {
     this._bindInput();
   }
 
+  /** Seed the TV director's shot lengths (2.8–6.5 s) so cuts don't land on a metronome. */
+  setSeed(seed) {
+    let a = (seed >>> 0) || 1;
+    const rnd = () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    this.slots = [0];
+    while (this.slots[this.slots.length - 1] < 200) this.slots.push(this.slots[this.slots.length - 1] + 2.8 + rnd() * 3.7);
+    this.tvOverride = null;
+  }
+  slotAt(t) {
+    const s = this.slots || [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
+    let k = 0;
+    while (k < s.length - 1 && s[k + 1] <= t) k++;
+    return k;
+  }
+  /** Event-driven TV cut: 'lead' {a, b} frames the two ducks; 'hit' {duck} dollies on the victim. */
+  tvEvent(kind, data, t) {
+    if (this.mode !== 'tv' || this.reducedMotion) return;
+    if (this.tvOverride && t < this.tvOverride.until - 0.3) return; // don't stack
+    if (kind === 'lead') this.tvOverride = { shot: { id: 'ev-lead-' + t.toFixed(1), pair: [data.a, data.b], fov: 52 }, until: t + 3.2 };
+    else if (kind === 'hit') this.tvOverride = { shot: { id: 'ev-hit-' + t.toFixed(1), dollyOn: data.duck, ahead: 7, h: 0.6, fov: 70, stiff: 8 }, until: t + 1.9 };
+    else if (kind === 'drop') this.tvOverride = { shot: null, until: t }; // handled by position logic
+  }
+
   setMode(mode) {
     if (mode === this.mode) return;
     if (mode === 'free') {
@@ -141,14 +164,14 @@ export class CameraRig {
     const track = this.track;
     const inTunnel = d.section === 'tunnel' || (d.s > track.features.tunnelInS - 12 && d.s < track.features.tunnelOutS + 4);
     const portrait = this.portrait;
-    const dist = (inTunnel ? 4.2 : portrait ? 4.7 : 5.4) * this.userZoom;
-    const height = Math.max(0.7, (inTunnel ? 1.7 : portrait ? 2.15 : 2.35) * this.userZoom + this.userPitch * 3);
+    const dist = (inTunnel ? 4.2 : portrait ? 4.9 : 5.4) * this.userZoom;
+    const height = Math.max(0.7, (inTunnel ? 1.7 : portrait ? 2.7 : 2.35) * this.userZoom + this.userPitch * 3);
     const yaw = this.userYaw;
     const sBack = d.s - Math.cos(yaw) * dist;
     const latOff = d.lat * 0.92 + Math.sin(yaw) * dist;
     const half = track.course.widthAt(sBack) / 2 - 1.0;
     track.toWorld(sBack, clamp(latOff, -half, half), height + d.hop * 0.45, outPos);
-    track.toWorld(d.s + (portrait ? 14 : 9), d.lat * 0.85, (portrait ? 1.6 : 0.9) + d.hop * 0.6, outLook);
+    track.toWorld(d.s + (portrait ? 11 : 9), d.lat * 0.85, (portrait ? 0.8 : 0.9) + d.hop * 0.6, outLook);
     return inTunnel;
   }
 
@@ -347,21 +370,47 @@ export class CameraRig {
     else if (s > F.tunnelOutS - 25 && s < F.tunnelOutS + 20) shot = { id: 'tunnel-exit', s: F.tunnelOutS + 26, lat: 8, h: 2.2, lookS: F.tunnelOutS + 2, lookH: 1.5, fov: 55 };
     else if (s > L - 70) shot = { id: 'finish', s: L + 10, lat: -track.frame(L).width * 0.34, h: 2.4, lookLeader: true, fov: 52 };
     else if (s < 60) shot = { id: 'start-crane', s: -14, lat: 16, h: 9, lookPack: true, fov: 60 };
-    else if (s > F.canyonInS + 25 && s < F.lilyInS - 30) {
-      // canyon: alternate cliff-top apex cams and a low chase dolly
-      const phase = Math.floor(t / 4.5) % 2;
-      const half = track.course.widthAt(s + 32) / 2;
-      shot = phase === 0 ? { id: 'canyon-apex-' + Math.floor(t / 4.5), s: s + 32, lat: (Math.floor(t / 9) % 2 ? 1 : -1) * (half - 1.2), h: 3.2, lookPack: true, fov: 60 } : { id: 'canyon-dolly-' + Math.floor(t / 4.5), dolly: true, ahead: 12, h: 0.7, fov: 66, stiff: 7 };
-    } else if (s > F.lilyInS - 30 && s < F.dropLipS - 30) shot = Math.floor(t / 5) % 2 === 0 ? { id: 'lily-low-' + Math.floor(t / 5), s: Math.min(s + 34, F.dropApproachS - 5), lat: -11, h: 0.45, lookPack: true, fov: 62 } : { id: 'lily-heli-' + Math.floor(t / 5), heli: true, r: 34, h: 20, fov: 54 };
-    else if (s > F.tunnelOutS + 20 && s < F.harborInS) shot = Math.floor(t / 4.2) % 2 === 0 ? { id: 'rapids-dolly-' + Math.floor(t / 4.2), dolly: true, ahead: 11, h: 0.6, fov: 68, stiff: 7 } : { id: 'rapids-rock-' + Math.floor(t / 4.2), s: s + 30, lat: 10, h: 2.5, lookPack: true, fov: 58 };
-    else shot = Math.floor(t / 5) % 2 === 0 ? { id: 'heli-' + Math.floor(t / 5), heli: true, r: 36, h: 22, fov: 55 } : { id: 'dolly-' + Math.floor(t / 5), dolly: true, ahead: 12, h: 0.8, fov: 66, stiff: 7 };
+    else {
+      const slot = this.slotAt(t);
+      const flip = slot % 2;
+      if (s > F.canyonInS + 25 && s < F.lilyInS - 30) {
+        // canyon: alternate in-channel apex cams and a low chase dolly
+        const half = track.course.widthAt(s + 32) / 2;
+        shot = flip === 0 ? { id: 'canyon-apex-' + slot, s: s + 32, lat: (slot % 4 < 2 ? 1 : -1) * (half - 1.2), h: 3.2, lookPack: true, fov: 60 } : { id: 'canyon-dolly-' + slot, dolly: true, ahead: 12, h: 0.7, fov: 66, stiff: 7 };
+      } else if (s > F.lilyInS - 30 && s < F.dropLipS - 30) shot = flip === 0 ? { id: 'lily-low-' + slot, s: Math.min(s + 34, F.dropApproachS - 5), lat: -11, h: 0.45, lookPack: true, fov: 62 } : { id: 'lily-heli-' + slot, heli: true, r: 34, h: 20, fov: 54 };
+      else if (s > F.tunnelOutS + 20 && s < F.harborInS) shot = flip === 0 ? { id: 'rapids-dolly-' + slot, dolly: true, ahead: 11, h: 0.6, fov: 68, stiff: 7 } : { id: 'rapids-rock-' + slot, s: s + 30, lat: 10, h: 2.5, lookPack: true, fov: 58 };
+      else shot = flip === 0 ? { id: 'heli-' + slot, heli: true, r: 36, h: 22, fov: 55 } : { id: 'dolly-' + slot, dolly: true, ahead: 12, h: 0.8, fov: 66, stiff: 7 };
+    }
+    // event cuts (lead changes, big hits) pre-empt the schedule for their duration
+    if (this.tvOverride && this.tvOverride.shot && t < this.tvOverride.until && !(s > F.dropLipS - 30 && s < F.dropLandS + 22) && s < L - 70) shot = this.tvOverride.shot;
+    else if (this.tvOverride && t >= this.tvOverride.until + 1.2) this.tvOverride = null;
+    else if (this.tvOverride && t >= this.tvOverride.until && this.tvShot) shot = this.tvShot.id.startsWith('ev-') ? shot : this.tvShot; // hold the scheduled shot briefly after an event cut
 
     if (!this.tvShot || this.tvShot.id !== shot.id) {
       this.tvShot = shot;
       this.snapNext = true; // hard cut
     }
     const sh = this.tvShot;
-    if (sh.heli) {
+    if (sh.pair) {
+      const a = ctx.ducks[sh.pair[0]];
+      const b = ctx.ducks[sh.pair[1]] || a;
+      if (a) {
+        const ms = (a.s + b.s) / 2;
+        const ml = (a.lat + b.lat) / 2;
+        const sep = Math.hypot(a.s - b.s, a.lat - b.lat);
+        const r = Math.max(16, sep * 1.8) * this.userZoom;
+        const c = track.toWorld(ms, ml * 0.5, 0, this._v3);
+        const ang = t * 0.2;
+        outPos.set(c.x + Math.cos(ang) * r, c.y + 9 + sep * 0.4, c.z + Math.sin(ang) * r);
+        if (this.terrainHeight) outPos.y = Math.max(outPos.y, this.terrainHeight(outPos.x, outPos.z) + 4);
+        outLook.copy(c).y += 0.8;
+      }
+    } else if (sh.dollyOn !== undefined) {
+      const v = ctx.ducks[sh.dollyOn] || lead;
+      const half = track.course.widthAt(v.s + sh.ahead) / 2 - 1.5;
+      track.toWorld(v.s + sh.ahead, clamp(-v.lat * 0.3, -half, half), sh.h, outPos);
+      track.toWorld(v.s - 2, v.lat * 0.7, 0.7, outLook);
+    } else if (sh.heli) {
       const a = t * 0.16 + this.userYaw;
       const c = track.toWorld(cs, cl * 0.5, 0, this._v3);
       outPos.set(c.x + Math.cos(a) * sh.r * this.userZoom, c.y + sh.h * this.userZoom, c.z + Math.sin(a) * sh.r * this.userZoom);

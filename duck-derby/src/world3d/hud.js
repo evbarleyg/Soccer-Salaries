@@ -15,7 +15,7 @@ export class Hud {
       item: $('#hud-item'), itemCanvas: $('#item-canvas'), itemLabel: $('#item-label'), section: $('#hud-section'), comm: $('#hud-comm'),
       leader: $('#leader-name'), clock: $('#hud-clock'), fill: $('#progress-fill'), dots: $('#progress-dots'), secs: $('#progress-secs'),
       minimap: $('#minimap'), toast: $('#toast'), popup: $('#popup'), countdown: $('#countdown'), banner: $('#banner'), mud: $('#mud'),
-      speed: $('#speedlines'), flyCap: $('#fly-cap'), flyTitle: $('#fly-title'), flySub: $('#fly-sub'), camBtn: $('#btn-cam'), muteBtn: $('#btn-mute'),
+      speed: $('#speedlines'), drops: $('#drops'), incoming: $('#incoming'), incWhat: $('#inc-what'), incDist: $('#inc-dist'), flyCap: $('#fly-cap'), flyTitle: $('#fly-title'), flySub: $('#fly-sub'), camBtn: $('#btn-cam'), muteBtn: $('#btn-mute'), ladder: $('#hud-ladder'),
     };
     this.itemCtx = this.el.itemCanvas.getContext('2d');
     this.lastRank = -1;
@@ -177,7 +177,7 @@ export class Hud {
       else if (rank === 0) {
         const second = standings[1] ? ducks[standings[1].i] : null;
         gapTxt = second ? `leading by ${(d.s - second.s).toFixed(1)} m` : 'leader';
-      } else gapTxt = `+${Math.max(0, leadD.s - d.s).toFixed(1)} m to ${ctx.names[leader]}`;
+      } else gapTxt = `+${Math.max(0, leadD.s - d.s).toFixed(1)} m · ${ctx.names[leader]} leads`;
       setText(this.el.gap, gapTxt);
       setText(this.el.name, (ctx.follow === 'leader' ? '★ ' : '') + ctx.names[target] + ' ▾');
       const lk = looks[target];
@@ -200,7 +200,8 @@ export class Hud {
         }
       }
       // mud + speed lines (chase view only)
-      this.el.mud.classList.toggle('show', view === 'chase' && !!d.win.mud);
+      const muddy = view === 'chase' && !!d.win.mud;
+      if (muddy !== !!this._muddy) { this._muddy = muddy; this.el.mud.classList.remove('show'); if (muddy) { void this.el.mud.offsetWidth; this.el.mud.classList.add('show'); } }
       this.el.speed.classList.toggle('show', view === 'chase' && (!!d.win.boost || !!d.win.star || (d.section === 'tunnel' && d.v > 20)));
     }
     if (this.sectionUntil && realTime > this.sectionUntil) { this.el.section.classList.remove('show'); this.sectionUntil = 0; }
@@ -225,8 +226,43 @@ export class Hud {
     }
     if (realTime - this.lastMini > 0.066) {
       this.lastMini = realTime;
-      this.drawMinimap(ducks, target, leader, ctx.camPos);
+      if (this.el.minimap.offsetParent !== null) this.drawMinimap(ducks, target, leader, ctx.camPos);
     }
+    if (realTime - (this.lastLadder || 0) > 0.2) {
+      this.lastLadder = realTime;
+      this._ladder(ctx);
+    }
+  }
+
+  /** Mini standings: top rows + a window around my duck (contextual on phones). */
+  _ladder(ctx) {
+    const { ducks, target, standings, names, looks, view } = ctx;
+    if (!standings || !standings.length) return;
+    const n = standings.length;
+    const myRank = ducks[target] ? ducks[target].rank : 0;
+    const compact = window.innerWidth <= 760;
+    let rows;
+    if (view === 'tv' && !compact) rows = standings.slice(0, Math.min(8, n)).map((r, k) => k);
+    else if (compact) {
+      const set = new Set([0, myRank - 1, myRank, myRank + 1, n - 1].filter((k) => k >= 0 && k < n));
+      rows = [...set].sort((a, b) => a - b);
+    } else {
+      const set = new Set([0, 1, 2, 3, myRank - 1, myRank, myRank + 1].filter((k) => k >= 0 && k < n));
+      rows = [...set].sort((a, b) => a - b);
+    }
+    const leadS = ducks[standings[0].i].s;
+    let html = '';
+    let prev = -1;
+    for (const k of rows) {
+      if (prev >= 0 && k > prev + 1) html += '<li class="sep"></li>';
+      prev = k;
+      const i = standings[k].i;
+      const d = ducks[i];
+      const lk = looks[i];
+      const gap = k === 0 ? (d.finished ? 'FIN' : 'leader') : d.finished ? 'FIN' : `+${Math.max(0, leadS - d.s).toFixed(0)}m`;
+      html += `<li class="${i === target ? 'me' : ''}"><span class="rk">${k + 1}</span><span class="sw" style="background:${lk.towel.bg};color:${lk.towel.text}">${lk.number}</span><span class="nm">${esc(names[i])}</span><span class="gp">${gap}</span></li>`;
+    }
+    if (html !== this._ladderHtml) { this._ladderHtml = html; this.el.ladder.innerHTML = html; }
   }
 
   _itemSlot(d, t, realTime) {
@@ -384,6 +420,23 @@ export class Hud {
     this.el.flyCap.classList.add('show');
   }
 
+  splashLens() {
+    const d = this.el.drops;
+    d.classList.remove('show');
+    void d.offsetWidth;
+    d.classList.add('show');
+  }
+
+  /** Incoming projectile warning (null hides). */
+  incoming(what, dist) {
+    const el = this.el.incoming;
+    if (!what) { if (this._inc) { el.classList.remove('show'); this._inc = null; } return; }
+    if (this._inc !== what) { this._inc = what; this.el.incWhat.textContent = what; el.classList.add('show'); }
+    const d = `${Math.max(0, Math.round(dist))} m`;
+    if (this.el.incDist.textContent !== d) this.el.incDist.textContent = d;
+    el.style.setProperty('--p', `${Math.max(0.12, Math.min(0.6, dist / 80))}s`);
+  }
+
   setCamLabel(view) { this.el.camBtn.textContent = view.toUpperCase(); }
   setMuted(muted) { this.el.muteBtn.classList.toggle('off', muted); }
 
@@ -393,11 +446,14 @@ export class Hud {
     this.el.comm.classList.remove('show');
     this.el.section.classList.remove('show');
     this.el.mud.classList.remove('show');
+    this._muddy = false;
     this.el.speed.classList.remove('show');
+    this.incoming(null);
     this.lastSection = '';
   }
 }
 
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 function setText(el, txt) {
   if (el.textContent !== txt) el.textContent = txt;
 }

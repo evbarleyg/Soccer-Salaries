@@ -85,20 +85,27 @@
   <div id="hud-item" class="empty"><canvas id="item-canvas" width="120" height="120"></canvas><div id="item-label">NO ITEM</div></div>
   <div id="hud-top"><div id="hud-section"></div><div id="hud-comm"></div></div>
   <div id="hud-tr">
-    <button id="btn-cam" type="button" title="Change camera (C)">TV VIEW</button>
-    <button id="btn-duck" type="button" title="Switch duck ([ / ])">DUCK</button>
-    <button id="btn-fly" type="button" title="Free-fly camera (F)">FLY</button>
-    <button id="btn-mute" type="button" title="Sound (M)">SOUND</button>
+    <button id="btn-more" type="button" aria-label="Menu" title="Menu">⋯</button>
+    <div id="hud-menu">
+      <button id="btn-cam" type="button" title="Change camera (C)">TV VIEW</button>
+      <button id="btn-duck" type="button" title="Switch duck ([ / ])">SWITCH DUCK</button>
+      <button id="btn-fly" type="button" title="Free-fly camera (F)">FLY</button>
+      <button id="btn-mute" type="button" title="Sound (M)">SOUND</button>
+      <button id="btn-tilt" type="button" title="Tilt the phone to look around" hidden>TILT LOOK</button>
+    </div>
   </div>
   <div id="hud-leader"><span>LEADER</span><b id="leader-name"></b></div>
   <div id="hud-clock">0:00.0</div>
+  <ol id="hud-ladder"></ol>
   <div id="progress"><div id="progress-track"><div id="progress-fill"></div></div><div id="progress-dots"></div><div id="progress-secs"></div></div>
   <canvas id="minimap" width="220" height="220"></canvas>
   <div id="toast"></div>
   <div id="popup"></div>
   <div id="countdown"></div>
   <div id="banner"></div>
-  <div id="mud"><i></i><i></i><i></i><i></i><i></i></div>
+  <div id="mud"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div id="drops"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div id="incoming"><b id="inc-what">HORNET</b><span id="inc-dist">24 m</span></div>
   <div id="speedlines"></div>
   <div id="fly-cap"><div id="fly-title"></div><div id="fly-sub"></div></div>
   <button id="btn-skip" type="button">Skip ›</button>

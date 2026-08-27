@@ -206,6 +206,13 @@ function initSetupUi() {
   if (Q.mobile && urlFlags.get('dev') !== '1') $('#btn-fly').hidden = true;
   $('#btn-fly').addEventListener('click', () => toggleFree());
   $('#btn-mute').addEventListener('click', () => toggleSound());
+  $('#btn-more').addEventListener('click', () => $('#hud-tr').classList.toggle('open'));
+  if (Q.mobile && 'DeviceOrientationEvent' in window) {
+    const tb = $('#btn-tilt');
+    tb.hidden = false;
+    tb.addEventListener('click', () => toggleTilt());
+  }
+  document.querySelectorAll('#hud-menu button').forEach((b) => b.addEventListener('click', () => $('#hud-tr').classList.remove('open')));
   $('#btn-skip').addEventListener('click', () => skipIntro());
   $('#picker-close').addEventListener('click', () => (els.picker.hidden = true));
   els.picker.addEventListener('click', (e) => { if (e.target === els.picker) els.picker.hidden = true; });
@@ -292,6 +299,7 @@ function startRace({ fromUrl = false, names = null } = {}) {
   state.race = createRace({ count: raceNames.length, seed: state.seed, hazards: state.hazards, items: state.items });
   state.looks = assignLooks(raceNames);
   commentator = new WorldCommentator(raceNames, state.seed);
+  rig.setSeed(state.seed);
   // per-duck splashdown times for the landing squash
   state.splashTimes = raceNames.map(() => []);
   for (const e of state.race.events) if (e.type === 'splashdown') state.splashTimes[e.duck].push(e.t);
@@ -432,6 +440,39 @@ function toggleFree() {
   else { state.prevView = state.view; state.view = 'free'; }
   applyView(true);
 }
+// Tilt-to-look on phones: device orientation nudges the camera yaw/pitch around its follow target.
+const tilt = { on: false, base: null, yaw: 0, pitch: 0 };
+async function toggleTilt() {
+  const btn = $('#btn-tilt');
+  if (tilt.on) { tilt.on = false; btn.classList.remove('on'); rig.userYaw = 0; rig.userPitch = 0; return; }
+  try {
+    const DOE = window.DeviceOrientationEvent;
+    if (DOE && typeof DOE.requestPermission === 'function') {
+      const res = await DOE.requestPermission();
+      if (res !== 'granted') { hud.toast('Motion access denied', state.realTime, 1.5); return; }
+    }
+  } catch { /* older browsers: just try */ }
+  tilt.on = true;
+  tilt.base = null;
+  btn.classList.add('on');
+  hud.toast('Tilt to look around', state.realTime, 1.5);
+}
+window.addEventListener('deviceorientation', (e) => {
+  if (!tilt.on || e.beta == null || e.gamma == null) return;
+  const portrait = window.innerHeight >= window.innerWidth;
+  const yawSrc = portrait ? e.gamma : e.beta;
+  const pitchSrc = portrait ? e.beta : -e.gamma;
+  if (!tilt.base) tilt.base = { yaw: yawSrc, pitch: pitchSrc };
+  let dy = yawSrc - tilt.base.yaw;
+  if (dy > 180) dy -= 360;
+  if (dy < -180) dy += 360;
+  const dp = pitchSrc - tilt.base.pitch;
+  tilt.yaw = lerp(tilt.yaw, clamp(-dy * 0.03, -1.3, 1.3), 0.25);
+  tilt.pitch = lerp(tilt.pitch, clamp(-dp * 0.015, -0.35, 0.6), 0.25);
+  rig.userYaw = tilt.yaw;
+  rig.userPitch = tilt.pitch;
+});
+
 function toggleSound() {
   state.sound = !state.sound;
   audio.unlock();
@@ -566,7 +607,8 @@ function handleEvent(ev) {
       if (ev.item === 'hotdog') fx.mustard(tmpV.copy(duckPos(i)).setY(duckPos(i).y + 0.8));
       if (isT) { rig.kick(1.0); audio.bonk(); buzz([50, 40, 50]); hud.callout(ev.item === 'hornet' ? 'STUNG!' : ev.item === 'seagull' ? 'DIVE-BOMBED!' : ev.item === 'stone' ? 'BONK!' : 'HOT-DOGGED!', '#ff6f61'); flash(0.25); }
       else if (nearCam(i)) audio.bonk();
-      if (ev.rank === 0) audio.ooh();
+      if (ev.rank <= 2) audio.ooh();
+      if (ev.rank <= 3 && nearCam(i, 70)) rig.tvEvent('hit', { duck: i }, state.t);
       break;
     case 'hotdog':
       if (ev.result !== 'hit') { fx.mustard(tmpV.copy(duckPos(i)).setY(duckPos(i).y + 1.5)); audio.pop(); }
@@ -588,6 +630,7 @@ function handleEvent(ev) {
       break;
     case 'lead':
       if (isT && state.t > 3) { hud.toast('1st!', state.realTime); audio.cheer(0.25, 1.2); }
+      if (state.t > 4 && ev.from >= 0) { rig.tvEvent('lead', { a: i, b: ev.from }, state.t); audio.cheer(0.18, 1.0); }
       break;
     case 'burst':
       if (isT) audio.whoosh(0.14);
@@ -601,7 +644,7 @@ function handleEvent(ev) {
       break;
     case 'splashdown':
       fx.splash(tmpV.copy(duckPos(i)).setY(track.surfaceY(state.duckStates[i].s, state.duckStates[i].lat) + 0.2), 1.6);
-      if (isT) { audio.bigSplash(); rig.kick(Q.reducedMotion ? 0.2 : 0.7); buzz(40); } else if (nearCam(i)) audio.splash(0.3);
+      if (isT) { audio.bigSplash(); rig.kick(Q.reducedMotion ? 0.2 : 0.7); buzz(40); if (state.view === 'chase') hud.splashLens(); } else if (nearCam(i)) audio.splash(0.3);
       break;
     case 'halfway':
       break;
@@ -865,6 +908,27 @@ function step(dt) {
         hud.lastRank = -1;
       }
     }
+    // "THE DROP" anticipation for my duck + incoming projectile warning
+    const me = state.duckStates[state.target];
+    if (me && state.phase === 'race') {
+      if (!state.dropCalled && me.s > course.features.dropApproachS - 25 && me.s < course.features.dropLipS) {
+        state.dropCalled = true;
+        hud.say('THE DROP ▸▸▸ hold on!', state.realTime, 2.2, 3);
+        audio.setCrowd(0.95);
+      }
+      let warn = null;
+      let wd = 0;
+      for (const p of race.projectiles) {
+        if (state.t < p.t0 || state.t > p.t1) continue;
+        if ((p.type === 'hornet' && p.target === state.target) || (p.type === 'seagull' && me.rank === 0 && !me.finished)) {
+          const k = Math.min(Math.floor((state.t - p.t0) / race.dt), p.path.length / 2 - 1);
+          const ps = p.path[k * 2];
+          const dist = me.s - ps;
+          if (!warn || dist < wd) { warn = p.type === 'hornet' ? 'HORNET' : 'SEAGULL'; wd = dist; }
+        }
+      }
+      hud.incoming(warn, wd);
+    } else hud.incoming(null);
     // timeline
     while (state.cursor < state.timeline.length && state.timeline[state.cursor].t <= state.t) {
       const ev = state.timeline[state.cursor++];
@@ -1123,6 +1187,7 @@ function jump(t) {
   state.rate = 1;
   state.freezeUntil = 0;
   state.letterboxed = false;
+  state.dropCalled = t > 15;
   letterbox(false);
   $('#finish-card').hidden = true;
   state.jumping = true;
