@@ -266,6 +266,7 @@ body.phase-finish #hud-item { display: none; }
 .lobby-actions button { border: 1px solid var(--line); background: rgba(255,255,255,0.08); color: #fff; border-radius: 10px; padding: 0.5rem 0.9rem; font: 800 0.9rem var(--num); }
 .lobby-actions .primary { background: linear-gradient(180deg, #ffe067, #ffbf1f); color: #1a1300; border: 0; box-shadow: 0 4px 0 #b37d00; }
 @media (max-width: 760px) { #lobby .lobby-card { flex-direction: column; text-align: center; } #lobby-roster { justify-content: center; } .lobby-actions { justify-content: center; } #lobby-qr { width: 150px; } }
+@media (max-height: 500px) { #lobby { place-items: start center; overflow-y: auto; pointer-events: auto; } #lobby .lobby-card { flex-direction: row; text-align: left; padding: 10px 14px; gap: 12px; } #lobby-qr { width: 110px; padding: 6px; } #lobby-url { display: none; } #lobby-count { font-size: 2.2rem; } #lobby-roster { margin: 4px 0; max-height: 3.4rem; overflow: hidden; } .lobby-actions { justify-content: flex-start; } }
 body.phase-grid #minimap, body.phase-grid #progress, body.phase-countdown #minimap,
 body.phase-lobby #hud-tl, body.phase-lobby #hud-item, body.phase-lobby #hud-ladder, body.phase-lobby #progress, body.phase-lobby #minimap, body.phase-lobby #hud-leader, body.phase-lobby #hud-clock { display: none; }
 
