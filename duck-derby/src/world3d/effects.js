@@ -6,13 +6,12 @@ import * as THREE from 'three';
 import { PAL } from './gfx.js';
 import { itemIconCanvas } from './icons.js';
 import { ITEM_TUNING } from './items.js';
-import { clamp, lerp, smoothstep } from '../rng.js';
+import { clamp, lerp, smoothstep, mulberry32 } from '../rng.js';
 
 const GRAV = 9.8;
 
 export class Effects {
   constructor(scene, track, quality) {
-    this.scene = scene;
     this.track = track;
     this.quality = quality;
     this.root = new THREE.Group();
@@ -20,7 +19,7 @@ export class Effects {
     scene.add(this.root);
     this._initParticles(Math.round(2200 * quality.particles));
     this._initProjectiles();
-    this.rand = mulberry(9001);
+    this.rand = mulberry32(9001);
     this.fireT = 0;
     this.budget = 1;
     this._v = new THREE.Vector3();
@@ -481,8 +480,8 @@ export class Effects {
   }
 
   /** Fireworks show driver: call each frame after the winner is home. */
-  fireworksTick(dt, barges, active) {
-    if (!active || !barges || !barges.length) return null;
+  fireworksTick(dt, barges) {
+    if (!barges || !barges.length) return null;
     this.fireT -= dt;
     if (this.fireT <= 0) {
       this.fireT = this.rnd(0.35, 0.9);
@@ -494,16 +493,6 @@ export class Effects {
 }
 
 const tmpColor = new THREE.Color();
-function mulberry(seed) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 /** Sprite showing a held item above a duck. */
 export function makeItemSprite() {

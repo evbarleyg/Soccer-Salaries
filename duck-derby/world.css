@@ -137,7 +137,6 @@ body.joining .setup-head .logo span { font-size: 0.8rem; }
 @keyframes itemfly { from { opacity: 1; transform: translateX(-50%) scale(1); } to { opacity: 0; transform: translate(60%, -30%) scale(1.6); } }
 @keyframes itempop { 0% { transform: scale(0.7); } 100% { transform: scale(1); } }
 #item-label { font-size: 0.75rem; font-weight: 900; letter-spacing: 0.1em; margin-top: 4px; color: #fff; text-shadow: 0 2px 0 rgba(0,0,0,0.6); }
-#hud-item { position: absolute; }
 #hud-item.arming canvas { border-color: #ff8a3c; box-shadow: 0 0 0 3px rgba(255,138,60,0.5), 0 6px 20px rgba(0,0,0,0.3); animation: armpulse 0.26s ease-in-out infinite alternate; }
 @keyframes armpulse { from { transform: scale(1); } to { transform: scale(1.08); } }
 #hud-item.draining::before { content: ""; position: absolute; left: 50%; top: 0; width: 86px; height: 86px; margin-left: -43px; border-radius: 20px; background: conic-gradient(rgba(102,214,255,0) var(--drain, 0deg), rgba(102,214,255,0.75) var(--drain, 0deg)); -webkit-mask: radial-gradient(closest-side, transparent 78%, #000 80%); mask: radial-gradient(closest-side, transparent 78%, #000 80%); pointer-events: none; }
@@ -395,3 +394,6 @@ body.phase-lobby #hud-tl, body.phase-lobby #hud-item, body.phase-lobby #hud-ladd
 }
 @media (max-width: 420px) { #join-grid { grid-template-columns: 1fr 1fr; gap: 6px; } .join-card { min-height: 56px; padding: 6px 8px; grid-template-columns: 1.7rem minmax(0, 1fr); } .join-card small { display: none; } .join-card .nm { white-space: normal !important; text-overflow: clip !important; line-height: 1.15; font-size: 0.88rem; word-break: break-word; } }
 
+
+/* freeze-frame: only the picture and the caption */
+body.letterboxed #hud-tl, body.letterboxed #hud-item, body.letterboxed #hud-ladder, body.letterboxed #hud-leader, body.letterboxed #hud-clock, body.letterboxed #hud-top, body.letterboxed #progress, body.letterboxed #banner { opacity: 0 !important; transition: opacity 0.2s; }

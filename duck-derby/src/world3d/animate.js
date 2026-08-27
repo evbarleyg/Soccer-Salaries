@@ -8,7 +8,6 @@ const starGeo = new THREE.OctahedronGeometry(0.13, 0);
 const starMat = new THREE.MeshBasicMaterial({ color: 0xffe14d });
 const shieldGeo = new THREE.SphereGeometry(1.05, 20, 14);
 const GOLD = new THREE.Color(0xffc830);
-const BLACK = new THREE.Color(0x000000);
 
 export class DuckAnimator {
   /** @param duck result of buildDuck; @param track Track */
@@ -21,17 +20,13 @@ export class DuckAnimator {
     this.yawOff = 0;
     this.squash = 0;
     this.prevLat = null;
-    this.prevS = null;
     this.latVel = 0;
     this.frame = null;
     this.basis = new THREE.Matrix4();
-    this.q = new THREE.Quaternion();
     this.stars = null;
     this.shield = null;
-    this.shieldPop = -1;
     this.glow = 0;
     this.sprayAcc = 0;
-    this.lastSpin = null;
     this._v = new THREE.Vector3();
     this._back = new THREE.Vector3();
     this.emissiveMats = duck.glowMats && duck.glowMats.length ? duck.glowMats : [duck.mats.body, duck.mats.head, duck.mats.wing, duck.mats.light];
@@ -92,11 +87,10 @@ export class DuckAnimator {
 
     // --- orientation basis from the track (yaw + slope), roll/pitch extras on the pivot
     // lateral velocity -> small yaw into the drift
-    if (this.prevLat === null) { this.prevLat = d.lat; this.prevS = d.s; }
+    if (this.prevLat === null) this.prevLat = d.lat;
     const dl = dt > 0 ? (d.lat - this.prevLat) / Math.max(dt, 1e-3) : 0;
     this.latVel = lerp(this.latVel, dl, Math.min(1, dt * 6));
     this.prevLat = d.lat;
-    this.prevS = d.s;
     const speed = Math.max(0.1, d.v);
     const slipYaw = Math.atan2(this.latVel, speed) * 0.9;
     // drift: tail-out in sharp corners (nose into the turn)
@@ -206,7 +200,6 @@ export class DuckAnimator {
       const k = 1 + Math.sin(rt * 6) * 0.03;
       this.shield.scale.setScalar(k);
       this.shield.material.opacity = ctx.isTarget ? 0.2 : 0.12;
-      this.shieldPop = w.shield.popped ? w.shield.t1 : -1;
       this.shieldWin = w.shield;
     } else if (this.shield) {
       // pop animation just after it ends
@@ -232,7 +225,7 @@ export class DuckAnimator {
 
     // --- continuous particles
     const fx = ctx.fx;
-    if (fx && !d.hidden) {
+    if (fx) {
       const back = this._back.copy(f.flat).negate();
       const sternPos = this._v.copy(duck.group.position).addScaledVector(back, 0.75);
       sternPos.y = waterY + 0.15;

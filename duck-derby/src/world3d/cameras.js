@@ -2,7 +2,7 @@
 // channel or clips the tunnel), TV director with auto-cuts, free-fly spectator
 // cam, course fly-through, grid sweep, finish-line cam, winner orbit, podium.
 import * as THREE from 'three';
-import { clamp, lerp, smoothstep } from '../rng.js';
+import { clamp, lerp, smoothstep, mulberry32 } from '../rng.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const tmpLook = new THREE.Vector3();
@@ -24,28 +24,25 @@ export class CameraRig {
     this.userZoom = 1;
     this.snapNext = true;
     this.tvShot = null;
-    this.tvShotSince = 0;
-    this.lastCutT = -10;
     this.free = { yaw: 0, pitch: -0.2, vel: new THREE.Vector3(), keys: new Set(), speed: 22, touchMove: 0 };
-    this.tmpF = null;
     this._v1 = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
     this._v3 = new THREE.Vector3();
     this.portrait = false;
     this.podiumSpot = null; // {pos, look}
+    this.setSeed(1);
     this._bindInput();
   }
 
   /** Seed the TV director's shot lengths (2.8–6.5 s) so cuts don't land on a metronome. */
   setSeed(seed) {
-    let a = (seed >>> 0) || 1;
-    const rnd = () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const rnd = mulberry32((seed >>> 0) || 1);
     this.slots = [0];
     while (this.slots[this.slots.length - 1] < 200) this.slots.push(this.slots[this.slots.length - 1] + 2.8 + rnd() * 3.7);
     this.tvOverride = null;
   }
   slotAt(t) {
-    const s = this.slots || [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
+    const s = this.slots;
     let k = 0;
     while (k < s.length - 1 && s[k + 1] <= t) k++;
     return k;
@@ -161,7 +158,7 @@ export class CameraRig {
   }
 
   /** Desired chase-camera pose for duck state d (fills outPos/outLook; returns extra FOV). */
-  chasePose(d, ctx, outPos, outLook) {
+  chasePose(d, outPos, outLook) {
     const track = this.track;
     const inTunnel = d.section === 'tunnel' || (d.s > track.features.tunnelInS - 12 && d.s < track.features.tunnelOutS + 4);
     const portrait = this.portrait;
@@ -213,7 +210,7 @@ export class CameraRig {
       case 'flythrough': {
         const T = ctx.flyDuration || 11;
         const e = clamp(ctx.phaseTime / T, 0, 1);
-        const ease = e * e * (3 - 2 * e);
+        const ease = smoothstep(0, 1, e);
         const s = lerp(track.features.minS + 20, L + 40, ease);
         const f = track.frame(s);
         // open high over the marina (clear of the start banner and blimp), then swoop down to racing height
@@ -227,7 +224,6 @@ export class CameraRig {
       }
       case 'grid': {
         const e = clamp(ctx.phaseTime / (ctx.gridDuration || 3), 0, 1);
-        const n = ctx.ducks.length;
         const w = track.frame(0).width;
         // sweep along the line-up at duck height, then rise behind the pack
         const a = lerp(-1, 1, smoothstep(0, 0.75, e));
@@ -240,21 +236,20 @@ export class CameraRig {
             const p2 = this._v3;
             const l2 = tmpLook;
             if (ctx.view === 'tv') { track.toWorld(-14, 16, 9, p2); track.toWorld(6, 0, 0.8, l2); }
-            else this.chasePose(tgt, ctx, p2, l2);
+            else this.chasePose(tgt, p2, l2);
             desiredPos.lerp(p2, k);
             desiredLook.lerp(l2, k);
           }
         }
         wantFov = lerp(baseFov + 4, baseFov, smoothstep(0.65, 1, e));
         stiffness = 6;
-        void n;
         break;
       }
       case 'chase': {
         const d = ctx.ducks[ctx.target] || ctx.ducks[0];
         if (!d) break;
         // camera sits behind along the track (track space keeps it inside the channel/tunnel), swung by user yaw
-        const inTunnel = this.chasePose(d, ctx, desiredPos, desiredLook);
+        const inTunnel = this.chasePose(d, desiredPos, desiredLook);
         // pack zoom: when the pack is tight around my duck, widen so neighbours stay in frame
         let close = 0;
         for (const o of ctx.ducks) if (o !== d && Math.abs(o.s - d.s) < 6 && Math.abs(o.lat - d.lat) < 5) close++;

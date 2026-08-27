@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { assignLooks, SAMPLE_NAMES, MIN_DUCKS, MAX_DUCKS, TOWELS } from '../ducks.js';
 import { randomSeed, seedToCode, codeToSeed, clamp, lerp, smoothstep } from '../rng.js';
 import { ordinal } from '../commentary.js';
-import { getCourse, SECTIONS } from './course.js';
+import { getCourse } from './course.js';
 import { createRace, positionAt, lateralAt, speedAt, standingsAt, heldAt, activeWindows, ENGINE_VERSION } from './race.js';
 import { parseParams, buildQuery, resolveCam, draftOrder } from './params.js';
 import { detectQuality, createRenderer, makeSky, makeLights, PAL } from './gfx.js';
@@ -28,6 +28,7 @@ const Q = detectQuality();
 Q.reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const params = parseParams(location.search);
 const urlFlags = new URLSearchParams(location.search);
+const NOADAPT = urlFlags.has('noadapt');
 const course = getCourse();
 const track = new Track(course);
 const L = course.length;
@@ -91,7 +92,7 @@ const lights = makeLights(scene, camera);
 const rig = new CameraRig(camera, track, canvas);
 rig.reducedMotion = Q.reducedMotion;
 const hud = new Hud(course);
-hud.onRank = (dir) => { if (dir > 0) { audio.blip(true); buzz(30); } else audio.blip(false); };
+hud.onRank = (dir) => { if (dir > 0) { audio.blip(true); haptic(30); } else audio.blip(false); };
 const audio = new WorldAudio();
 audio.enabled = state.sound;
 let terrain, scenery, fx, waterMat, fallMat;
@@ -163,7 +164,7 @@ async function boot() {
     sample.group.traverse((o) => { o.frustumCulled = false; });
     warm.position.copy(camera.position).add(new THREE.Vector3(0, -3, -8).applyQuaternion(camera.quaternion));
     scene.add(warm);
-    if (fx.warmup) fx.warmup();
+    fx.warmup();
     if (renderer.compileAsync && renderer.extensions.has('KHR_parallel_shader_compile')) await renderer.compileAsync(scene, camera); else renderer.compile(scene, camera);
     renderer.render(scene, camera);
     scene.remove(warm);
@@ -181,6 +182,7 @@ async function boot() {
 // --------------------------------------------------------------------------- setup UI
 const els = {
   setup: $('#setup'), roster: $('#roster'), countOut: $('#count-out'), start: $('#btn-start'), ctaSub: $('#cta-sub'),
+  letterbox: $('#letterbox'), lbCaption: $('#lb-caption'), finishCard: $('#finish-card'), lobbyCount: $('#lobby-count'),
   optRule: $('#opt-rule'), optCam: $('#opt-cam'), optView: $('#opt-view'), optSeed: $('#opt-seed'), optItems: $('#opt-items'), optHotdogs: $('#opt-hotdogs'), optFly: $('#opt-fly'), optSound: $('#opt-sound'),
   shareBanner: $('#share-banner'), results: $('#results'), resBoard: $('#res-board'), resSub: $('#res-sub'), resTitle: $('#res-title'),
   picker: $('#picker'), pickerList: $('#picker-list'),
@@ -418,7 +420,7 @@ function startRace({ fromUrl = false, names = null } = {}) {
   } else if (state.go && Date.now() > state.go - PRE) {
     // the shared start has (nearly) happened: join live, or show the result if it is long over
     const late = (Date.now() - state.go) / 1000;
-    const lastT = Math.max(...state.race.finishTimes);
+    const lastT = state.lastFinishT;
     if (late > lastT + 8) { window.__duckWorld.results(); }
     else if (late > -0.2) { setPhase('race'); jump(Math.max(0, late)); }
     else { state.gridT = Math.max(0.8, (state.go - Date.now()) / 1000 - 2.4); setPhase('grid'); }
@@ -448,7 +450,7 @@ function resetPlayback() {
   state.freezeUntil = 0;
   state.letterboxed = false;
   letterbox(false);
-  $('#finish-card').hidden = true;
+  els.finishCard.hidden = true;
   state.cursor = 0;
   state.finishCount = 0;
   state.firstFinishT = null;
@@ -457,7 +459,7 @@ function resetPlayback() {
   state.fireworks = false;
   state.podium = false;
   for (const d of state.ducks) { d.anim.prevLat = null; }
-  computeDuckStates(0, 1 / 60);
+  computeDuckStates(0);
 }
 
 function buildTimeline() {
@@ -478,6 +480,7 @@ function buildTimeline() {
   }
   for (const p of race.projectiles) if (p.type === 'seagull' && p.diveT) cues.push({ t: p.diveT, type: 'cue-dive', duck: p.target });
   state.timeline = race.events.concat(cues).sort((a, b) => a.t - b.t);
+  state.lastFinishT = Math.max(...race.finishTimes);
 }
 
 function replay() {
@@ -490,8 +493,8 @@ function replay() {
 }
 
 function setBodyClass(phase, view = state.view) {
-  const joining = document.body.classList.contains('joining');
-  document.body.className = `phase-${phase} view-${view}` + (joining ? ' joining' : '');
+  const keep = ['joining', 'letterboxed'].filter((c) => document.body.classList.contains(c)).join(' ');
+  document.body.className = `phase-${phase} view-${view} ${keep}`.trim();
 }
 
 function setPhase(phase) {
@@ -501,7 +504,7 @@ function setPhase(phase) {
   els.setup.hidden = phase !== 'menu';
   if (phase === 'menu') {
     hud.show(false);
-    $('#finish-card').hidden = true;
+    els.finishCard.hidden = true;
     letterbox(false);
     state.fireworks = false;
     lowerThird(null);
@@ -608,10 +611,6 @@ function toggleSound() {
   if (state.sound) audio.startAmbience();
   hud.setMuted(!state.sound);
   els.optSound.checked = state.sound;
-  $('#opt-lobby').checked = state.lobbyOn;
-  $('#opt-lobby').addEventListener('change', () => { state.lobbyOn = $('#opt-lobby').checked; saveStore(); });
-  $('#lobby-now').addEventListener('click', () => { state.go = Date.now() + 6500; history.replaceState(null, '', '?' + shareQuery(true)); renderLobbyQr(); });
-  $('#lobby-copy').addEventListener('click', (e) => copyText(shareUrl(), e.currentTarget, 'Copied!'));
   saveStore();
 }
 function setTarget(i, userChosen = true) {
@@ -644,7 +643,7 @@ function openPicker() {
 
 // --------------------------------------------------------------------------- per-frame race state
 const winBuf = [];
-function computeDuckStates(t, dt) {
+function computeDuckStates(t) {
   const race = state.race;
   if (!race) return;
   const n = race.count;
@@ -686,7 +685,6 @@ function computeDuckStates(t, dt) {
       ds.podiumSpot = scenery.podium.spots[k];
     }
   } else for (const ds of state.duckStates) ds.podiumSpot = null;
-  void dt;
 }
 
 function frameCtx(dt) {
@@ -724,7 +722,7 @@ function handleEvent(ev) {
   switch (ev.type) {
     case 'pickup':
       scenery.popItemBox(ev.box, lateralAt(race, i, ev.t), ev.t);
-      if (isT) { audio.itemGet(); buzz(25); }
+      if (isT) { audio.itemGet(); haptic(25); }
       else if (nearCam(i, 25)) audio.tick();
       break;
     case 'use':
@@ -741,8 +739,8 @@ function handleEvent(ev) {
       if (ev.item === 'hotdog') fx.mustard(tmpV.copy(duckPos(i)).setY(duckPos(i).y + 0.8));
       const byName = ev.by >= 0 ? state.raceNames[ev.by] : '';
       const what = ev.item === 'hornet' ? 'STUNG' : ev.item === 'seagull' ? 'DIVE-BOMBED' : ev.item === 'stone' ? 'BONK' : 'HOT-DOGGED';
-      if (isT) { rig.kick(1.0); rig.fovPunch(4); audio.bonk(); buzz([50, 40, 50]); hud.callout(byName ? `${what}! ← ${byName}` : `${what}!`, '#ff6f61'); flash(0.25); }
-      else if (ev.by === state.target) { hud.callout(`HIT ${name}!`, ITEMS[ev.item] ? ITEMS[ev.item].color : '#ffd23f'); audio.blip(true); buzz(30); }
+      if (isT) { rig.kick(1.0); rig.fovPunch(4); audio.bonk(); haptic([50, 40, 50]); hud.callout(byName ? `${what}! ← ${byName}` : `${what}!`, '#ff6f61'); flash(0.25); }
+      else if (ev.by === state.target) { hud.callout(`HIT ${name}!`, ITEMS[ev.item] ? ITEMS[ev.item].color : '#ffd23f'); audio.blip(true); haptic(30); }
       else if (nearCam(i)) audio.bonk();
       if (ev.rank <= 2) audio.ooh();
       break;
@@ -790,7 +788,7 @@ function handleEvent(ev) {
       break;
     case 'splashdown':
       fx.splash(tmpV.copy(duckPos(i)).setY(track.surfaceY(state.duckStates[i].s, state.duckStates[i].lat) + 0.2), 1.6);
-      if (isT) { audio.bigSplash(); rig.kick(Q.reducedMotion ? 0.2 : 0.7); buzz(40); if (state.view === 'chase') hud.splashLens(); } else if (nearCam(i)) audio.splash(0.3);
+      if (isT) { audio.bigSplash(); rig.kick(Q.reducedMotion ? 0.2 : 0.7); haptic(40); if (state.view === 'chase') hud.splashLens(); } else if (nearCam(i)) audio.splash(0.3);
       break;
     case 'kick':
       if (isT) { hud.callout('KICK FOR HOME!', '#ffd23f'); audio.whoosh(0.25); }
@@ -798,7 +796,7 @@ function handleEvent(ev) {
     case 'halfway':
       break;
     case 'stretch':
-      hud.banner('FINAL STRETCH');
+      hud.card('FINAL STRETCH');
       audio.stinger();
       audio.setCrowd(0.9);
       break;
@@ -819,7 +817,6 @@ function handleEvent(ev) {
           state.letterboxed = true;
           letterbox(true, race.photoFinish ? `PHOTO FINISH · ${name} by ${race.margin.toFixed(2)} s` : race.close ? `${name} BY A BEAK · ${race.margin.toFixed(2)} s` : `${name} WINS · by ${race.margin.toFixed(2)} s`);
         }
-        hud.card(race.photoFinish ? `PHOTO! ${name}!` : race.close ? `${name} BY A BEAK!` : `${name} WINS!`, 1.6);
         const arch = track.toWorld(L, 0, 6);
         fx.confetti(arch, 1.5);
         fx.confetti(track.toWorld(L, 8, 2), 1.2);
@@ -830,7 +827,7 @@ function handleEvent(ev) {
       if (isT && state.follow === 'fixed') {
         const pick = draftOrder(race.order, state.rule).indexOf(i) + 1;
         showFinishCard(place, pick);
-        buzz(200);
+        haptic(200);
       } else if (isT) hud.toast(place === 1 ? 'WINNER!' : ordinal(place), state.realTime, 2);
       if (fl) hud.say(fl, state.realTime, 3);
       return;
@@ -855,9 +852,9 @@ function flash(strength = 1) {
   f.classList.add('on');
 }
 function letterbox(on, caption = '') {
-  const lb = $('#letterbox');
-  lb.classList.toggle('on', on);
-  if (caption) $('#lb-caption').textContent = caption;
+  els.letterbox.classList.toggle('on', on);
+  document.body.classList.toggle('letterboxed', on);
+  if (caption) els.lbCaption.textContent = caption;
 }
 function lowerThird(kicker, title, sub) {
   const el = $('#lower-third');
@@ -870,14 +867,14 @@ function lowerThird(kicker, title, sub) {
   el.hidden = false;
 }
 function showFinishCard(place, pick) {
-  const card = $('#finish-card');
+  const card = els.finishCard;
   const lk = state.looks[state.target];
   card.style.setProperty('--me', lk.towel.bg);
   card.querySelector('.fc-place').textContent = place === 1 ? `${state.raceNames[state.target]} WON!` : `${state.raceNames[state.target]} · ${ordinal(place).toUpperCase()}`;
   card.querySelector('.fc-pick').textContent = `→ DRAFT PICK #${pick}`;
   card.hidden = false;
 }
-function buzz(pattern) {
+function haptic(pattern) {
   try { if (navigator.vibrate && Q.mobile) navigator.vibrate(pattern); } catch { /* ignore */ }
 }
 
@@ -887,7 +884,6 @@ function showResults() {
   const order = race.order;
   const picks = draftOrder(order, state.rule);
   const winner = state.raceNames[order[0]];
-  els.resTitle.textContent = 'Draft order';
   $('#res-rule').textContent = state.rule === 'l' ? 'Last place picks first' : 'Winner picks first';
   $('#res-seed').textContent = 'seed ' + seedToCode(state.seed);
   const minePlace = state.follow === 'fixed' ? order.indexOf(state.target) + 1 : 0;
@@ -915,7 +911,7 @@ function showResults() {
   const notes = raceHighlights(race);
   $('#res-notes').innerHTML = notes.map((n) => `<li><b>${n.title}</b> ${escapeHtml(n.text)}</li>`).join('');
   els.results.hidden = false;
-  $('#finish-card').hidden = true;
+  els.finishCard.hidden = true;
   if (myRow) setTimeout(() => myRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 700);
   history.replaceState(null, '', '?' + shareQuery(true));
 }
@@ -1082,7 +1078,7 @@ function showGridNames(on) {
 // --------------------------------------------------------------------------- main loop
 let inTunnel = 0;
 // Adaptive quality: watch a robust frame-time percentile (ignoring hitches and hidden-tab gaps), detect a
-// 30 Hz vsync cap, shed features first (decals/crowd density) and pixels second, and give quality back slowly.
+// 30 Hz vsync cap, shed features first (decals/particles) and pixels second, and give quality back slowly.
 const perf = { samples: [], scale: 1, min: 0.6, level: 0, lastChange: 0, bad: 0, good: 0, cap: 1 / 60 };
 function adaptQuality(rawDt) {
   if (rawDt > 0.1) return; // hitch / tab switch: not a steady-state signal
@@ -1104,10 +1100,9 @@ function setPerfLevel(level) {
   perf.level = level;
   perf.lastChange = state.realTime;
   perf.bad = perf.good = 0;
-  // level 1: cheap cuts (decals on other ducks, particle budget); 2: crowd/scenery density; 3-4: resolution
+  // level 1-2: cheap cuts (decals on other ducks, particle budget); 3-4: resolution
   state.lod = level;
-  if (fx) fx.budget = level >= 1 ? 0.5 : 1;
-  if (scenery && scenery.setDensity) scenery.setDensity(level >= 2 ? 0.5 : 1);
+  if (fx) fx.budget = level >= 2 ? 0.4 : level >= 1 ? 0.6 : 1;
   const base = Math.min(window.devicePixelRatio || 1, Q.maxDpr);
   const scale = level >= 4 ? 0.65 : level >= 3 ? 0.8 : 1;
   if (scale !== perf.scale) {
@@ -1120,8 +1115,8 @@ document.addEventListener('visibilitychange', () => {
   perf.samples.length = 0;
   perf.lastChange = state.realTime;
   clock.getDelta();
-  if (document.hidden) audio.suspend && audio.suspend();
-  else audio.resume && audio.resume();
+  if (document.hidden) audio.suspend();
+  else audio.resume();
 });
 
 let idleFrames = 0;
@@ -1135,7 +1130,7 @@ function loop() {
   if (calm) {
     idleFrames++;
     if (idleFrames % 2 === 1) return;
-    if (performance.now() - lastInputReal > 20000 && !urlFlags.has('noadapt')) { clock.getDelta(); return; }
+    if (performance.now() - lastInputReal > 20000 && !NOADAPT) { clock.getDelta(); return; }
   }
   const raw = clock.getDelta();
   const dt = Math.min(raw, 0.05);
@@ -1144,7 +1139,7 @@ function loop() {
   state.phaseTime += state.go && (state.phase === 'grid' || state.phase === 'countdown' || state.phase === 'lobby') ? Math.min(raw, 0.5) : dt;
   step(dt);
   renderer.render(scene, camera);
-  if (!calm && !urlFlags.has('noadapt')) adaptQuality(raw);
+  if (!calm && !NOADAPT) adaptQuality(raw);
 }
 
 function step(dt) {
@@ -1155,8 +1150,7 @@ function step(dt) {
       const left = Math.max(0, state.go - Date.now());
       const secs = Math.ceil(left / 1000);
       const txt = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-      const lc = $('#lobby-count');
-      if (lc.textContent !== txt) lc.textContent = txt;
+      if (els.lobbyCount.textContent !== txt) els.lobbyCount.textContent = txt;
       if (state.phaseTime > FLY_T) state.phaseTime = 0; // loop the fly-through behind the lobby card
       if (left <= 5600) { state.gridT = Math.max(0.8, left / 1000 - 2.4); setPhase('grid'); }
       break;
@@ -1268,7 +1262,7 @@ function step(dt) {
   }
 
   if (race) {
-    computeDuckStates(state.t, dt);
+    computeDuckStates(state.t);
     // follow-the-leader chase target (with a little hysteresis)
     if (state.follow === 'leader' && state.phase === 'race') {
       const cur = state.duckStates[state.target];
@@ -1299,7 +1293,7 @@ function step(dt) {
         }
       }
       hud.incoming(warn, wd);
-      if (warn && wd < 15 && !state.warnBuzzed) { state.warnBuzzed = true; buzz([20, 60, 20]); }
+      if (warn && wd < 15 && !state.warnBuzzed) { state.warnBuzzed = true; haptic([20, 60, 20]); }
       if (!warn) state.warnBuzzed = false;
       // my next item use (known ahead: the race is precomputed) and shield time left
       let armIn = null;
@@ -1412,22 +1406,18 @@ function step(dt) {
   state.excite = state.phase === 'race' ? lerp(0.35, 1, smoothstep(L * 0.75, L, ctx.leaderS)) : state.phase === 'finish' || state.phase === 'results' ? 1 : 0.25;
   // far sections (in opaque fog anyway) are hidden wholesale: fewer draw calls and no updater work
   if (scenery.sections) {
-    const camPos = camera.position;
     for (const key in scenery.sections) {
       const sec = scenery.sections[key];
       if (!sec || !sec.group) continue;
       const inRange = camS > sec.s0 - 260 && camS < sec.s1 + 200;
-      let near = inRange;
-      if (!near && sec.center) near = camPos.distanceTo(sec.center) < 320;
-      sec.group.visible = near || rig.mode === 'free' || state.phase === 'flythrough' || state.phase === 'lobby';
+      sec.group.visible = inRange || rig.mode === 'free' || state.phase === 'flythrough' || state.phase === 'lobby';
     }
   }
   scenery.update(dt, ctx);
   fx.updateRace(dt, ctx);
   if (state.fireworks) {
-    const lastT = state.race ? Math.max(...state.race.finishTimes) : 0;
-    if (state.t > lastT + 14) state.fireworks = false;
-    const burst = fx.fireworksTick(dt, scenery.fireworkBarges, true);
+    if (state.t > state.lastFinishT + 14) state.fireworks = false;
+    const burst = fx.fireworksTick(dt, scenery.fireworkBarges);
     if (burst) audio.boom();
   }
   if (state.phase === 'results' && state.podium && Math.floor(state.phaseTime / 2.2) !== Math.floor((state.phaseTime - dt) / 2.2)) {
@@ -1623,7 +1613,7 @@ function jump(t) {
   if (!state.race) return;
   els.results.hidden = true;
   state.podium = false;
-  const lastT = Math.max(...state.race.finishTimes);
+  const lastT = state.lastFinishT;
   const want = t > lastT + 1.5 ? 'finish' : 'race';
   if (state.phase !== want) setPhase(want);
   applyView(true);
@@ -1635,7 +1625,7 @@ function jump(t) {
   state.replay = null;
   lowerThird(null);
   letterbox(false);
-  $('#finish-card').hidden = true;
+  els.finishCard.hidden = true;
   state.jumping = true;
   state.cursor = state.timeline.findIndex((e) => e.t > t - 0.0001);
   if (state.cursor < 0) state.cursor = state.timeline.length;
@@ -1645,7 +1635,7 @@ function jump(t) {
   state.fireworks = state.finishCount > 0;
   state.podium = false;
   hud.clearTransient();
-  computeDuckStates(t, 1 / 60);
+  computeDuckStates(t);
   hud.settleItem(state.duckStates[state.target] && state.duckStates[state.target].held);
   hud.lastRank = -1; // forces a silent refresh of the position readout
   hud.forceRefresh();
@@ -1670,7 +1660,7 @@ window.__duckWorld = {
   setPhase: (p, time = 0) => { setPhase(p); state.phaseTime = time; rig.cut(); rig.update(0.5, frameCtx(0.5)); },
   start: (opts = {}) => { Object.assign(state, opts); startRace({}); },
   skip: skipIntro,
-  results: () => { if (!state.race) return; jump(Math.max(...state.race.finishTimes) + 1); state.podium = true; setPhase('results'); rig.setMode('podium'); rig.cut(); rig.update(0.5, frameCtx(0.5)); },
+  results: () => { if (!state.race) return; jump(state.lastFinishT + 1); state.podium = true; setPhase('results'); rig.setMode('podium'); rig.cut(); rig.update(0.5, frameCtx(0.5)); },
   freeCam: (x, y, z, lx, ly, lz) => { state.prevView = state.view === 'free' ? state.prevView : state.view; state.view = 'free'; rig.setMode('free'); setBodyClass(state.phase, 'free'); rig.pos.set(x, y, z); rig.look.set(lx, ly, lz); const d = rig.look.clone().sub(rig.pos).normalize(); rig.free.yaw = Math.atan2(d.x, d.z); rig.free.pitch = Math.asin(clamp(d.y, -0.99, 0.99)); rig.free.vel.set(0, 0, 0); },
   eventsOf: (type) => (state.race ? state.race.events.filter((e) => e.type === type) : []),
   resultCard: () => resultCard().toDataURL('image/png'),

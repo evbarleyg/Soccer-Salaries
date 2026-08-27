@@ -1,6 +1,6 @@
 // DOM HUD: position, gap, progress dots, minimap, item slot with roulette,
 // commentary line, section names, toasts/popups/banners, countdown, mud splat.
-import { ITEMS, ITEM_ORDER } from './items.js';
+import { ITEMS, ITEM_ORDER, ITEM_TUNING } from './items.js';
 import { drawItemIcon } from './icons.js';
 import { SECTIONS } from './course.js';
 import { ordinal } from '../commentary.js';
@@ -313,13 +313,12 @@ export class Hud {
     if (st.rolling !== rolling) { st.rolling = rolling; this.el.item.classList.toggle('rolling', rolling); }
   }
 
-  _drawItem(id, charges) {
+  _drawItem(id) {
     const g = this.itemCtx;
     const c = this.el.itemCanvas;
     g.clearRect(0, 0, c.width, c.height);
     if (!id) return;
     drawItemIcon(g, id, c.width / 2, c.height / 2, c.width * 0.86);
-    void charges;
   }
 
   /**
@@ -394,7 +393,6 @@ export class Hud {
     while (this.el.popup.children.length > 3) this.el.popup.firstChild.remove();
   }
 
-  banner(text) { this.card(text); }
 
   /** Moment card: slim skewed band near the top; never two within 2 s (the later one waits). */
   card(text, hold = 1.1) {
@@ -476,8 +474,8 @@ export class Hud {
   itemTimers(armIn, shieldLeft) {
     const el = this.el.item;
     const arming = armIn !== null && armIn < 0.8 && armIn >= 0;
-    if (arming !== !!this._arming) { this._arming = arming; el.classList.toggle('arming', arming); if (arming) this.el.itemLabel.textContent = 'FIRING…'; }
-    if (shieldLeft !== null) el.style.setProperty('--drain', `${Math.round((1 - shieldLeft / 8) * 360)}deg`);
+    if (arming !== !!this._arming) { this._arming = arming; el.classList.toggle('arming', arming); }
+    if (shieldLeft !== null) el.style.setProperty('--drain', `${Math.round((1 - shieldLeft / ITEM_TUNING.shield.dur) * 360)}deg`);
     el.classList.toggle('draining', shieldLeft !== null);
   }
 
