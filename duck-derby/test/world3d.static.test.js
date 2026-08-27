@@ -14,6 +14,7 @@ test('world.html references files that exist and maps three to the vendored buil
   assert.ok(map.imports.three.startsWith('./vendor/three/'));
   assert.ok(existsSync(join(root, map.imports.three)), 'vendored three.module missing');
   assert.ok(existsSync(join(root, map.imports['three/addons/'], 'utils/BufferGeometryUtils.js')));
+  assert.ok(existsSync(join(root, 'vendor/es-module-shims.js')) && existsSync(join(root, 'vendor/qrcode.js')));
   for (const m of html.matchAll(/(?:src|href)="([^"#?]+)"/g)) {
     const ref = m[1];
     if (/^(https?:|data:|mailto:)/.test(ref)) continue;

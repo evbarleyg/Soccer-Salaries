@@ -8,8 +8,9 @@
 <meta name="theme-color" content="#13233a">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="world.css">
-<!-- import-map polyfill for older browsers (iOS < 16.4); no-op where import maps are native -->
-<script async src="vendor/es-module-shims.js"></script>
+<script src="vendor/qrcode.js"></script>
+<!-- import-map polyfill, fetched only by browsers without native import maps (e.g. iOS < 16.4) -->
+<script>if (!(window.HTMLScriptElement && HTMLScriptElement.supports && HTMLScriptElement.supports('importmap'))) { var s = document.createElement('script'); s.src = 'vendor/es-module-shims.js'; s.async = true; document.head.appendChild(s); }</script>
 <script type="importmap">
 { "imports": { "three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/" } }
 </script>
@@ -71,6 +72,7 @@
           <label><input type="checkbox" id="opt-hotdogs" checked> Crowd hot dogs</label>
           <label><input type="checkbox" id="opt-fly" checked> Course fly-through</label>
           <label><input type="checkbox" id="opt-sound" checked> Sound</label>
+          <label><input type="checkbox" id="opt-lobby" checked> Start together <small>(45 s lobby with a join QR)</small></label>
         </div>
       </div>
     </div>
@@ -122,6 +124,21 @@
   <div id="free-hint">Free camera · WASD / arrows move · drag to look · Shift fast · E/Q up/down · F to return</div>
 </div>
 
+<div id="lobby" hidden>
+  <div class="lobby-card">
+    <div class="lobby-left">
+      <div class="lobby-kicker">Scan to join on your phone</div>
+      <div id="lobby-qr"></div>
+      <div id="lobby-url"></div>
+    </div>
+    <div class="lobby-right">
+      <div class="lobby-kicker">Race starts in</div>
+      <div id="lobby-count">0:45</div>
+      <div id="lobby-roster"></div>
+      <div class="lobby-actions"><button id="lobby-now" type="button" class="primary">Start now</button><button id="lobby-copy" type="button">Copy link</button></div>
+    </div>
+  </div>
+</div>
 <div id="picker" role="dialog" aria-modal="true" aria-label="Choose a duck to ride with" hidden><div class="picker-inner"><h3>Ride with…</h3><ul id="picker-list"></ul><button id="picker-close" type="button">Close</button></div></div>
 
 <section id="results" class="panel" role="dialog" aria-label="Race result and draft order" hidden>

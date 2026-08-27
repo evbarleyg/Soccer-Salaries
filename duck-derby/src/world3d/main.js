@@ -50,6 +50,8 @@ const state = {
   camChoice: params.cam ?? stored.cam ?? 'leader', // name | lane | 'leader'
   shared: !!(params.names && params.seed !== null),
   salt: params.salt || 0,
+  go: params.go || null,
+  lobbyOn: stored.lobby !== false,
   seed: params.seed,
   race: null,
   looks: [],
@@ -201,7 +203,19 @@ function renderJoin() {
   });
   $('#join-tv').onclick = () => { state.camChoice = 'leader'; state.view = 'tv'; startRace({}); };
   $('#join-host').onclick = () => { $('#join').hidden = true; $('#setup-form').hidden = false; document.body.classList.remove('joining'); };
-  $('#join-sub').textContent = `${names.length} ducks · seed ${seedToCode(state.seed)} · ${state.rule === 'l' ? 'last place picks first' : 'winner picks first'}${state.items ? ' · items on' : ''}`;
+  const base = `${names.length} ducks · seed ${seedToCode(state.seed)} · ${state.rule === 'l' ? 'last place picks first' : 'winner picks first'}${state.items ? ' · items on' : ''}`;
+  const sub = $('#join-sub');
+  const tick = () => {
+    if ($('#join').hidden) return;
+    let extra = '';
+    if (state.go) {
+      const left = Math.round((state.go - Date.now()) / 1000);
+      extra = left > 0 ? ` · starts in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} — pick your duck!` : left > -50 ? ' · racing NOW — tap your duck to jump in' : ' · finished — tap to see the result';
+    }
+    sub.textContent = base + extra;
+    setTimeout(tick, 500);
+  };
+  tick();
 }
 
 function initSetupUi() {
@@ -212,6 +226,10 @@ function initSetupUi() {
   els.optHotdogs.checked = state.hazards;
   els.optFly.checked = state.fly;
   els.optSound.checked = state.sound;
+  $('#opt-lobby').checked = state.lobbyOn;
+  $('#opt-lobby').addEventListener('change', () => { state.lobbyOn = $('#opt-lobby').checked; saveStore(); });
+  $('#lobby-now').addEventListener('click', () => { state.go = Date.now() + 6500; history.replaceState(null, '', '?' + shareQuery(true)); renderLobbyQr(); });
+  $('#lobby-copy').addEventListener('click', (e) => copyText(shareUrl(), e.currentTarget, 'Copied!'));
   els.optSeed.value = state.seed != null ? seedToCode(state.seed) : '';
   els.shareBanner.hidden = !state.shared;
   renderRoster();
@@ -228,10 +246,10 @@ function initSetupUi() {
   els.optHotdogs.addEventListener('change', () => (state.hazards = els.optHotdogs.checked));
   els.optFly.addEventListener('change', () => (state.fly = els.optFly.checked));
   els.optSound.addEventListener('change', () => { state.sound = els.optSound.checked; audio.setEnabled(state.sound); hud.setMuted(!state.sound); });
-  els.start.addEventListener('click', () => startRace({}));
+  els.start.addEventListener('click', () => { if (!state.shared) state.go = null; startRace({}); });
   // results
   $('#btn-replay').addEventListener('click', () => replay());
-  $('#btn-newrace').addEventListener('click', () => { if (!confirm('Start a NEW race with a new seed? (A shared link will no longer match this result.)')) return; state.seed = randomSeed(); state.shared = false; startRace({ names: state.raceNames }); });
+  $('#btn-newrace').addEventListener('click', () => { if (!confirm('Start a NEW race with a new seed? (A shared link will no longer match this result.)')) return; state.seed = randomSeed(); state.shared = false; state.go = null; startRace({ names: state.raceNames }); });
   $('#btn-switch').addEventListener('click', () => openPicker());
   $('#btn-share').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
@@ -308,7 +326,7 @@ function updateCta() {
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]); }
 function loadStore() { try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch { return {}; } }
 function saveStore() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ coached: stored.coached || state.coached || false, flySeen: !!stored.flySeen, names: state.names, rule: state.rule, hazards: state.hazards, items: state.items, fly: state.fly, sound: state.sound, view: state.view === 'free' ? 'chase' : state.view, cam: state.camChoice })); } catch { /* private mode */ }
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ coached: stored.coached || state.coached || false, flySeen: !!stored.flySeen, names: state.names, rule: state.rule, hazards: state.hazards, items: state.items, fly: state.fly, sound: state.sound, lobby: state.lobbyOn, view: state.view === 'free' ? 'chase' : state.view, cam: state.camChoice })); } catch { /* private mode */ }
 }
 
 // --------------------------------------------------------------------------- race lifecycle
@@ -388,10 +406,35 @@ function startRace({ fromUrl = false, names = null } = {}) {
   audio.setCrowd(0.3);
   audio.startMusic();
   audio.setMusicIntensity(0.25);
+  const PRE = 5600; // grid + countdown before the synchronised start
   if (params.t != null && fromUrl) {
     setPhase('race');
     jump(params.t);
+  } else if (state.go && Date.now() > state.go - PRE) {
+    // the shared start has (nearly) happened: join live, or show the result if it is long over
+    const late = (Date.now() - state.go) / 1000;
+    const lastT = Math.max(...state.race.finishTimes);
+    if (late > lastT + 8) { window.__duckWorld.results(); }
+    else if (late > -0.2) { setPhase('race'); jump(Math.max(0, late)); }
+    else { state.gridT = Math.max(0.8, (state.go - Date.now()) / 1000 - 2.4); setPhase('grid'); }
+  } else if (state.go || (state.lobbyOn && !fromUrl && !names)) {
+    if (!state.go) { state.go = Date.now() + 45000; history.replaceState(null, '', '?' + shareQuery(true)); }
+    setPhase('lobby');
   } else setPhase(state.fly ? 'flythrough' : 'grid');
+}
+
+function renderLobbyQr() {
+  const url = shareUrl();
+  const box = $('#lobby-qr');
+  try {
+    const qr = window.qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+  } catch { box.textContent = 'QR unavailable'; }
+  $('#lobby-url').textContent = url.replace(/^https?:\/\//, '');
+  $('#lobby-roster').innerHTML = state.raceNames.map((n, i) => `<i style="background:${state.looks[i].towel.bg};color:${state.looks[i].towel.text}">${i + 1} ${escapeHtml(n)}</i>`).join('');
+  $('#lobby-now').hidden = state.shared; // guests can't move the start
 }
 
 function resetPlayback() {
@@ -424,6 +467,7 @@ function buildTimeline() {
 
 function replay() {
   els.results.hidden = true;
+  state.go = null;
   hud.clearTransient();
   resetPlayback();
   hud.show(true);
@@ -452,6 +496,8 @@ function setPhase(phase) {
     rig.setMode('menu');
     renderRoster();
   }
+  $('#lobby').hidden = phase !== 'lobby';
+  if (phase === 'lobby') { rig.setMode('flythrough'); renderLobbyQr(); hud.say(state.shared ? 'Waiting for the start — everyone races at the same moment' : 'Scan the code to ride along on your phone', state.realTime, 4, 3); }
   $('#title-card').classList.toggle('show', phase === 'flythrough');
   if (phase === 'flythrough') {
     $('#title-card .tc-sub').textContent = `${state.raceNames.length} ducks · ${Math.round(L)} m · seed ${seedToCode(state.seed)}`;
@@ -547,6 +593,10 @@ function toggleSound() {
   if (state.sound) audio.startAmbience();
   hud.setMuted(!state.sound);
   els.optSound.checked = state.sound;
+  $('#opt-lobby').checked = state.lobbyOn;
+  $('#opt-lobby').addEventListener('change', () => { state.lobbyOn = $('#opt-lobby').checked; saveStore(); });
+  $('#lobby-now').addEventListener('click', () => { state.go = Date.now() + 6500; history.replaceState(null, '', '?' + shareQuery(true)); renderLobbyQr(); });
+  $('#lobby-copy').addEventListener('click', (e) => copyText(shareUrl(), e.currentTarget, 'Copied!'));
   saveStore();
 }
 function setTarget(i, userChosen = true) {
@@ -627,7 +677,7 @@ function computeDuckStates(t, dt) {
 function frameCtx(dt) {
   return {
     dt, t: state.t, realTime: state.realTime, phase: state.phase, phaseTime: state.phaseTime, race: state.race, ducks: state.duckStates, target: state.target, leader: state.leader,
-    standings: state.standings, names: state.raceNames, looks: state.looks, view: state.view, follow: state.follow, fx, camPos: camera.position, flyDuration: FLY_T, gridDuration: GRID_T,
+    standings: state.standings, names: state.raceNames, looks: state.looks, view: state.view, follow: state.follow, fx, camPos: camera.position, flyDuration: FLY_T, gridDuration: state.gridT || GRID_T,
     leaderS: state.duckStates[state.leader] ? state.duckStates[state.leader].s : 0, excite: state.excite || 0.3, orbitTarget: state.race ? state.race.order[0] : 0,
   };
 }
@@ -837,7 +887,7 @@ function showResults() {
   history.replaceState(null, '', '?' + shareQuery(true));
 }
 function shareQuery(withCam = false) {
-  return buildQuery({ names: state.raceNames, seed: state.seed, rule: state.rule, hazards: state.hazards, items: state.items, salt: state.salt, cam: withCam && state.follow === 'fixed' ? state.target + 1 : null, view: withCam && state.view === 'tv' ? 'tv' : null });
+  return buildQuery({ names: state.raceNames, seed: state.seed, rule: state.rule, hazards: state.hazards, items: state.items, salt: state.salt, go: state.go, cam: withCam && state.follow === 'fixed' ? state.target + 1 : null, view: withCam && state.view === 'tv' ? 'tv' : null });
 }
 function shareUrl() {
   const u = new URL(location.href);
@@ -953,6 +1003,16 @@ function step(dt) {
   const race = state.race;
   // ---- phase logic
   switch (state.phase) {
+    case 'lobby': {
+      const left = Math.max(0, state.go - Date.now());
+      const secs = Math.ceil(left / 1000);
+      const txt = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+      const lc = $('#lobby-count');
+      if (lc.textContent !== txt) lc.textContent = txt;
+      if (state.phaseTime > FLY_T) state.phaseTime = 0; // loop the fly-through behind the lobby card
+      if (left <= 5600) { state.gridT = Math.max(0.8, left / 1000 - 2.4); setPhase('grid'); }
+      break;
+    }
     case 'flythrough': {
       const e = state.phaseTime / FLY_T;
       // caption for the section under the camera
@@ -964,7 +1024,7 @@ function step(dt) {
       break;
     }
     case 'grid':
-      if (state.phaseTime >= GRID_T) setPhase('countdown');
+      if (state.phaseTime >= (state.gridT || GRID_T)) { state.gridT = null; setPhase('countdown'); }
       break;
     case 'countdown': {
       const stepN = Math.floor(state.phaseTime / 0.8);

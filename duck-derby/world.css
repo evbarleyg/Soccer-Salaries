@@ -251,6 +251,22 @@ body.phase-finish #hud-item { display: none; }
   body.view-tv #minimap { background: rgba(12,22,34,0.9); }
 }
 
+/* ------------------------------------------------------------------ lobby (start together) */
+#lobby { position: fixed; inset: 0; z-index: 22; display: grid; place-items: center; pointer-events: none; padding: 12px; }
+#lobby .lobby-card { pointer-events: auto; display: flex; gap: clamp(14px, 3vw, 32px); align-items: center; background: rgba(12,22,34,0.9); border: 1px solid var(--line); border-radius: 22px; padding: clamp(14px, 2.5vw, 26px); box-shadow: 0 30px 80px rgba(0,0,0,0.45); max-width: min(760px, 96vw); }
+#lobby-qr { background: #fff; border-radius: 14px; padding: 10px; width: clamp(150px, 24vw, 230px); aspect-ratio: 1; display: grid; place-items: center; }
+#lobby-qr svg, #lobby-qr img { width: 100%; height: 100%; display: block; }
+.lobby-kicker { font: 900 0.72rem var(--num); letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
+#lobby-url { margin-top: 8px; font: 700 0.72rem ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); word-break: break-all; max-width: 230px; }
+#lobby-count { font: 900 italic clamp(2.6rem, 8vw, 4.2rem) var(--num); line-height: 1; color: #fff; text-shadow: 0 4px 0 rgba(0,0,0,0.4); }
+#lobby-roster { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 4px; max-width: 380px; }
+#lobby-roster i { font: 800 0.72rem var(--num); font-style: normal; border-radius: 999px; padding: 2px 8px; border: 1.5px solid rgba(255,255,255,0.8); }
+.lobby-actions { display: flex; gap: 8px; }
+.lobby-actions button { border: 1px solid var(--line); background: rgba(255,255,255,0.08); color: #fff; border-radius: 10px; padding: 0.5rem 0.9rem; font: 800 0.9rem var(--num); }
+.lobby-actions .primary { box-shadow: 0 4px 0 #b37d00; }
+@media (max-width: 760px) { #lobby .lobby-card { flex-direction: column; text-align: center; } #lobby-roster { justify-content: center; } .lobby-actions { justify-content: center; } #lobby-qr { width: 150px; } }
+body.phase-lobby #hud-tl, body.phase-lobby #hud-item, body.phase-lobby #hud-ladder, body.phase-lobby #progress, body.phase-lobby #minimap, body.phase-lobby #hud-leader, body.phase-lobby #hud-clock { display: none; }
+
 /* ------------------------------------------------------------------ picker */
 #picker { position: fixed; inset: 0; z-index: 25; display: grid; place-items: center; background: rgba(8,16,28,0.5); }
 .picker-inner { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 16px; width: min(420px, 92vw); max-height: 80vh; overflow: auto; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
