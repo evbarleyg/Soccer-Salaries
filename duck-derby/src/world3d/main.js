@@ -95,6 +95,15 @@ const camera = new THREE.PerspectiveCamera(62, 1, 0.3, 800);
 const sky = makeSky();
 scene.add(sky);
 const lights = makeLights(scene, camera);
+const fogDusk = new THREE.Color(0xf5c79a);
+const sunBase = new THREE.Color();
+const sunDusk = new THREE.Color(0xffb066);
+const hemiBase = new THREE.Color();
+const hemiDusk = new THREE.Color(0xffd7b0);
+const waterSkyBase = new THREE.Color(PAL.waterSky);
+let dusk = 0;
+sunBase.copy(lights.sun.color);
+hemiBase.copy(lights.hemi.color);
 const rig = new CameraRig(camera, track, canvas);
 rig.reducedMotion = Q.reducedMotion;
 const hud = new Hud(course);
@@ -1483,10 +1492,18 @@ function step(dt) {
   const tun = scenery.tunnel;
   const inside = camS > tun.s0 && camS < tun.s1 && lateral < cp.width / 2 + 1.5 && camera.position.y < cp.y + 6 ? 1 : 0;
   inTunnel = lerp(inTunnel, inside, Math.min(1, dt * (inside ? 6 : 3)));
-  lights.hemi.intensity = lerp(1.15, 0.32, inTunnel);
-  lights.sun.intensity = lerp(2.1, 0.12, inTunnel);
+  // golden hour: the light warms as the leader runs into the harbour and settles for the finish and podium
+  const duskWant = !state.race ? 0 : state.phase === 'finish' || state.phase === 'results' ? 1 : state.phase === 'race' ? smoothstep(track.features.harborInS - 140, L - 10, ctx.leaderS) * 0.85 : 0;
+  dusk = state.envSnap ? duskWant : lerp(dusk, duskWant, Math.min(1, dt * 0.8));
+  state.envSnap = false;
+  lights.hemi.intensity = lerp(1.15, 0.32, inTunnel) * (1 - 0.18 * dusk);
+  lights.sun.intensity = lerp(2.1, 0.12, inTunnel) * (1 - 0.15 * dusk);
   lights.fill.intensity = lerp(0.55, 0.25, inTunnel);
-  scene.fog.color.copy(fogBase).lerp(fogDark, inTunnel * 0.85);
+  lights.sun.color.copy(sunBase).lerp(sunDusk, dusk);
+  lights.hemi.color.copy(hemiBase).lerp(hemiDusk, dusk);
+  scene.fog.color.copy(fogBase).lerp(fogDusk, dusk).lerp(fogDark, inTunnel * 0.85);
+  sky.material.uniforms.dusk.value = dusk;
+  waterMat.uniforms.skyCol.value.copy(waterSkyBase).lerp(fogDusk, dusk * 0.6);
   scene.fog.near = lerp(180, 20, inTunnel);
   scene.fog.far = lerp(680, 160, inTunnel);
   sky.material.uniforms.dim.value = inTunnel;
@@ -1733,6 +1750,7 @@ function jump(t) {
   hud.forceRefresh();
   hud.lastTarget = state.target;
   for (const d of state.ducks) d.anim.prevLat = null;
+  state.envSnap = true; // lighting mood (golden hour) jumps with the seek instead of easing
   rig.cut();
   // settle springs, then refresh the HUD so a seek is immediately consistent
   for (let k = 0; k < 3; k++) rig.update(0.5, frameCtx(0.5));

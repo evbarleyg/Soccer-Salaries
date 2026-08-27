@@ -122,6 +122,7 @@ export function makeSky() {
       sunCol: { value: new THREE.Color(PAL.sun) },
       sunDir: { value: PAL.sunDir.clone() },
       dim: { value: 0 },
+      dusk: { value: 0 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
@@ -135,6 +136,7 @@ export function makeSky() {
       varying vec3 vDir;
       uniform vec3 top, mid, horizon, fogCol, sunCol, sunDir;
       uniform float dim;
+      uniform float dusk;
       float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
       float vnoise(vec2 p) {
         vec2 i = floor(p); vec2 f = fract(p);
@@ -151,11 +153,17 @@ export function makeSky() {
         vec2 az = normalize(dir.xz + 1e-5);
         vec2 sunAz = normalize(sdir.xz);
         float sunSide = smoothstep(-0.2, 1.0, dot(az, sunAz));
-        vec3 col = mix(horizon, mid, smoothstep(0.0, mix(0.19, 0.32, sunSide), h));
-        col = mix(col, top, smoothstep(0.25, 0.9, h));
-        col = mix(col, vec3(1.0, 0.84, 0.62), 0.28 * sunSide * sunSide * (1.0 - smoothstep(0.02, 0.28, abs(h))));
-        col = mix(fogCol, col, smoothstep(-0.08, 0.06, h)); // blend into fog at the horizon and below
-        col += sunCol * (0.35 * pow(sd, 24.0) + 0.9 * smoothstep(0.9975, 0.999, sd));
+        // golden hour at the finish: deeper zenith, apricot band, bigger warmer sun glow (dusk 0..1)
+        vec3 topC = mix(top, vec3(0.29, 0.42, 0.74), dusk);
+        vec3 midC = mix(mid, vec3(0.98, 0.72, 0.55), dusk * 0.8);
+        vec3 horC = mix(horizon, vec3(1.0, 0.68, 0.42), dusk);
+        vec3 fogC = mix(fogCol, vec3(0.96, 0.78, 0.6), dusk);
+        vec3 col = mix(horC, midC, smoothstep(0.0, mix(0.19, 0.32, sunSide) + dusk * 0.12, h));
+        col = mix(col, topC, smoothstep(0.25, 0.9, h));
+        col = mix(col, vec3(1.0, 0.84 - 0.1 * dusk, 0.62 - 0.12 * dusk), (0.28 + 0.3 * dusk) * sunSide * sunSide * (1.0 - smoothstep(0.02, 0.28 + 0.15 * dusk, abs(h))));
+        col = mix(fogC, col, smoothstep(-0.08, 0.06, h)); // blend into fog at the horizon and below
+        vec3 sunC = mix(sunCol, vec3(1.0, 0.7, 0.38), dusk);
+        col += sunC * ((0.35 + 0.45 * dusk) * pow(sd, mix(24.0, 10.0, dusk)) + 0.9 * smoothstep(0.9975, 0.999, sd));
         // faint high cirrus so the sky overhead isn't empty: value noise on the sky plane, thresholded into wisps
         if (h > 0.2) {
           vec2 cp = dir.xz / max(dir.y, 0.2) * 3.0;
