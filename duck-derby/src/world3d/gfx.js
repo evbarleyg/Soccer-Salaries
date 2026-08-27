@@ -52,20 +52,43 @@ export const PAL = {
   bunting: [0xe8412e, 0xffd23f, 0x3d7be0, 0x5fbf4a, 0xff7fb0, 0xffffff],
 };
 
+/** Peek at the GPU name (where the browser allows it) to classify weak mobile GPUs. */
+function gpuName() {
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl2') || c.getContext('webgl');
+    if (!gl) return '';
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    const lose = gl.getExtension('WEBGL_lose_context');
+    if (lose) lose.loseContext();
+    return String(name || '');
+  } catch {
+    return '';
+  }
+}
+
 export function detectQuality() {
   const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   const small = Math.min(screen.width, screen.height) < 500;
   const cores = navigator.hardwareConcurrency || 4;
   const mem = navigator.deviceMemory || 4;
   const mobile = coarse || small;
-  const low = mobile && (cores <= 4 || mem <= 3);
+  const gpu = gpuName();
+  // budget/older mobile GPUs by name (core counts lie on 8-core budget phones); Apple GPUs and recent Adreno/Mali stay mid
+  const weakGpu = /Adreno \(TM\) [3-5]\d\d|Adreno \(TM\) 6[01]\d|Mali-[T4]|Mali-G[35]\d|PowerVR|SwiftShader|llvmpipe/i.test(gpu);
+  const low = mobile && (weakGpu || cores <= 4 || mem <= 3);
   const q = new URLSearchParams(location.search).get('q');
   const tier = q === 'low' || q === 'high' || q === 'mid' ? q : low ? 'low' : mobile ? 'mid' : 'high';
+  const dpr = window.devicePixelRatio || 1;
+  const maxDpr = tier === 'high' ? 2 : tier === 'mid' ? 1.5 : 1.25;
   return {
     tier,
     mobile,
-    maxDpr: tier === 'high' ? 2 : tier === 'mid' ? 1.75 : 1.25,
-    antialias: tier !== 'low',
+    gpu,
+    maxDpr,
+    // MSAA is expensive at high pixel densities and the water shader anti-aliases itself: only when pixels are big
+    antialias: tier === 'high' || (tier === 'mid' && Math.min(dpr, maxDpr) <= 1.25),
     crowd: tier === 'high' ? 1 : tier === 'mid' ? 0.7 : 0.45,
     particles: tier === 'high' ? 1 : tier === 'mid' ? 0.7 : 0.5,
     trees: tier === 'high' ? 1 : 0.7,

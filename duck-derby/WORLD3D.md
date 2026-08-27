@@ -109,7 +109,7 @@ hits are evenly spread across ducks.
 - **Start together**: the host's Start opens a 45 s lobby with a QR code; the
   share link carries `go=<epoch ms>` so every phone counts down to the same
   moment; late joiners drop into the live race (or straight to the result).
-- **Race engine v2** (`ENGINE_VERSION`): structured, permutation-symmetric drama
+- **Race engine v3** (`ENGINE_VERSION`): structured, permutation-symmetric drama
   curation; hot dogs and seagulls only as mid-race resets; item rows at
   26/44/72 %; calmer run-in; announced finishing kick; photo finishes ≈ 1 in 7.
 
@@ -125,9 +125,10 @@ hits are evenly spread across ducks.
   mist are single instanced meshes, volumetric fakes render single-pass.
 - Typical desktop frame at 1280×720: canyon chase cam ≈ 220 draw calls / 320k
   triangles, rapids ≈ 160 / 180k, grid line-up (12 ducks) ≈ 170 / 185k.
-- Quality tiers (`detectQuality`): pixel-ratio cap 2 / 1.75 / 1.25, antialias
-  off on low, cheaper water shader on mid/low, crowd/particle/tree density
-  scaling; plus the adaptive quality ladder (decals → density → resolution) and
+- Quality tiers (`detectQuality`, GPU-name aware so 8-core budget phones with
+  weak Adreno/Mali/PowerVR parts land on low): pixel-ratio cap 2 / 1.5 / 1.25,
+  MSAA only where pixels are big, cheaper water shader on mid/low,
+  crowd/particle/tree density scaling; plus the adaptive quality ladder (decals → density → resolution) and
   half-rate / idle-stop rendering on menus.
 - No shadow maps (blob shadows), no post-processing; fog hides the far field.
 
