@@ -103,18 +103,32 @@ hits are evenly spread across ducks.
 - **Audio** (`audio3d.js`): procedural music loop (kick/hat, bass, arpeggio,
   stabs) layered by race intensity, ducked under stingers, low-passed in slow
   motion; tunnel echo send; item roulette ticks; haptics on phones.
-- **Adaptive resolution**: frame-time watchdog trades pixel ratio for frame
-  rate (down to 0.6×) and gives it back when there is headroom.
+- **Adaptive quality**: a frame-time percentile watchdog (ignores hitches and
+  hidden-tab gaps, detects 30 Hz caps) sheds duck decals/particles first, then
+  scenery density, then pixel ratio, and gives quality back when there is headroom.
+- **Start together**: the host's Start opens a 45 s lobby with a QR code; the
+  share link carries `go=<epoch ms>` so every phone counts down to the same
+  moment; late joiners drop into the live race (or straight to the result).
+- **Race engine v2** (`ENGINE_VERSION`): structured, permutation-symmetric drama
+  curation; hot dogs and seagulls only as mid-race resets; item rows at
+  26/44/72 %; calmer run-in; announced finishing kick; photo finishes ≈ 1 in 7.
 
 ## Performance
 
 - One heightfield (≈55k verts), one river ribbon, instanced crowd (2 draws),
   trees, pads, rocks, buoys, flags; merged static geometry per structure.
-- Duck parts are merged per material class (body statics, head, hat, wings), so
-  a 12-duck grid renders in ~170–250 draw calls / ~480k triangles; fewer
-  mid-race with frustum culling. Quality tiers (`detectQuality`): pixel-ratio cap
-  2 / 1.75 / 1.25, antialias off on low, crowd/particle/tree density scaling,
-  plus the adaptive resolution scaler above.
+- Duck parts are merged per material class and share one shader program (body,
+  head+hat, wings, tail, decals: ~11 draws and ~3.5k triangles per duck, with
+  far-LOD hiding of shadow/foam/wake/decals). Terrain and river are chunked for
+  frustum culling, crowd/trees/houses/bunting are instanced per course section
+  and whole sections are hidden when the camera is far from them, item boxes and
+  mist are single instanced meshes, volumetric fakes render single-pass.
+- Typical desktop frame at 1280×720: canyon chase cam ≈ 220 draw calls / 320k
+  triangles, rapids ≈ 160 / 180k, grid line-up (12 ducks) ≈ 170 / 185k.
+- Quality tiers (`detectQuality`): pixel-ratio cap 2 / 1.75 / 1.25, antialias
+  off on low, cheaper water shader on mid/low, crowd/particle/tree density
+  scaling; plus the adaptive quality ladder (decals → density → resolution) and
+  half-rate / idle-stop rendering on menus.
 - No shadow maps (blob shadows), no post-processing; fog hides the far field.
 
 ## Known gaps / next steps
