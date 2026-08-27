@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Duck Derby World — 3D duck race for your fantasy draft order</title>
+<meta name="description" content="A Mario Kart-style 3D duck race through Duck Village, the canyon, the lily-pad chicane, The Drop, the log-flume tunnel and the rapids to the harbour — fair, seeded and replayable — to settle your fantasy football draft order.">
+<meta name="theme-color" content="#13233a">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="world.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/" } }
+</script>
+</head>
+<body class="phase-boot">
+<canvas id="world" aria-label="Duck Derby World 3D race"></canvas>
+<div id="flash"></div>
+
+<div id="boot">
+  <div class="boot-card">
+    <div class="boot-logo"><span>Duck Derby</span><b>WORLD</b></div>
+    <div class="boot-bar"><i id="boot-fill"></i></div>
+    <div id="boot-msg">Pumping up the ducks…</div>
+  </div>
+</div>
+
+<section id="setup" class="panel" hidden>
+  <div class="panel-inner">
+    <header class="setup-head">
+      <div class="logo"><span>Duck Derby</span><b>WORLD</b></div>
+      <p class="tag">A Mario Kart-style 3D duck race — marina, canyon, lily pads, <em>The Drop</em>, the log flume, the rapids, the harbour — to settle your fantasy draft order. Fair, seeded, replayable.</p>
+    </header>
+    <div id="share-banner" hidden>Shared race: same ducks + same seed = the same result on every screen. Pick your duck and ride along.</div>
+    <div class="setup-grid">
+      <div class="roster-col">
+        <div class="roster-head">
+          <h2>Racers <span id="count-out">12</span></h2>
+          <div class="sizes" role="group" aria-label="Number of ducks">
+            <button data-size="8">8</button><button data-size="10">10</button><button data-size="12">12</button><button data-size="14">14</button><button data-size="16">16</button>
+          </div>
+        </div>
+        <ol id="roster"></ol>
+        <div class="roster-actions">
+          <button id="btn-add" type="button">+ Add duck</button>
+          <button id="btn-sample" type="button">Sample names</button>
+          <button id="btn-clear" type="button">Clear</button>
+        </div>
+      </div>
+      <div class="opts-col">
+        <label class="opt"><span>Draft rule</span>
+          <select id="opt-rule"><option value="w">Winner picks first</option><option value="l">Last place picks first</option></select>
+        </label>
+        <label class="opt"><span>Ride with</span><select id="opt-cam"></select></label>
+        <label class="opt"><span>Camera</span>
+          <select id="opt-view"><option value="chase">Chase cam — behind your duck</option><option value="tv">TV broadcast — auto cuts</option></select>
+        </label>
+        <label class="opt"><span>Seed</span>
+          <span class="seed-row"><input id="opt-seed" autocomplete="off" spellcheck="false" placeholder="random"><button id="btn-reseed" type="button" title="New random seed" aria-label="New random seed">↻</button></span>
+        </label>
+        <div class="checks">
+          <label><input type="checkbox" id="opt-items" checked> Items <small>(boosts, hornets, shields…)</small></label>
+          <label><input type="checkbox" id="opt-hotdogs" checked> Crowd hot dogs</label>
+          <label><input type="checkbox" id="opt-fly" checked> Course fly-through</label>
+          <label><input type="checkbox" id="opt-sound" checked> Sound</label>
+        </div>
+      </div>
+    </div>
+    <div class="cta">
+      <button id="btn-start" class="primary big" type="button">Start the race</button>
+      <div id="cta-sub"></div>
+    </div>
+    <footer class="setup-foot">
+      <a id="link-2d" href="index.html">← Classic 2D Duck Derby</a>
+      <span class="hint">Drag to look · scroll to zoom · <kbd>C</kbd> camera · <kbd>F</kbd> fly · <kbd>[</kbd> <kbd>]</kbd> switch duck</span>
+    </footer>
+  </div>
+</section>
+
+<div id="hud" hidden>
+  <div id="hud-tl">
+    <div id="hud-pos"><span class="p">P</span><b id="pos-num">1</b><span id="pos-of">/12</span></div>
+    <div id="hud-gap">leader</div>
+    <div id="hud-name"><i id="hud-swatch"></i><span id="hud-name-text"></span></div>
+  </div>
+  <div id="hud-item" class="empty"><canvas id="item-canvas" width="120" height="120"></canvas><div id="item-label">NO ITEM</div></div>
+  <div id="hud-top"><div id="hud-section"></div><div id="hud-comm"></div></div>
+  <div id="hud-tr">
+    <button id="btn-cam" type="button" title="Change camera (C)">CHASE</button>
+    <button id="btn-duck" type="button" title="Switch duck ([ / ])">DUCK</button>
+    <button id="btn-fly" type="button" title="Free-fly camera (F)">FLY</button>
+    <button id="btn-mute" type="button" title="Sound (M)">SOUND</button>
+  </div>
+  <div id="hud-leader"><span>LEADER</span><b id="leader-name"></b></div>
+  <div id="hud-clock">0:00.0</div>
+  <div id="progress"><div id="progress-track"><div id="progress-fill"></div></div><div id="progress-dots"></div><div id="progress-secs"></div></div>
+  <canvas id="minimap" width="220" height="220"></canvas>
+  <div id="toast"></div>
+  <div id="popup"></div>
+  <div id="countdown"></div>
+  <div id="banner"></div>
+  <div id="mud"><i></i><i></i><i></i><i></i><i></i></div>
+  <div id="speedlines"></div>
+  <div id="fly-cap"><div id="fly-title"></div><div id="fly-sub"></div></div>
+  <button id="btn-skip" type="button">Skip ›</button>
+  <div id="free-hint">Free camera · WASD / arrows move · drag to look · Shift fast · E/Q up/down · F to return</div>
+</div>
+
+<div id="picker" hidden><div class="picker-inner"><h3>Ride with…</h3><ul id="picker-list"></ul><button id="picker-close" type="button">Close</button></div></div>
+
+<section id="results" class="panel" hidden>
+  <div class="panel-inner">
+    <header class="res-head">
+      <div>
+        <h2 id="res-title">Official result</h2>
+        <p id="res-sub"></p>
+      </div>
+      <div class="logo small"><span>Duck Derby</span><b>WORLD</b></div>
+    </header>
+    <ol id="res-board"></ol>
+    <div class="res-actions">
+      <button id="btn-share" class="primary" type="button">Copy share link</button>
+      <button id="btn-replay" type="button">Replay</button>
+      <button id="btn-newrace" type="button">New race</button>
+      <button id="btn-switch" type="button">Switch duck</button>
+      <button id="btn-copy" type="button">Copy draft order</button>
+      <button id="btn-setup" type="button">Edit roster</button>
+      <a id="btn-2d" class="btn" href="index.html">2D version</a>
+    </div>
+  </div>
+</section>
+
+<noscript><p style="color:#fff;padding:2rem">Duck Derby World needs JavaScript and WebGL.</p></noscript>
+<script type="module" src="src/world3d/main.js"></script>
+</body>
+</html>

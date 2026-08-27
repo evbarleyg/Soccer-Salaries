@@ -258,11 +258,11 @@ export function buildCourse(points = CONTROL_POINTS) {
     out.z = r.z + tz * over;
     out.tx = tx; // unit tangent (forward)
     out.tz = tz;
-    out.nx = -tz; // unit left-hand normal (to the duck's left when facing forward)
-    out.nz = tx;
+    out.nx = tz; // unit left-hand normal (to the duck's left when facing forward; y-up, z-south)
+    out.nz = -tx;
     // water height: eased per segment; the weir gets a sharper profile
     if (p1.tag === 'dropLip') {
-      const k = smoothstep(0.0, 0.42, r.w); // water sheet falls fast just past the lip
+      const k = smoothstep(0.025, 0.15, r.w); // near-vertical sheet hugging the weir face
       out.y = lerp(p1.y, p2.y, k);
     } else out.y = lerp(p1.y, p2.y, wgt);
     out.width = lerp(p1.w, p2.w, wgt);
