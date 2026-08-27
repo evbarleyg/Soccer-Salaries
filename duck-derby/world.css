@@ -406,3 +406,5 @@ body.letterboxed #hud-tl, body.letterboxed #hud-item, body.letterboxed #hud-ladd
 #res-board.dense li { min-height: 30px; padding: 2px 8px; font-size: 0.85rem; }
 #res-board.dense li .sw { width: 1.3rem; height: 1.3rem; font-size: 0.66rem; }
 body.guest-in #lobby .lobby-left { display: none; }
+#hud-ladder li.fin .gp { color: var(--gold); }
+#hud-ladder li.fin .rk { color: #fff; }

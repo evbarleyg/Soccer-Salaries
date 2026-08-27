@@ -271,8 +271,15 @@ export class Hud {
       const i = standings[k].i;
       const d = ducks[i];
       const lk = looks[i];
-      const gap = k === 0 ? (d.finished ? 'FIN' : 'leader') : d.finished ? 'FIN' : `+${Math.max(0, leadS - d.s).toFixed(0)}m`;
-      html += `<li class="${i === target ? 'me' : ''}"><span class="rk">${k + 1}</span><span class="sw" style="background:${lk.towel.bg};color:${lk.towel.text}">${lk.number}</span><span class="nm">${esc(names[i])}</span><span class="gp">${gap}</span></li>`;
+      // finished rows turn into the finish tower: place, time behind the winner and the draft pick they earned
+      let gap;
+      if (d.finished && ctx.race) {
+        const ft = ctx.race.finishTimes;
+        const winT = ft[ctx.race.order[0]];
+        const pick = ctx.rule === 'l' ? n - k : k + 1;
+        gap = (k === 0 ? fmtTime(ft[i]) : `+${(ft[i] - winT).toFixed(2)}`) + ` · P${pick}`;
+      } else gap = k === 0 ? 'leader' : `+${Math.max(0, leadS - d.s).toFixed(0)}m`;
+      html += `<li class="${i === target ? 'me' : ''}${d.finished ? ' fin' : ''}"><span class="rk">${k + 1}</span><span class="sw" style="background:${lk.towel.bg};color:${lk.towel.text}">${lk.number}</span><span class="nm">${esc(names[i])}</span><span class="gp">${gap}</span></li>`;
     }
     if (html !== this._ladderHtml) { this._ladderHtml = html; this.el.ladder.innerHTML = html; }
   }
