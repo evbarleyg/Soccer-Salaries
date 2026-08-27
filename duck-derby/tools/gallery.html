@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Duck gallery</title>
+<style>body{margin:0;background:#3aa0d8;font:12px system-ui;color:#fff} canvas{display:block}</style></head>
+<body><canvas id="c"></canvas>
+<script type="module">
+import { PALETTES, HATS, TOWELS } from '../src/ducks.js';
+import { drawDuck } from '../src/draw-duck.js';
+const c = document.getElementById('c');
+const cols = 4, cell = 190, rows = Math.ceil(16 / cols);
+const dpr = 2;
+c.width = cols * cell * dpr; c.height = (rows * cell * 2) * dpr; c.style.width = cols * cell + 'px';
+const ctx = c.getContext('2d'); ctx.scale(dpr, dpr);
+// water bg
+const g = ctx.createLinearGradient(0, 0, 0, rows * cell * 2); g.addColorStop(0, '#43b4e8'); g.addColorStop(1, '#1f78b8');
+ctx.fillStyle = g; ctx.fillRect(0, 0, cols * cell, rows * cell * 2);
+for (let i = 0; i < 16; i++) {
+  const look = { name: 'Duck ' + i, lane: i, number: i + 1, palette: PALETTES[i], hat: HATS[i].id, towel: TOWELS[i], scale: 1, bobPhase: i, bobRate: 1, flapRate: 1, blinkOffset: 1 + i * 0.3, cheeks: i % 3 === 0 };
+  const cx = (i % cols) * cell + cell / 2, cy = Math.floor(i / cols) * cell + cell * 0.62;
+  drawDuck(ctx, look, { x: cx, y: cy, scale: 1.9, t: 0.5 + i * 0.13, effort: 0.6, flap: i % 4 === 1 ? 0.8 : 0, beakOpen: i % 5 === 2 ? 0.8 : 0 });
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.fillText(PALETTES[i].name + ' / ' + HATS[i].name, cx, cy + 62);
+  // standing version below
+  const sy = rows * cell + Math.floor(i / cols) * cell + cell * 0.55;
+  ctx.fillStyle = '#7ccf6b'; ctx.fillRect((i % cols) * cell, rows * cell + Math.floor(i / cols) * cell, cell, cell);
+  drawDuck(ctx, look, { x: cx, y: sy, scale: 1.9, t: 1 + i * 0.1, effort: 0, standing: true, dizzy: i === 15 ? 1 : 0 });
+}
+</script></body></html>

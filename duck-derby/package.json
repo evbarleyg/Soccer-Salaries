@@ -1,0 +1,16 @@
+{
+  "name": "duck-derby",
+  "version": "1.0.0",
+  "description": "Race a flock of animated ducks to decide your fantasy draft order. Static site, zero dependencies.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "for f in src/*.js tools/*.mjs test/*.js; do node --check \"$f\" || exit 1; done && echo 'syntax ok'",
+    "serve": "npx http-server -c-1 -p 8080 .",
+    "analyze": "node tools/analyze.mjs 12 2000 38",
+    "shots": "node tools/shots.mjs http://localhost:8080/ shots",
+    "ci": "npm run check && npm test"
+  },
+  "license": "MIT"
+}
