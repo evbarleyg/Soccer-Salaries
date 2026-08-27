@@ -1,7 +1,7 @@
 // Tiny WebAudio synthesizer — the whole broadcast sound design is procedural:
 // countdown beeps, air horn, quacks, splashes, crowd + water beds, hot-dog
 // foley (uh-oh / bonk / splat / boing), lead-change whoosh, a tension drone
-// with an accelerating heartbeat for the run-in, slow-mo treatment, fanfare
+// with an accelerating heartbeat and a riser for the run-in, slow-mo treatment, fanfare
 // stings, a sad-trombone and the results-ceremony kit (thunk / drumroll /
 // cymbal / tick). No audio files.
 //
@@ -42,6 +42,7 @@ export class DuckAudio {
     this._duckMul = 1;
     this._duckTimer = 0;
     this._tension = null; // {g, oscs, p, timer, paused}
+    this._riser = null; // {g, src, o} run-in swell (riser())
     // rate limits
     this._cheerAt = -9;
     this._cheerVol = 0;
@@ -124,9 +125,17 @@ export class DuckAudio {
     return this.ctx ? this.ctx.currentTime : 0;
   }
 
-  /** True when a one-shot may build nodes right now. */
+  /** True when the beds may be (re)built: a context exists and sound is on (resume() may still be pending). */
   _live() {
     return !!(this.ctx && this.enabled && this.master);
+  }
+
+  /**
+   * True when a ONE-SHOT may build nodes right now: additionally requires a running context, so nothing is
+   * scheduled into a suspended context (hidden tab, pending unlock) to burst out all at once on resume.
+   */
+  _canPlay() {
+    return this._live() && this.ctx.state === 'running';
   }
 
   _osc(type, freq, t0, dur, gain = 0.3, dest = this.master) {
@@ -169,7 +178,7 @@ export class DuckAudio {
   // ---------------------------------------------------------------------------
 
   beep(high = false) {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const t = this.now;
     const { g } = this._osc('sine', high ? 1046 : 660, t, high ? 0.5 : 0.18, 0.3);
     g.gain.setValueAtTime(0.0001, t);
@@ -178,7 +187,7 @@ export class DuckAudio {
   }
 
   horn() {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const t = this.now;
     const dur = 0.9;
     const freqs = [311, 415, 466];
@@ -207,7 +216,7 @@ export class DuckAudio {
 
   /** At most 4 quack voices in flight (a 16-duck finish under fast-forward stays clean). */
   quack(pitch = 1, vol = 0.5) {
-    if (!this._live() || this._quackVoices >= 4) return;
+    if (!this._canPlay() || this._quackVoices >= 4) return;
     this._quackVoices++;
     const t = this.now;
     const syllables = Math.random() < 0.4 ? 2 : 1;
@@ -253,7 +262,7 @@ export class DuckAudio {
 
   /** At most 6 splashes per second. */
   splash(vol = 0.25) {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const t = this.now;
     if (t - this._splashWin >= 1) {
       this._splashWin = t;
@@ -406,7 +415,7 @@ export class DuckAudio {
 
   /** Side-chain: dip crowd + water 40% for `ms` so a big moment reads, then swell back. */
   duckAmbience(ms = 1200) {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     this._duckMul = 0.6;
     this._applyMix(true, 0.06);
     clearTimeout(this._duckTimer);
@@ -427,7 +436,7 @@ export class DuckAudio {
     if (Math.abs(a - prev) < 0.01) return;
     this._slowmo = a;
     if (!this._live()) return;
-    if (prev < 0.5 && a >= 0.5) this._whoomp();
+    if (prev < 0.5 && a >= 0.5 && this.ctx.state === 'running') this._whoomp();
     this._applyMix(true, 0.2);
     const tn = this._tension;
     if (tn) {
@@ -461,7 +470,7 @@ export class DuckAudio {
 
   /** Crowd roar. Calls within 200 ms of the previous are ignored unless clearly bigger. */
   cheer(vol = 0.35, dur = 1.6) {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const t = this.now;
     if (t - this._cheerAt < 0.2 && vol <= this._cheerVol + 0.1) return;
     this._cheerAt = t;
@@ -491,7 +500,7 @@ export class DuckAudio {
   }
 
   cameraFlash() {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const t = this.now;
     const src = this._noise(t, 0.15);
     const hp = this.ctx.createBiquadFilter();
@@ -511,7 +520,7 @@ export class DuckAudio {
 
   /** Descending slide-whistle for an incoming projectile. */
   whistle(dur = 0.7) {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const t = this.now;
     const { o, g } = this._osc('sine', 1500, t, dur, 0.2);
     o.frequency.setValueAtTime(1500, t);
@@ -523,7 +532,7 @@ export class DuckAudio {
 
   /** Crowd "uh-oh": three voices gliding UP 15% (the inverse of ooh) — the telegraph. */
   uhoh() {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const t = this.now;
     for (const [f, vol] of [
       [330, 0.06],
@@ -544,7 +553,7 @@ export class DuckAudio {
 
   /** Cartoon bonk: pitch-dropping thump + slap of noise. */
   bonk() {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const t = this.now;
     const { o, g } = this._osc('triangle', 320, t, 0.3, 0.5);
     o.frequency.setValueAtTime(320, t);
@@ -566,7 +575,7 @@ export class DuckAudio {
 
   /** Condiment splat: lowpassed noise burst + a sinking sine. */
   splat() {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const t = this.now + 0.03;
     const src = this._noise(t, 0.2);
     const lp = this.ctx.createBiquadFilter();
@@ -590,7 +599,7 @@ export class DuckAudio {
 
   /** Spring "boing" as the victim wobbles: 180→420→180 Hz. */
   boing() {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const t = this.now;
     const { o, g } = this._osc('sine', 180, t, 0.4, 0.15);
     o.frequency.setValueAtTime(180, t);
@@ -613,7 +622,7 @@ export class DuckAudio {
 
   /** Crowd "ooooh". */
   ooh() {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const t = this.now;
     for (const [f, vol] of [
       [220, 0.12],
@@ -635,7 +644,7 @@ export class DuckAudio {
 
   /** Swoosh + ding: bandpassed noise sweeping 400→2000 Hz, then a bell at 1320 Hz. */
   whooshDing() {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const t = this.now;
     const src = this._noise(t, 0.25);
     const bp = this.ctx.createBiquadFilter();
@@ -717,11 +726,16 @@ export class DuckAudio {
   _beat() {
     const tn = this._tension;
     if (!tn) return;
-    const playing = this._live() && this.ctx.state === 'running' && !tn.paused;
+    const playing = this._canPlay() && !tn.paused;
     if (playing) {
       const t = this.now + 0.02;
       this._thump(t, 1, 78);
       this._thump(t + 0.12, 0.7, 64);
+      if (tn.p > 0.85) {
+        // the last strides: the heart skips to a double beat
+        this._thump(t + 0.09, 0.85, 74);
+        this._thump(t + 0.21, 0.6, 62);
+      }
     }
     const interval = tn.paused ? 0.25 : lerp(0.9, 0.45, tn.p);
     tn.timer = setTimeout(() => this._beat(), interval * 1000);
@@ -750,6 +764,7 @@ export class DuckAudio {
   }
 
   _killTension() {
+    this._killRiser();
     const tn = this._tension;
     if (!tn) return;
     this._tension = null;
@@ -766,7 +781,7 @@ export class DuckAudio {
   }
 
   cymbal() {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const t = this.now;
     const src = this._noise(t, 1.1);
     const hp = this.ctx.createBiquadFilter();
@@ -786,6 +801,65 @@ export class DuckAudio {
     hp.connect(pk);
     pk.connect(g);
     g.connect(this.master);
+  }
+
+  /**
+   * Run-in riser: bandpassed noise sweeping 300→2000 Hz plus a sawtooth gliding 110→440 Hz, swelling from
+   * nothing to 0.09 over `sec` seconds. Ends itself just past `sec`; the winner's cymbal (stopTension) or any
+   * tension kill cuts it early so it always resolves ON the touch, never after it.
+   */
+  riser(sec = 3) {
+    if (!this._canPlay()) return;
+    sec = clamp(Number(sec) || 3, 0.5, 6);
+    this._killRiser();
+    const ctx = this.ctx;
+    const t = this.now;
+    const end = t + sec;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.09, end);
+    g.gain.linearRampToValueAtTime(0.0001, end + 0.1);
+    g.connect(this.master);
+    const src = this._noise(t, sec + 0.12, { loop: true });
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 4;
+    bp.frequency.setValueAtTime(300, t);
+    bp.frequency.exponentialRampToValueAtTime(2000, end);
+    src.connect(bp);
+    bp.connect(g);
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(110, t);
+    o.frequency.exponentialRampToValueAtTime(440, end);
+    const og = ctx.createGain();
+    og.gain.value = 0.35;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(500, t);
+    lp.frequency.exponentialRampToValueAtTime(2400, end);
+    o.connect(og);
+    og.connect(lp);
+    lp.connect(g);
+    o.start(t);
+    o.stop(end + 0.12);
+    this._riser = { g, src, o };
+  }
+
+  _killRiser() {
+    const r = this._riser;
+    if (!r) return;
+    this._riser = null;
+    if (!this.ctx) return;
+    const t = this.now;
+    try {
+      this._hold(r.g.gain, t);
+      r.g.gain.linearRampToValueAtTime(0.0001, t + 0.06);
+      r.src.stop(t + 0.08);
+      r.o.stop(t + 0.08);
+    } catch {
+      /* already stopped */
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -810,26 +884,26 @@ export class DuckAudio {
 
   /** Full six-note fanfare (results ceremony). */
   fanfare() {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     this._brass(FANFARE, this.now);
   }
 
   /** First four notes: the winner crosses the line. */
   fanfareSting() {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     this._brass(FANFARE.slice(0, 4), this.now);
   }
 
   /** Last two notes: everyone home. */
   fanfareTag() {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const tail = FANFARE.slice(4).map(([f, dt, dur]) => [f, dt - FANFARE[4][1], dur]);
     this._brass(tail, this.now);
   }
 
   /** Sad trombone for the last duck home: four sliding sawtooth notes with vibrato, the last drooping. */
   wahwah() {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const ctx = this.ctx;
     const t = this.now;
     const lp = ctx.createBiquadFilter();
@@ -874,7 +948,7 @@ export class DuckAudio {
 
   /** Plinth landing. */
   thunk() {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const t = this.now;
     const { o, g } = this._osc('triangle', 110, t, 0.15, 0.3);
     o.frequency.setValueAtTime(150, t);
@@ -901,7 +975,7 @@ export class DuckAudio {
    */
   drumroll(dur = 0.7) {
     const handle = { stop: () => {} };
-    if (!this._live()) return handle;
+    if (!this._canPlay()) return handle;
     const ctx = this.ctx;
     const t = this.now;
     const end = t + dur;
@@ -915,14 +989,14 @@ export class DuckAudio {
     snap.frequency.value = 3000;
     snap.gain.value = 4;
     const g = ctx.createGain();
-    g.gain.setValueAtTime(0.05, t);
-    g.gain.exponentialRampToValueAtTime(0.2, end);
+    g.gain.setValueAtTime(0.04, t);
+    g.gain.exponentialRampToValueAtTime(dur > 1 ? 0.26 : 0.2, end); // the crescendo spans the whole roll, however long
     const trem = ctx.createGain();
     trem.gain.value = 0.55;
     const lfo = ctx.createOscillator();
     lfo.type = 'square';
-    lfo.frequency.setValueAtTime(25, t);
-    lfo.frequency.linearRampToValueAtTime(40, end);
+    lfo.frequency.setValueAtTime(dur > 1 ? 22 : 25, t);
+    lfo.frequency.linearRampToValueAtTime(dur > 1 ? 44 : 40, end);
     const lg = ctx.createGain();
     lg.gain.value = 0.45; // 0.55 ± 0.45: strokes, not silence
     lfo.connect(lg);
@@ -955,7 +1029,7 @@ export class DuckAudio {
   }
 
   tick() {
-    if (!this._live()) return;
+    if (!this._canPlay()) return;
     const t = this.now;
     const { g } = this._osc('square', 1800, t, 0.03, 0.05);
     g.gain.setValueAtTime(0.05, t);

@@ -38,16 +38,17 @@
       <div class="panel-scroll">
         <div class="setup-head">
           <h1 id="setup-title">Race for your <span>draft order</span></h1>
-          <p class="lede">Name your ducks. We'll race them down the pond — fair, seeded and replayable — and hand you a draft board.</p>
+          <p class="lede">One duck per manager. We'll race them down the pond — fair, seeded, replayable — and hand you a draft board.</p>
         </div>
 
-        <div id="share-banner" class="share-banner" hidden>
-          <strong>Shared race loaded.</strong> Same ducks + same code = the exact same race. Hit <em>Replay</em> to watch it.
-        </div>
-
-        <div class="field field-league">
-          <label class="field-label" for="opt-league">League name <small>(optional)</small></label>
-          <input id="opt-league" class="text-input" type="text" maxlength="40" placeholder="e.g. Sunday Scaries — 2026 Draft" autocomplete="off" spellcheck="false" />
+        <div id="share-banner" class="share-banner share-card" hidden>
+          <strong id="share-title">Shared draft order race</strong>
+          <span id="share-meta"></span>
+          <span class="share-actions">
+            <button id="btn-share-watch" class="cta small" type="button"><span class="cta-main">Watch the race</span></button>
+            <button id="btn-share-board" class="sec-btn" type="button">Skip to draft board</button>
+            <button id="btn-share-own" class="link-btn" type="button">Make my own race →</button>
+          </span>
         </div>
 
         <div class="field field-size">
@@ -75,19 +76,32 @@
             <button type="button" class="chip" role="radio" data-rule="last-first" aria-checked="false" tabindex="-1">Last place gets pick 1</button>
           </div>
           <p id="rule-help" class="fine rule-help">1st across the line drafts 1.01, 2nd drafts 1.02…</p>
+          <button id="btn-fair" class="link-btn fair-btn" type="button" aria-expanded="false" aria-controls="fair-text">How is this fair?</button>
+          <p id="fair-text" class="fine fair-text" hidden>Every lane draws speed, stamina and luck from identical odds — names and lane numbers change nothing. The race code is drawn at random the moment you press Start (only type one if your league agreed on it in advance — it fixes the result). Hot dogs always target whoever is leading, same rule for everyone. Anyone can re-run the identical race from the share link to check.</p>
+        </div>
+
+        <div id="last-result" class="share-banner last-result" hidden>
+          <span id="last-result-label" class="last-result-label"></span>
+          <button id="btn-last-open" class="sec-btn" type="button">Reopen board</button>
+          <button id="btn-last-copy" class="link-btn" type="button">Copy link</button>
         </div>
 
         <div class="field field-roster">
           <div class="field-label row-between">
-            <span id="roster-label">Ducks <small>(one per manager)</small></span>
+            <span id="roster-label">Ducks</span>
             <span class="mini-actions">
+              <button type="button" id="btn-paste" class="link-btn" title="Paste a list of names (one per line, or comma-separated)">Paste list</button>
               <button type="button" id="btn-sample" class="link-btn" title="Fill the empty rows with sample names">Sample names</button>
-              <button type="button" id="btn-shuffle-looks" class="link-btn" title="Re-roll colours and hats">Restyle</button>
+              <button type="button" id="btn-shuffle-looks" class="link-btn" title="Shuffle colors and hats">Shuffle looks</button>
               <button type="button" id="btn-clear" class="link-btn">Clear</button>
             </span>
           </div>
           <ol id="roster" class="roster" aria-labelledby="roster-label"></ol>
-          <p class="fine roster-tip">Tip: paste a whole list of names into any row.</p>
+        </div>
+
+        <div class="field field-league">
+          <label class="field-label" for="opt-league">League name <small>(optional)</small></label>
+          <input id="opt-league" class="text-input" type="text" maxlength="40" placeholder="e.g. Sunday Scaries — 2026 Draft" autocomplete="off" spellcheck="false" />
         </div>
 
         <details class="advanced">
@@ -102,26 +116,26 @@
               </select>
             </label>
             <label class="opt">
-              <span>Crowd hazards</span>
-              <select id="opt-hazards">
-                <option value="on" selected>Hot dogs fly at the leader</option>
-                <option value="off">Off (pure racing)</option>
-              </select>
-            </label>
-            <label class="opt">
               <span>Effects</span>
               <select id="opt-motion">
                 <option value="full" selected>Full effects</option>
                 <option value="calm">Calm (reduced motion)</option>
               </select>
             </label>
-            <label class="opt">
-              <span>Race code <small>(blank = random)</small></span>
-              <input id="opt-seed" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="e.g. 3GQ-M2XD" maxlength="10" />
+            <label class="opt opt-wide">
+              <span>Crowd hazards</span>
+              <select id="opt-hazards">
+                <option value="on" selected>On — crowd throws hot dogs</option>
+                <option value="off">Off — pure racing</option>
+              </select>
+            </label>
+            <label class="opt opt-wide">
+              <span>Race code <small>(blank = random draw at Start; a typed code fixes the result)</small></span>
+              <input id="opt-seed" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="3GQ-M2XD" maxlength="10" />
             </label>
           </div>
           <p class="fine">Every duck draws its speed, stamina and luck from identical distributions, so each name has exactly the same chance. The code makes a race reproducible: share the link and anyone can re-watch the identical race.</p>
-          <p class="fine keys-help"><kbd>Space</kbd>/<kbd>P</kbd> pause · <kbd>M</kbd> mute · <kbd>F</kbd> fullscreen · <kbd>Esc</kbd> skip · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> start</p>
+          <p class="fine keys-help"><kbd>Space</kbd>/<kbd>P</kbd> pause · <kbd>M</kbd> mute · <kbd>F</kbd> fullscreen · <kbd>N</kbd> names · <kbd>Esc</kbd> skip · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> start</p>
         </details>
       </div>
       <div class="panel-footer">
@@ -140,16 +154,18 @@
         <span id="hud-league" class="hud-league" hidden></span>
         <span id="race-clock" class="race-clock" aria-hidden="true">0.0</span>
       </div>
-      <ol id="standings" class="standings" aria-hidden="true"></ol>
+      <ol id="standings" class="standings" aria-label="Ducks — pick yours to follow it"></ol>
       <div class="hud-foot">
         <button id="btn-pause" class="ghost-btn" type="button" aria-pressed="false" title="Pause (P)"><span class="ico-pp" aria-hidden="true"></span><span class="lbl">Pause</span></button>
         <div class="progress" aria-hidden="true"><div id="progress-bar" class="progress-bar"></div><div id="progress-dots" class="progress-dots" aria-hidden="true"></div></div>
+        <button id="btn-names" class="ghost-btn names-btn" type="button" title="Name tags (N)" aria-label="Name tags: Auto">Names: Auto</button>
         <button id="btn-skip" class="ghost-btn" type="button" title="Skip to results (Esc)" aria-label="Skip to results"><span class="lbl">Skip to results</span> <span class="glyph" aria-hidden="true">⏭</span></button>
       </div>
     </aside>
 
     <div id="ticker" class="ticker" hidden></div>
     <div id="callout" class="callout" aria-hidden="true"></div>
+    <div id="title-card" class="title-card" hidden aria-hidden="true"><b class="tc-1"></b><span class="tc-2"></span><span class="tc-3"></span></div>
     <p id="sr-live" class="sr-only" aria-live="polite" aria-atomic="true"></p>
 
     <!-- RESULTS -->
@@ -159,6 +175,7 @@
           <span class="stamp" aria-hidden="true">Official result</span>
           <p id="results-overline" class="overline" hidden>Official draft order</p>
           <h2 id="results-title" tabindex="-1">Official Draft Order</h2>
+          <span id="rule-pill" class="rule-pill"></span>
           <p id="results-sub" class="lede"></p>
           <button id="btn-reveal-all" class="link-btn reveal-all" type="button" hidden>Reveal all</button>
         </div>
@@ -172,15 +189,16 @@
         <button id="btn-copylink" class="link-btn copy-link" type="button">Copy link</button>
         <button id="btn-save" class="sec-btn" type="button">Save image</button>
         <button id="btn-copy" class="sec-btn" type="button">Copy as text</button>
-        <span class="quiet-group">
+        <div class="quiet-group">
           <button id="btn-replay" class="sec-btn" type="button">Watch replay</button>
           <button id="btn-edit" class="sec-btn" type="button">Edit ducks</button>
-          <button id="btn-again" class="sec-btn" type="button" title="Draws a fresh code — this result stays in your share link">New race</button>
-        </span>
+          <button id="btn-again" class="sec-btn" type="button" title="Rolls a brand-new race with a new code">New race</button>
+        </div>
         <div id="confirm-new" class="confirm-sheet" role="alertdialog" aria-labelledby="confirm-new-text" hidden>
-          <p id="confirm-new-text"><strong>Start a brand-new race?</strong> This draws a fresh code — tonight's result stays in the link you shared.</p>
+          <p id="confirm-new-text"><strong>Start a brand-new race?</strong> New code, new result. Copy or share this board first if it is the one that counts.</p>
           <div class="confirm-actions">
-            <button id="btn-confirm-new" class="cta small" type="button"><span class="cta-main">New race</span></button>
+            <button id="btn-confirm-copy" class="cta small" type="button"><span class="cta-main">Copy link &amp; start new</span></button>
+            <button id="btn-confirm-new" class="sec-btn" type="button">New race</button>
             <button id="btn-cancel-new" class="sec-btn" type="button">Cancel</button>
           </div>
         </div>

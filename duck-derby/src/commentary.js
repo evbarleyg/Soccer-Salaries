@@ -27,6 +27,13 @@ export class Commentator {
     this.gapPrev = 0;
     this.longLead = { duck: -1, said10: false, said20: false };
     this.lastLeader = -1;
+    this.tailDuelS = { pair: '', since: -1 }; // back-of-field duel (last place picks first)
+    this.gapBackPrev = 0;
+    this.xHist = []; // [{t, x: number[]}] positions at the last few grid samples (closer detector)
+    // closer detector: with the leader between `maxLeft` and `minLeft` seconds from home (and inside `window` units), a chaser
+    // within `gap` units shrinking it by > `closing` u/s and projected to draw level inside `horizon` × the leader's remaining
+    // time gets "HERE COMES X!" — once a race (tuned on a 400-seed dry run: ~45% of races, ~4 in 5 name the winner or runner-up)
+    this.closerCfg = { window: 200, gap: 25, closing: 4.5, horizon: 0.9, minLeft: 1.2, maxLeft: 3.6, burst: 8, burstGap: 14 };
   }
 
   n(i) {
@@ -63,6 +70,13 @@ export class Commentator {
   // ---------------------------------------------------------------------------
 
   intro(count, league = this.league) {
+    if (this.rule === 'last-first') {
+      return this.bag('intro-lf', [
+        'Toilet-bowl rules tonight: the SLOWEST duck drafts first.',
+        `${count} ducks, and for once nobody wants to win.`,
+        'Last one home takes the 1.01 — let the sandbagging begin.',
+      ]);
+    }
     if (league) {
       return this.bag('intro-league', [
         `Welcome to the ${league} Duck Derby! ${count} ducks to post.`,
@@ -174,11 +188,16 @@ export class Commentator {
     ]);
   }
 
+  /** The hot-dog victim just lost the lead to `a`: one line instead of a lead line plus an aftermath line. */
+  leadFromVictim(a, v) {
+    return this.bag('lead-victim', [`${a} inherits the lead — ${v} is still wearing the mustard!`, `${v} bonked, ${a} pounces: new leader!`, `Hot dog down, ${a} up front!`]);
+  }
+
   revenge(name) {
     return this.bag('revenge', [
       `Covered in mustard and back in front — ${name}!`,
       `REVENGE! ${name} retakes the lead!`,
-      `${name} answers the hot dog the only way: P1.`,
+      `${name} answers the hot dog the only way: from the front.`,
       `You cannot keep ${name} down. Or clean.`,
     ]);
   }
@@ -187,16 +206,12 @@ export class Commentator {
     const live = standings.length ? standings : [];
     if (!live.length) return 'Halfway!';
     const a = this.n(live[0].i);
-    const b = live[1] ? this.n(live[1].i) : '';
-    const c = live[2] ? this.n(live[2].i) : '';
-    const last = live.length > 3 ? live[live.length - 1] : null;
-    const m = (u) => metres(u);
-    if (!b) return `Halfway! ${a} all alone out there.`;
-    const g1 = m(live[0].x - live[1].x);
-    void c;
-    const head = `Halfway: ${a} by ${g1}m from ${b}.`;
-    if (!last) return head;
-    return `${head} ${this.n(last.i)} last, ${m(live[0].x - last.x)}m back.`;
+    const last = live.length > 2 ? live[live.length - 1] : null;
+    if (!live[1]) return `Halfway! ${a} all alone out there.`;
+    if (!last) return `Halfway: ${a} leads ${this.n(live[1].i)} by ${metres(live[0].x - live[1].x)}m.`;
+    const m = metres(live[0].x - last.x);
+    if (this.rule === 'last-first') return `Halfway: ${this.n(last.i)} is LAST — pick 1 as it stands — ${m}m off. ${a} leads.`;
+    return `Halfway: ${a} leads, ${this.n(last.i)} last, ${m}m back.`;
   }
 
   stretch(standings, gapUnits) {
@@ -204,13 +219,36 @@ export class Commentator {
     const b = standings[1] ? this.n(standings[1].i) : '';
     if (!b) return `FINAL STRETCH! ${a} leads them home!`;
     const gap = gapUnits ?? (standings[1] ? standings[0].x - standings[1].x : 99);
+    let line;
     if (gap < 2) {
-      return this.bag('stretch-tight', [`FINAL STRETCH! ${a} and ${b} — half a beak in it!`, `FINAL STRETCH! Nothing between ${a} and ${b}!`]);
+      line = this.bag('stretch-tight', [`FINAL STRETCH! ${a} and ${b} — half a beak in it!`, `FINAL STRETCH! Nothing between ${a} and ${b}!`]);
+    } else if (gap > 10) {
+      line = this.bag('stretch-clear', [`FINAL STRETCH! ${a} is a length clear of ${b}!`, `FINAL STRETCH! ${a} has this under control… surely.`]);
+    } else {
+      line = this.bag('stretch', [`FINAL STRETCH! ${a} and ${b}, neck and neck-feather!`, `FINAL STRETCH! ${a} from ${b} — it's on!`]);
     }
-    if (gap > 10) {
-      return this.bag('stretch-clear', [`FINAL STRETCH! ${a} is a length clear of ${b}!`, `FINAL STRETCH! ${a} has this under control… surely.`]);
+    if (this.rule === 'last-first') {
+      const live = standings.filter((r) => !r.done);
+      if (live.length >= 4) line += ` At the back: ${this.n(live[live.length - 2].i)} vs ${this.n(live[live.length - 1].i)} for the 1.01!`;
     }
-    return this.bag('stretch', [`FINAL STRETCH! ${a} and ${b}, neck and neck-feather!`, `FINAL STRETCH! ${a} from ${b} — it's on!`]);
+    return line;
+  }
+
+  /** Run-in with the first two still together (CONTESTED beat). `gapUnits` picks how breathless to be. */
+  atTheLine(a, b, gapUnits = 10) {
+    if (gapUnits < 5) return this.bag('at-line-tight', [`Half a beak in it — ${a}, ${b}!`, `${a} has ${b} all over the back of him!`, `${a}, ${b} — NOTHING in it!`]);
+    return this.bag('at-line', [`To the wall — ${a} from ${b}!`, `${b} is coming hard at ${a}!`, `${a} leads ${b} to the wall — not over yet!`]);
+  }
+
+  /** main.js saw a called lead change: don't follow it with a redundant "up to 1st" mover line. */
+  noteLead(i, t) {
+    this.lastLeader = i;
+    this.cool.set(`mv${i}`, Math.max(this.cool.get(`mv${i}`) ?? -1, t + 6));
+  }
+
+  /** Run-in with daylight second (CLEAR beat). `m` is the metres text. */
+  clearRun(a, m) {
+    return this.bag('clear-run', [`Nobody is catching ${a} — ${m}m up.`, `${a} has this sewn up, ${m}m clear.`, `Daylight second: ${a} by ${m}m.`]);
   }
 
   tailBattle(names) {
@@ -219,7 +257,7 @@ export class Commentator {
     if (!b) return `${a} needs a miracle back there.`;
     if (this.rule === 'last-first') {
       return this.bag('tail-lf', [
-        `${a} and ${b} fight for LAST — and pick #1!`,
+        `${a} and ${b} fight for LAST — and the first pick!`,
         `Lose this and win the draft: ${a} or ${b}?`,
         `The slow-off for first pick: ${a} vs ${b}.`,
       ]);
@@ -232,6 +270,20 @@ export class Commentator {
     ]);
   }
 
+  /** The last two reach the line together: [second-last, backmarker]. */
+  tailPhoto(names, rule = this.rule) {
+    const [a, b] = names;
+    if (!a || !b) return null;
+    if (rule === 'last-first') {
+      return this.bag('tail-photo-lf', [
+        `${a} and ${b} crawling for the 1.01 — nobody wants to win this!`,
+        `Photo for FIRST PICK: ${a} or ${b}? Slowest bill wins!`,
+        `${a}, ${b} — whoever touches last drafts first!`,
+      ]);
+    }
+    return this.bag('tail-photo', [`The wooden spoon goes to a photo — ${a} or ${b}?`, `${a} and ${b} hit the wall together — who is LAST?`, `Photo for last place! ${a}… ${b}… somebody blink!`]);
+  }
+
   /**
    * @param {number} i duck
    * @param {number} place 1-based finishing position
@@ -239,11 +291,15 @@ export class Commentator {
    */
   finishLine(i, place, opts = {}) {
     if (typeof opts === 'boolean') opts = { photo: opts };
-    const { photo = false, margin = null, victim = false, rule = this.rule, n = this.names.length } = opts;
+    const { photo = false, margin = null, victim = false, rule = this.rule, n = this.names.length, steal = false, lastMargin = null } = opts;
     const name = this.n(i);
     if (place === 1) {
       let line;
-      if (photo) {
+      if (steal) {
+        // the winner was not the long-time leader: it was taken on the run-in
+        line = this.bag('win-steal', [`${name} STEALS IT ON THE LINE!`, `From nowhere — ${name}!`, `${name} mugs them at the wall!`]);
+        if (photo) line += ' Check the photo!';
+      } else if (photo) {
         line = this.bag('win-photo', [
           `PHOTO FINISH! ${name} takes it by a beak!`,
           `By a feather — ${name} wins it!`,
@@ -268,7 +324,7 @@ export class Commentator {
     }
     if (place === 2) {
       // "so close" only when it was: a 1.4 s beating is not close
-      if (margin !== null && Number.isFinite(margin) && margin < 0.6) return this.bag('p2-close', [`${name} takes second — so close.`, `${name} grabs second, a beak behind!`, `Silver for ${name}. Agonisingly close.`]);
+      if (margin !== null && Number.isFinite(margin) && margin < 0.6) return this.bag('p2-close', [`${name} takes second — so close.`, `${name} grabs second, a beak behind!`, `Silver for ${name}. Agonizingly close.`]);
       return this.bag('p2', [`${name} home in second.`, `${name} grabs second!`, `Silver for ${name}.`, `${name} takes second, well beaten.`]);
     }
     if (place === 3) return this.bag('p3', [`${name} rounds out the podium.`, `Third for ${name}.`, `${name} sneaks onto the podium.`, `Bronze goes to ${name}.`]);
@@ -276,7 +332,7 @@ export class Commentator {
       let line;
       if (rule === 'last-first') {
         line = this.bag('last-lf', [
-          `${name} is last home… and with it the #1 pick!`,
+          `${name} is last home… and with it the first pick!`,
           `Dead last, first pick: ${name} plays the long game.`,
           `${name} trails in last — and drafts FIRST.`,
           `Slowest duck, biggest prize: ${name} picks first!`,
@@ -289,7 +345,8 @@ export class Commentator {
           `Last home: ${name}. The pond thanks you.`,
         ]);
       }
-      if (victim) line += ' Blame the hot dog.';
+      if (lastMargin !== null && Number.isFinite(lastMargin) && lastMargin < 0.4) line += ` Only ${lastMargin.toFixed(2)}s in it!`;
+      else if (victim) line += ' Blame the hot dog.';
       return line;
     }
     return `${name} finishes ${ordinal(place)}.`;
@@ -323,10 +380,34 @@ export class Commentator {
   /**
    * @param {{standings: Array<{i:number,x:number,done:boolean}>, timeLed: number[], rankNow: number[], rankAgo: number[]|null,
    *   victims?: Set<number>, n: number, sinceSpoken?: number, finished?: number, trackLength?: number}} ctx
-   * @param {number} t race clock
-   * @returns {{text: string, pri: number, duck: number}|null}
+   * @param {number} t race clock (a multiple of the 0.25 s broadcast grid)
+   * @returns {{text: string, pri: number, duck: number, kind?: string}|null}
    */
   poll(ctx, t) {
+    const h0 = this.xHist;
+    if (h0.length && t <= h0[h0.length - 1].t) this.rewind();
+    const out = this._poll(ctx, t);
+    // remember where everyone was at this instant (the closer detector reads 0.5 s back)
+    const x = [];
+    for (const r of ctx.standings) x[r.i] = r.done ? Infinity : r.x;
+    const h = this.xHist;
+    h.push({ t, x });
+    if (h.length > 2) h.shift(); // [t - 0.25, t]: the next sample reads h[0] = 0.5 s back
+    return out;
+  }
+
+  /** The race clock went backwards (testing hook / replay from a jump): forget every detector's memory. */
+  rewind() {
+    this.xHist = [];
+    this.cool.clear();
+    this.duel = { pair: '', since: -1 };
+    this.tailDuelS = { pair: '', since: -1 };
+    this.gapPrev = 0;
+    this.gapBackPrev = 0;
+    this.longLead = { duck: -1, said10: false, said20: false };
+  }
+
+  _poll(ctx, t) {
     const { standings, timeLed, rankNow, rankAgo, n, sinceSpoken = 0, finished = 0, trackLength = 1000, chatterOK = true, streak = 0 } = ctx;
     const live = standings.filter((r) => !r.done);
     if (live.length < 2) return null;
@@ -335,8 +416,37 @@ export class Commentator {
     const a = live[0];
     const b = live[1];
     const gap = a.x - b.x;
+    const lastFirst = this.rule === 'last-first';
 
     if (finished === 0) {
+      // the closer: somebody in the front four is reeling the leader in fast enough to matter before the line
+      const past = this.xHist.length ? this.xHist[0] : null;
+      const K = this.closerCfg;
+      if (past && t - past.t >= 0.45 && t - past.t <= 0.8 && trackLength - a.x < K.window && ready('closer')) {
+        const dt = t - past.t;
+        const px = past.x;
+        const aPast = px[a.i];
+        if (Number.isFinite(aPast)) {
+          const vLead = (a.x - aPast) / dt;
+          const toLine = (trackLength - a.x) / Math.max(vLead, 1); // leader's seconds to the wall
+          for (const r of live.slice(1, 4)) {
+            const rPast = px[r.i];
+            if (!Number.isFinite(rPast)) continue;
+            const g = a.x - r.x;
+            const closing = (aPast - rPast - g) / dt; // units per second the gap is shrinking
+            if (closing <= K.closing || g >= K.gap || toLine <= K.minLeft || toLine >= K.maxLeft) continue;
+            if (closing > K.burst && g > K.burstGap) continue; // a burst from well back flatters to deceive: wait and see
+            // projected to draw level before the wall (bursts far out are ignored: the window opens ~3.5 s from home)
+            if (g / closing < K.horizon * toLine) {
+              arm('closer', 99); // once a race
+              arm('break', 20); // …and no "pulling away" line may contradict it on the run-in
+              const X = this.n(r.i);
+              const A = this.n(a.i);
+              return { text: this.bag('closer', [`HERE COMES ${X}!`, `${X} is eating up the gap on ${A}!`, `Look out ${A} — ${X} is flying!`]), pri: 3, duck: r.i, kind: 'closer' };
+            }
+          }
+        }
+      }
       // duel: the same two at the front within 0.3 m for 3 s running
       const pair = a.i < b.i ? `${a.i}|${b.i}` : `${b.i}|${a.i}`;
       if (gap < 3) {
@@ -356,18 +466,48 @@ export class Commentator {
           };
         }
       } else if (this.duel.pair) this.duel = { pair: '', since: -1 };
-      // breakaway: two metres of daylight and stretching
-      if (gap > 20 && gap > this.gapPrev + 0.1 && ready('break')) {
-        arm('break', 12);
+      if (!lastFirst) {
+        // breakaway: two metres of daylight and stretching
+        if (gap > 20 && gap > this.gapPrev + 0.1 && ready('break')) {
+          arm('break', 12);
+          this.gapPrev = gap;
+          const m = metres(gap);
+          return {
+            text: this.bag('break', [`${this.n(a.i)} has daylight: ${m}m clear.`, `${this.n(a.i)} is ${m}m up and pulling away!`, `Nobody wants to go with ${this.n(a.i)} — ${m}m clear.`]),
+            pri: 2,
+            duck: a.i,
+          };
+        }
         this.gapPrev = gap;
-        const m = metres(gap);
-        return {
-          text: this.bag('break', [`${this.n(a.i)} has daylight: ${m}m clear.`, `${this.n(a.i)} is ${m}m up and pulling away!`, `Nobody wants to go with ${this.n(a.i)} — ${m}m clear.`]),
-          pri: 2,
-          duck: a.i,
-        };
       }
-      this.gapPrev = gap;
+    }
+
+    // last place picks first: the money is at the back — watch the last two all race
+    if (lastFirst && t > 8 && live.length >= 3) {
+      const z0 = live[live.length - 1]; // backmarker (pick 1 as it stands)
+      const z1 = live[live.length - 2];
+      const gapBack = z1.x - z0.x;
+      const pairB = z0.i < z1.i ? `${z0.i}|${z1.i}` : `${z1.i}|${z0.i}`;
+      if (gapBack < 3) {
+        if (this.tailDuelS.pair !== pairB) this.tailDuelS = { pair: pairB, since: t };
+        else if (t - this.tailDuelS.since >= 3 && ready('tail-duel')) {
+          arm('tail-duel', 8);
+          this.tailDuelS.since = t;
+          return {
+            text: this.bag('tail-duel', [`${this.n(z1.i)} and ${this.n(z0.i)} are fighting NOT to win this…`, `Nothing between ${this.n(z1.i)} and ${this.n(z0.i)} at the back — and that is where the money is.`, `${this.n(z0.i)} and ${this.n(z1.i)}, dead level in the race for the 1.01.`]),
+            pri: 2,
+            duck: z0.i,
+            kind: 'tail',
+          };
+        }
+      } else if (this.tailDuelS.pair) this.tailDuelS = { pair: '', since: -1 };
+      // adrift at the back = the dream scenario under these rules
+      if (gapBack > 20 && gapBack > this.gapBackPrev + 0.1 && ready('break')) {
+        arm('break', 12);
+        this.gapBackPrev = gapBack;
+        return { text: this.bag('break-lf', [`${this.n(z0.i)} is ${metres(gapBack)}m adrift — dream scenario under these rules.`, `${this.n(z0.i)} has ${metres(gapBack)}m of clear water BEHIND everyone. Suspiciously slow.`]), pri: 2, duck: z0.i, kind: 'tail' };
+      }
+      this.gapBackPrev = gapBack;
     }
 
     // movers and faders over the last three seconds (big fields jostle more, so ask for a bigger swing)
@@ -405,7 +545,7 @@ export class Commentator {
               `${x} is going backwards: ${ordinal(ago + 1)} to ${ordinal(now + 1)}.`,
               `${x} has hit the wall — down to ${ordinal(now + 1)}.`,
               `Trouble for ${x}: ${ordinal(ago + 1)} to ${ordinal(now + 1)}.`,
-              `${x} is paddling in treacle — ${ordinal(now + 1)} and sliding.`,
+              `${x} is paddling through molasses — ${ordinal(now + 1)} and sliding.`,
               `The pack swallows ${x}: down to ${ordinal(now + 1)}.`,
             ]),
             pri: 1,
@@ -422,7 +562,7 @@ export class Commentator {
       if (LL.duck !== a.i) this.longLead = { duck: a.i, said10: led >= 10, said20: led >= 20 };
       else if (!LL.said20 && led >= 20) {
         LL.said20 = LL.said10 = true;
-        return { text: `${this.n(a.i)} has bossed this for 20 seconds. Pressure on.`, pri: 1, duck: a.i };
+        return { text: lastFirst ? `${this.n(a.i)} has led for 20 seconds — and will pick LAST for it.` : `${this.n(a.i)} has bossed this for 20 seconds. Pressure on.`, pri: 1, duck: a.i };
       } else if (!LL.said10 && led >= 10) {
         LL.said10 = true;
         return { text: this.bag('led10', [`${this.n(a.i)} has led for 10 seconds straight.`, `Ten unbroken seconds in front for ${this.n(a.i)}.`]), pri: 1, duck: a.i };
@@ -436,19 +576,19 @@ export class Commentator {
       const last = live[live.length - 1];
       const facts = [];
       if (live.length >= 3) facts.push(`Top three covered by ${metres(a.x - live[2].x)}m.`);
-      if (live.length >= 4 && a.x - last.x > 25) facts.push(`${this.n(last.i)} is ${metres(a.x - last.x)}m adrift — that is a lot of pond.`);
+      if (live.length >= 4 && a.x - last.x > 25) facts.push(lastFirst ? `${this.n(last.i)} sits last, ${metres(a.x - last.x)}m off the lead — holding the 1.01.` : `${this.n(last.i)} is ${metres(a.x - last.x)}m adrift — that is a lot of pond.`);
       if (finished === 0) facts.push(`${metres(trackLength - a.x)}m to swim for ${this.n(a.i)}.`);
       else facts.push(`${live.length} ducks still out there, ${this.n(a.i)} best of them.`);
       if (finished === 0 && (timeLed[a.i] || 0) >= 4) facts.push(`${this.n(a.i)} in front, ${this.n(b.i)} stalking, ${metres(gap)}m in it.`);
       facts.push(`${n} ducks, and every one of them means it.`);
-      return { text: this.bag('filler', facts), pri: 1, duck: a.i };
+      return { text: this.bag('filler', facts), pri: 1, duck: a.i, kind: 'fill' };
     }
     return null;
   }
 }
 
 /** Track units → metres text (10 units = 1 m). */
-function metres(units) {
+export function metres(units) {
   const m = Math.max(0, units) / 10;
   return m >= 10 ? m.toFixed(0) : m.toFixed(1);
 }

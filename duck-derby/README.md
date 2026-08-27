@@ -47,13 +47,27 @@ Drop the folder on any static host.
 - Results: podium + draft board, native share sheet (or copy link), copy as
   text, save as PNG; optional league name carried through the top bar, tab
   title, PNG and share link. `&view=board` deep-links straight to the board,
-  `&autoplay=1` starts a shared race by itself.
-- Roster entry: paste a whole list into any row, non-destructive resize with
-  Undo, duplicate names race as "Mike (2)".
+  `&autoplay=1` starts a shared race by itself. The result URL gets its own
+  history entry (browser Back reopens the board), "New race" asks first unless
+  the board was copied / saved / shared, and setup offers "Reopen board".
+- A shared link lands locked: "Watch the race", "Skip to draft board" or
+  "Make my own race" — the roster and rule are read-only until you fork it, so
+  a stray tap can never produce a different "official" board under the same
+  code. The code's provenance (random draw / custom code / shared replay) is on
+  the badge, the countdown title card, the results and every export.
+- "Which duck is mine?": click a live-order row (or tap a duck) to follow it —
+  halo on the water, tag always on, remembered by name for next time; `N`
+  cycles name tags Auto / All / Off.
+- Roster entry: paste a whole list into any row (or the "Paste list" button;
+  pasting into an empty roster sets the league size), non-destructive resize
+  with Undo, duplicate names race as "Mike (2)".
 - Responsive (phone portrait + landscape → TV, safe-area aware), keyboard and
   screen-reader friendly (`P`/`Space` pause, `Esc` skip to results, `M` mute,
-  `F` fullscreen, polite live announcements), honours `prefers-reduced-motion`
-  live plus an in-app "Calm" effects setting.
+  `F` fullscreen, `N` name tags, polite live announcements), honours
+  `prefers-reduced-motion` live plus an in-app "Calm" effects setting. The
+  quality governor tells a capped refresh rate (Low Power Mode, 30 Hz TVs)
+  from a slow device: a shed tier that doesn't buy frame rate is undone and
+  never persisted.
 - Race codes (`3GQ-M2XD`) are canonical 32-bit seeds; share links carry one
   `n=` param per duck so any name — `~`, `&`, emoji — replays the same race.
 

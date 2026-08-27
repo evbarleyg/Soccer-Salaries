@@ -3,15 +3,30 @@
 // broadcast camera with a zoom/punch channel.
 // World x is measured in track units (0 = start line, TRACK_LENGTH = finish);
 // screen mapping is sx = insets.left + Weff/2 + (x - cam.x) * cam.ppu.
+//
+// Ownership: main.js (the race director) may WRITE these fields — everything else
+// in here is the scene's own: introDur, camMode, startLights, pendingHoldMs (the
+// scene sets it, main.js polls + clears), labelMode ('smart'|'all'|'off'),
+// focusDuck, tailStakes, tailPair, onPhotoDone, sim (nulling it), slowmo, cheer,
+// flash, shake (setter), projectiles.length; and it CALLS setLooks / setRace /
+// setInsets / layout / resize / setCalm / setQualityTier / resetPresentation /
+// snapCamera / beginIntro / zoomTo / punch / onEvent / launchHotdog /
+// telegraphHotdog / confettiBurst / duckX / duckScreen / sx / zoomState.
+// It also READS zoom (baseTarget/bcy), skyH, waterTop, lanes, ropeYs, ui,
+// qualityTier, reduceMotion, timeScale and _dprDirty.
 
 import { drawDuck, drawCrownGlyph, HAT_HEIGHT } from './draw-duck.js';
 import { TRACK_LENGTH, positionAt, speedAt } from './sim.js';
-import { clamp, lerp, createRng } from './rng.js';
+import { clamp, lerp, createRng, smoothstep } from './rng.js';
 
 const TAU = Math.PI * 2;
 const NOSE = 36; // local units from body centre to beak tip: positions refer to the beak
 const MAX_PARTICLES = 700;
 const FLOAT_PITCH = 2.8; // track units between lane-line floats (fixed in world space so floats never crawl during zooms)
+const FLOAT_COLS = ['#E23D4E', '#EEF3F7', '#FFD23F']; // run codes 0 RED, 1 WHITE (pearl), 2 GOLD; 3 = the lane's towel colour
+const NO_DASH = [];
+const AIM_DASH = [2, 7];
+const THROWER_S = 1.7; // hot-dog thrower figure scale vs. the seated crowd
 const UI_FONT = 'ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif';
 const MONO_FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 const CROWD_COLS = ['#E23D4E', '#1F5BD8', '#FFD23F', '#FFFFFF', '#16B8A6', '#FF7A2F', '#8E5BD9', '#2B2B2B'];
@@ -38,10 +53,10 @@ export const THEMES = {
     wall: '#C9C1B1',
     wallDark: '#9C9384',
     wallLight: '#DED7C9',
-    waterTop: '#7FD6F7',
-    water2: '#3AB3E6',
-    water3: '#1F7FC6',
-    waterBottom: '#0E4C92',
+    waterTop: '#A8DCEF',
+    water2: '#5DB6E4',
+    water3: '#2B7DC4',
+    waterBottom: '#1A4B93',
     rope: 'rgba(255,255,255,0.22)',
     buoyA: '#FF5A47',
     buoyB: '#FFFFFF',
@@ -68,6 +83,8 @@ export class RaceScene {
     this.ropeYs = [];
     this.cam = { x: 0, ppu: 5, targetPpu: 5, vx: 0 };
     this.wall = 0; // wall-clock seconds, for ambient animation
+    this.wallW = 0; // "world" seconds: follows the race clock's rate while racing (slow-mo / hit-stop slow the water too), see update()
+    this.timeScale = 1;
     this.frameNo = 0;
     this._dt = 1 / 60;
     this.particles = [];
@@ -135,6 +152,11 @@ export class RaceScene {
     this.tape = null; // finish tape: intact ribbon, then two verlet chains once the winner breaks it
     this.startRope = null; // pennant rope across the start; released on GO
     this.photo = null; // photo-finish still (offscreen copy of the frame the winner touched)
+    this._afterPhoto = null; // deferred win beat, played when the still lifts
+    this.onPhotoDone = null; // hook (batch B assigns audio): called when a still lifts
+    this.tailStakes = ''; // '' | 'last' | 'pick1' — arms a freeze-frame for a tight finish at the back (batch B)
+    this.tailPair = null; // [i, j] ids of the race-for-last duel (batch B); framed by the 'tail' camera, tagged
+    this.camTarget = null; // final camera target this frame (probe/debug)
     this.strobe = 0; // vertical strobe band at the line on the first finish
     this._lightsWall = -9; // wall time the start lights last changed
     this._seedDecor(1234);
@@ -163,7 +185,11 @@ export class RaceScene {
     q.clock = t < 2;
     q.dprCap = t >= 2 ? 1.25 : 2;
     q.particles = this._baseParticles();
-    if (this.W && ((t >= 2 && this.dpr > 1.25 + 1e-6) || (t < 2 && this.dpr < Math.min(2, window.devicePixelRatio || 1) - 1e-6))) this.resize();
+    if (this.W && ((t >= 2 && this.dpr > 1.25 + 1e-6) || (t < 2 && this.dpr < Math.min(2, window.devicePixelRatio || 1) - 1e-6))) {
+      // a canvas re-allocation costs ~25 ms: never mid-race on a device that is already struggling (main.js resizes at results/setup)
+      if (this._phase === 'race' || this._phase === 'finish' || this._phase === 'countdown') this._dprDirty = true;
+      else this.resize();
+    }
   }
 
   _baseParticles() {
@@ -210,7 +236,8 @@ export class RaceScene {
   _seedDecor(seed) {
     const rng = createRng(seed);
     this.clouds = [];
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < 7; i++) {
+      const far = i < 2;
       const count = rng.int(4, 7);
       const puffs = [];
       const mid = (count - 1) / 2;
@@ -219,9 +246,8 @@ export class RaceScene {
         const d = Math.abs(j - mid) / Math.max(1, mid);
         puffs.push({ x: (j - mid) * step + rng.range(-3, 3), y: rng.range(-4, 5) - (1 - d) * rng.range(4, 11), r: rng.range(12, 24) * (1 - d * 0.45) });
       }
-      this.clouds.push({ x: rng.range(0, 1), y: rng.range(0.05, 0.55), s: rng.range(0.6, 1.4), v: rng.range(0.004, 0.012), puffs });
+      this.clouds.push({ x: rng.range(0, 1), y: far ? rng.range(0.14, 0.3) : rng.range(0.24, 0.56), far, s: rng.range(0.6, 1.4), v: rng.range(0.004, 0.012), puffs });
     }
-    this.decorRng = rng;
   }
 
   setInsets(insets) {
@@ -253,8 +279,14 @@ export class RaceScene {
       sauce: 0,
       leadFlash: 0,
       celebrate: 0,
+      victory: 0,
+      launched: false,
       lean: 0,
       lastEvent: -99,
+      tagEvent: -99,
+      tagWant: false,
+      tagOnAt: -99,
+      tagOffAt: -99,
       finishSeenAt: -99,
       ringT: (i / Math.max(1, n)) * 0.9,
       hx: 0,
@@ -265,10 +297,12 @@ export class RaceScene {
       sc: 1,
       visible: false,
     }));
+    for (const l of this.looks) if (l) l._short = undefined; // pill names re-derive (a roster edit may reuse the object)
+    this._chat = { i: -1, at: -99 }; // the one 'splash' story tag slot
     this.labelSide = this.looks.map(() => 0);
     this.labelTop = this.looks.map(() => 0);
-    this.projectiles = [];
-    this.throwers = [];
+    this.projectiles.length = 0;
+    this.throwers.length = 0;
     this.leaderMark = newLeaderMark();
     this.ranks = this.looks.map((_, i) => i);
     this.leaderIdx = -1;
@@ -279,42 +313,67 @@ export class RaceScene {
   setRace(sim, looks) {
     this.sim = sim;
     this.setLooks(looks);
-    this.particles.length = 0;
+    this.resetPresentation();
     this.cheer = 0;
-    this.flash = 0;
-    this.shakes.length = 0;
-    this._shakeLevel = 0;
-    this.camMode = '';
     this._heroDone = false;
     this._firstFinishSeen = false;
-    this.zoom.base = 1;
-    this.zoom.baseTarget = 1;
-    this.zoom.baseV = 0;
-    this.zoom.punch = 0;
-    this.zoom.punchV = 0;
-    this.zoom.holdUntil = 0;
-    this.tape = null;
-    this.startRope = null;
-    this.photo = null;
-    this.strobe = 0;
     // an in-progress intro dolly is driven from update() while phase === 'intro',
     // so this snap never shows on screen during the intro (beginIntro restarts it)
     this.snapCamera(0);
   }
 
+  /**
+   * Clear every transient presentation channel (slow-mo, flash, strobe, photo still + its deferred beat,
+   * tape, start rope, shakes, camera mode, holds, hot dogs, tail stakes, zoom). Called by setRace();
+   * batch B also calls it from showResults / backToSetup. Particles survive with { keepParticles: true }.
+   */
+  resetPresentation({ keepParticles = false } = {}) {
+    this.slowmo = 0;
+    this.flash = 0;
+    this.strobe = 0;
+    this.photo = null;
+    this._afterPhoto = null;
+    this.tape = null;
+    this.startRope = null;
+    this.shakes.length = 0;
+    this._shakeLevel = 0;
+    this.camMode = '';
+    this._lastMode = '';
+    this._blend = null;
+    this._tailSet = null;
+    this.pendingHoldMs = 0;
+    this.projectiles.length = 0;
+    this.throwers.length = 0;
+    this.tailStakes = '';
+    this.tailPair = null;
+    Object.assign(this.zoom, { base: 1, baseTarget: 1, baseV: 0, punch: 0, punchV: 0, holdUntil: 0, reason: '' });
+    if (!keepParticles) this.particles.length = 0;
+  }
+
   resize() {
     const cssW = this.canvas.clientWidth || 800;
     const cssH = this.canvas.clientHeight || 500;
-    this.ui = clamp(Math.min(cssW / 1440, cssH / 900), 0.85, 2.6);
     // pixel budget: never back more than ~9.5 MP (4K screens render at a lower ratio)
-    this.dpr = Math.min(this.quality.dprCap || 2, 2, window.devicePixelRatio || 1, Math.sqrt(9.5e6 / (cssW * cssH)));
+    const dpr = Math.min(this.quality.dprCap || 2, 2, window.devicePixelRatio || 1, Math.sqrt(9.5e6 / (cssW * cssH)));
+    this._dprDirty = false;
+    if (this.tiles && cssW === this.W && cssH === this.H && Math.abs(dpr - this.dpr) < 1e-6) {
+      this.layout(); // nothing to re-allocate (resize storms, no-op events): a clear + up-to-9.5 MP realloc avoided
+      return;
+    }
+    this.ui = clamp(Math.min(cssW / 1440, cssH / 900), 0.85, 2.6);
+    this.dpr = dpr;
     this.W = cssW;
     this.H = cssH;
-    this.canvas.width = Math.round(cssW * this.dpr);
-    this.canvas.height = Math.round(cssH * this.dpr);
+    this.canvas.width = Math.round(cssW * dpr);
+    this.canvas.height = Math.round(cssH * dpr);
     this.quality.particles = this._baseParticles();
     this._ripKey = '';
-    this.layout();
+    this.layout(); // (re)builds the venue tiles when their key — sky height / dpr — changed
+  }
+
+  /** Venue tiles are keyed by what they are drawn from (sky height + dpr); build only when that changed. */
+  _ensureTiles() {
+    if (!this.W || !this.dpr) return;
     try {
       this._buildTiles();
     } catch (err) {
@@ -364,15 +423,18 @@ export class RaceScene {
     }
     this.ropeYs = [usableTop, ...this.lanes.map((l) => l.top + l.h)];
     this.maxDuckScale = this.lanes.reduce((m, l) => Math.max(m, l.duckScale), 0.45);
+    this._ensureTiles(); // a layout can flip the sky fraction (e.g. 12 -> 16 ducks on a short screen) without any resize
   }
 
   effectiveW() {
     return Math.max(200, this.W - this.insets.left - this.insets.right);
   }
 
+  /** Tightest framing the director allows: FINAL STRETCH and the race for last punch in (TV-style tighten). */
   ppuMax() {
     const we = this.effectiveW();
-    return we < 500 ? clamp(we / 140, 3.4, 8.5) : clamp(we / 170, 3.2, 8.5 * this.ui);
+    const k = this.camMode === 'stretch' ? 130 : this.camMode === 'tail' ? 120 : 170;
+    return we < 500 ? clamp(we / (this.camMode ? 105 : 140), 3.4, 8.5) : clamp(we / k, 3.2, 8.5 * this.ui);
   }
 
   ppuMin() {
@@ -425,8 +487,14 @@ export class RaceScene {
 
   /** Place camera instantly for race time t. */
   snapCamera(t) {
+    if (this.camMode !== this._lastMode) this._tailSet = null;
+    this._lastMode = this.camMode;
+    this._blend = null;
     const target = this._cameraTarget(t);
+    this._lastTarget = target;
+    this.camTarget = target;
     this.cam.x = target.x;
+    this.cam.vx = 0;
     this.cam.ppu = target.ppu;
     this.cam.targetPpu = target.ppu;
   }
@@ -438,20 +506,21 @@ export class RaceScene {
     const mode = this.camMode;
     let lead = 0;
     let tail = 0;
-    this._leadX = 0;
+    let leadAll = 0;
     if (this.sim && n) {
-      let xs = [];
-      let leadAll = -Infinity;
+      // 'tail' frames a fixed set (B's tailPair, else whoever was unfinished when the mode began): duckX coasts
+      // smoothly past the line, so nothing jumps when one of them finishes
+      if (mode === 'tail' && !this._tailSet) this._tailSet = this._captureTailSet(t);
+      const set = mode === 'tail' ? this._tailSet : null;
+      const xs = this._camXs || (this._camXs = []);
+      xs.length = 0;
+      leadAll = -Infinity;
       for (let i = 0; i < n; i++) {
         const x = this.duckX(i, t);
         if (x > leadAll) leadAll = x;
-        if (mode === 'tail') {
-          const ft = this.sim.finishTimes[i];
-          if (ft !== null && t >= ft) continue; // frame the unfinished
-        }
+        if (set && !set.includes(i)) continue;
         xs.push(x);
       }
-      this._leadX = leadAll;
       if (!xs.length) for (let i = 0; i < n; i++) xs.push(this.duckX(i, t));
       xs.sort((a, b) => a - b);
       lead = xs[xs.length - 1];
@@ -459,16 +528,33 @@ export class RaceScene {
       tail = xs.length > 4 ? lerp(xs[0], xs[1], 0.5) : xs[0];
       if (mode === 'stretch') tail = Math.max(tail, lead - 30); // only the fight at the front defines the zoom
     }
+    this._leadX = leadAll;
     const span = Math.max(lead - tail, 1);
     let ppu = (Weff * 0.56) / Math.max(span + 14, 48);
     ppu = clamp(ppu, this.ppuMin(), this.ppuMax());
-    const anchor = mode === 'stretch' ? 0.64 : mode === 'tail' ? 0.62 : narrow ? 0.64 : 0.7;
+    // the leader drifts from 70% to 62% of the frame through the last quarter (no step at FINAL STRETCH)
+    const prog = leadAll / TRACK_LENGTH;
+    const anchor = mode === 'tail' ? 0.62 : narrow ? 0.64 : lerp(0.7, 0.62, smoothstep(0.72, 0.88, prog));
     let x = lead - (anchor - 0.5) * (Weff / ppu);
     const minX = (0.5 - 0.3) * (Weff / ppu); // start line no further right than 30%
     const maxX = TRACK_LENGTH + (0.5 - 0.34) * (Weff / ppu); // finish line no further left than 34%
     x = clamp(x, minX, maxX);
     if (mode === 'tail') x = clamp(Math.max(x, TRACK_LENGTH - 0.32 * (Weff / ppu)), minX, maxX); // keep the line in view (<= 82%)
     return { x, ppu };
+  }
+
+  /** Ids the 'tail' camera frames: batch B's tailPair when set, else every duck still racing at t. */
+  _captureTailSet(t) {
+    if (Array.isArray(this.tailPair) && this.tailPair.length) return this.tailPair.slice();
+    const ids = [];
+    if (this.sim) {
+      for (let i = 0; i < this.looks.length; i++) {
+        const ft = this.sim.finishTimes[i];
+        if (ft === null || t < ft) ids.push(i);
+      }
+    }
+    if (!ids.length) for (let i = 0; i < this.looks.length; i++) ids.push(i);
+    return ids;
   }
 
   /** Start the intro dolly: hold mid-course, then sweep back to the start dock before "3". */
@@ -519,6 +605,11 @@ export class RaceScene {
     return Math.min(this.H, yb + 14);
   }
 
+  /** Current true-scale zoom {zf, cx, cy} (held framing + impact punch) — public alias for the director / probes. */
+  zoomState() {
+    return this._zoomState();
+  }
+
   _zoomState() {
     const z = this.zoom;
     const zf = Math.max(1, z.base + z.punch);
@@ -544,29 +635,54 @@ export class RaceScene {
     this.wall += dt;
     this.frameNo++;
     this._dt = dt;
+    this._phase = phase;
     this.phaseTime = phaseTime;
     const racing = phase === 'race' || phase === 'finish';
     const rm = this.reduceMotion;
+    // World time follows the race clock while racing: slow-mo and hit-stops slow paddling, bob, foam,
+    // splashes, tape and water too (8% floor keeps the water alive while paused; fast-forward is capped
+    // at 1.3x so strokes never look frantic). UI-ish things (labels, reticle, shakes, zoom) stay on dt.
+    const jumped = this._lastT === undefined || Math.abs(t - this._lastT) > 1;
+    const dRace = jumped ? dt : clamp(t - this._lastT, 0, dt * 1.3);
+    this.timeScale = racing && dt > 1e-5 ? dRace / dt : 1;
+    const dtW = racing ? Math.max(dRace, dt * 0.08) : dt;
+    this.wallW += dtW;
+    this._dtW = dtW;
     // a jump()/skip moved the race clock: snap anything that would otherwise animate from stale state
-    this._cut = Math.abs(t - (this._lastT ?? t)) > 1;
+    this._cut = this._lastT !== undefined && jumped;
     this._lastT = t;
     if (this._cut) {
       const lm = this.leaderMark;
       lm.flight = null;
       lm.toss = null;
       lm.holder = -1;
+      lm.hover = null;
+      lm.hoverP = 0;
+      this._cutAt = this.wall;
       const zz = this.zoom;
       zz.base = zz.baseTarget = 1;
       zz.baseV = zz.punch = zz.punchV = 0;
       zz.holdUntil = 0;
       zz.reason = '';
       this.shakes.length = 0;
-      for (const fx of this.duckFx) {
-        fx.vPrev = this.sim && racing ? this.duckV(this.duckFx.indexOf(fx), t) : 0;
+      this.photo = null;
+      this._afterPhoto = null;
+      this._blend = null;
+      this._lastTarget = null;
+      if (this.camMode !== this._lastMode) this._tailSet = null;
+      this._lastMode = this.camMode;
+      if (this._chat) this._chat.i = -1;
+      for (let i = 0; i < this.duckFx.length; i++) {
+        const fx = this.duckFx[i];
+        fx.vPrev = this.sim && racing ? this.duckV(i, t) : 0;
         fx.tiltA = 0;
         fx.sq = 0;
         fx.sqV = 0;
         fx.kickT = 0;
+        // name-tag dwell state belongs to the timeline we just left
+        fx.tagWant = false;
+        fx.tagOnAt = -99;
+        fx.tagOffAt = -99;
       }
     }
 
@@ -590,26 +706,43 @@ export class RaceScene {
       this.cam.targetPpu = tgt.ppu;
     } else {
       if (phase !== 'intro') this.intro.begun = false;
-      const target = this._cameraTarget(t);
-      let k = rm ? 10 : phase === 'race' ? 3.2 : 2.0;
-      if (racing && !rm && this._leadX > TRACK_LENGTH * 0.85) k = 4.5; // no lag at the line
+      // director mode changes ('' -> 'stretch' -> 'tail') blend the framing target over 1 s instead of stepping it
+      if (this.camMode !== this._lastMode) {
+        const lt = this._lastTarget;
+        this._blend = { fromX: lt ? lt.x : this.cam.x, fromP: lt ? lt.ppu : this.cam.ppu, t0: this.wall, dur: 1.0 };
+        this._tailSet = this.camMode === 'tail' ? this._captureTailSet(t) : null;
+        this._lastMode = this.camMode;
+      }
+      const raw = this._cameraTarget(t);
+      let target = raw;
+      if (this._blend) {
+        const bl = this._blend;
+        const e = easeInOutCubic(clamp((this.wall - bl.t0) / bl.dur, 0, 1));
+        target = { x: lerp(bl.fromX, raw.x, e), ppu: lerp(bl.fromP, raw.ppu, e) };
+        if (e >= 1) this._blend = null;
+      }
+      this._lastTarget = raw;
+      this.camTarget = target;
       if (Math.abs(target.x - this.cam.x) * this.cam.ppu > 1.5 * this.W) {
         this.cam.x = target.x; // a jump()/skip moved the race: cut, don't pan
         this.cam.ppu = target.ppu;
+        this.cam.vx = 0;
       }
-      const a = 1 - Math.exp(-dt * k);
-      const prevX = this.cam.x;
+      // velocity follow with an acceleration cap: same feel as the old exponential follow, but every
+      // change of target (GO, a finish, a mode blend) becomes an ease-in instead of a whip
+      const kf = rm ? 10 : phase === 'race' ? 3.2 : 2.0;
+      const want = (target.x - this.cam.x) * kf;
+      // the camera never whips back upstream (race for last): it drifts at <= 18 u/s and lets the tail swim into frame
+      this.cam.vx = Math.max(-18, this.cam.vx + clamp(want - this.cam.vx, -240 * dt, 240 * dt));
+      this.cam.x += this.cam.vx * dt;
       const pr = this.camMode === 'stretch' ? 2.2 : 1.3;
       this.cam.ppu = lerp(this.cam.ppu, target.ppu, 1 - Math.exp(-dt * (rm ? 10 : pr)));
-      this.cam.x = lerp(this.cam.x, target.x, a);
-      this.cam.vx = dt > 0 ? (this.cam.x - prevX) / dt : 0;
       this.cam.targetPpu = target.ppu;
     }
 
     // ---- start lights -> countdown push-in / GO kick ----
     if (this.startLights !== this._lights) {
       const L = this.startLights;
-      const prevL = this._lights;
       this._lights = L;
       this._lightsWall = this.wall;
       if (L >= 1 && L <= 3) {
@@ -619,25 +752,10 @@ export class RaceScene {
           this.zoom.reason = 'lights';
         }
       } else if (L === 4) {
+        // GO: the gun, the rope drops; each duck uncoils at its own reaction time (popcorn launch, per-duck fx below)
         this.zoomTo(1);
         this._shakeNative(6, 1, 0);
         this._releaseStartRope();
-        if (prevL === 3) {
-          // GO: uncoil — squash overshoots into a stretch, foam kicks up behind everyone
-          for (let i = 0; i < this.duckFx.length; i++) {
-            const fx = this.duckFx[i];
-            if (!fx) continue;
-            if (!rm) {
-              this._kick(fx, 0.7, 0.35);
-              fx.sqV += 5;
-            }
-            if (this.quality.particles > 0) {
-              const nf = Math.round(8 * this.quality.particles);
-              for (let k = 0; k < nf; k++) this._spawnFoam(i, 0, 0);
-              this._spawnRing(i, 0, 0.8);
-            }
-          }
-        }
       } else if (L === 0 && this.zoom.baseTarget > 1 && !this.zoom.holdUntil) {
         this.zoomTo(1);
       }
@@ -693,19 +811,40 @@ export class RaceScene {
         fx.leadFlash = Math.max(0, fx.leadFlash - dt * 1.2);
         fx.sauce = Math.max(0, fx.sauce - dt * 0.3);
         fx.celebrate = Math.max(0, fx.celebrate - dt);
+        if (fx.victory > 0) {
+          // winner: wings-up V held ~1 s, then the hopping celebration takes over
+          fx.victory = Math.max(0, fx.victory - dt);
+          if (fx.victory === 0) fx.celebrate = 2.5;
+        }
         // countdown body language: rock back on "2", coil on "1", relax otherwise (eased ~120 ms)
         const Lc = phase === 'countdown' ? this.startLights : 0;
         const leanT = rm ? 0 : Lc === 2 ? 0.06 : Lc === 3 ? 0.075 : 0;
         fx.lean += (leanT - fx.lean) * (1 - Math.exp(-dt / 0.12));
         if (fx.kickT > 0) fx.kickT = Math.max(0, fx.kickT - dt);
         if (fx.spin >= 0) {
-          fx.spin += dt / 0.95;
+          fx.spin += dtW / 0.95; // the hot-dog flip hangs in a hit-stop / slow-mo like everything physical
           if (fx.spin >= 1) fx.spin = -1;
         }
         if (!idle) {
+          // popcorn launch: each duck uncoils (squash kick, foam, ring, maybe a quack) at its own reaction time
+          const rx = (this.sim.stats?.[i]?.reaction ?? 0) + 0.05;
+          if (!fx.launched && t >= rx) {
+            fx.launched = true;
+            if (t - rx < 0.5) {
+              if (!rm) {
+                this._kick(fx, 0.75, 0.32);
+                fx.sqV += 5;
+              }
+              const nf = Math.round(6 * this.quality.particles);
+              for (let k = 0; k < nf; k++) this._spawnFoam(i, t, 0);
+              this._spawnRing(i, t, 0.8);
+              if (hash01(i * 13 + 7) < 0.35) fx.quack = 1;
+              this.splash(i, t, 5, true);
+            }
+          }
           const v = this.duckV(i, t);
           fx.effVis = clamp((v / v0 - 0.7) / 0.55, 0, 1.35);
-          fx.pad += (1.4 + 1.8 * fx.effVis) * dt;
+          fx.pad += (1.4 + 1.8 * fx.effVis) * dtW;
           const aN = dt > 1e-4 ? clamp((v - fx.vPrev) / dt / (0.5 * v0), -1, 1) : 0;
           fx.tiltA += (aN - fx.tiltA) * (1 - Math.exp(-8 * dt));
           fx.vPrev = v;
@@ -717,14 +856,14 @@ export class RaceScene {
           // foam trail: two lines astern, thinner for the back of the field
           const rank = this.ranks[i] ?? i;
           const rate = this.quality.foam ? (v / v0) * 11 * this.quality.particles * (rank < 3 ? 1 : 0.55) : 0;
-          fx.lastFoam += dt * rate;
+          fx.lastFoam += dtW * rate;
           while (fx.lastFoam >= 1) {
             fx.lastFoam -= 1;
             this._spawnFoam(i, t, v);
           }
         } else {
           fx.effVis = 0;
-          fx.pad += 0.45 * dt;
+          fx.pad += 0.45 * dtW;
           fx.vPrev = 0;
           fx.tiltA *= Math.exp(-4 * dt);
           // crouch spring: the same squash channel the race uses, aimed at the countdown pose
@@ -746,7 +885,7 @@ export class RaceScene {
     }
 
     // ---- leader crown hand-off ----
-    this._updateLeaderMark(dt, t, racing);
+    this._updateLeaderMark(dt, t, racing, dtW);
 
     // ---- throwers past their exit ----
     for (let k = this.throwers.length - 1; k >= 0; k--) {
@@ -761,7 +900,7 @@ export class RaceScene {
         this.projectiles.splice(p, 1);
         continue;
       }
-      pr.dropT = (pr.dropT || 0) + dt;
+      pr.dropT = (pr.dropT || 0) + dtW;
       if (pr.dropT >= 0.08 && this.quality.particles > 0) {
         pr.dropT = 0;
         const pos = this._projectilePos(pr, t);
@@ -776,20 +915,28 @@ export class RaceScene {
     this.strobe = Math.max(0, this.strobe - dt / 0.12);
     if (this.tape) {
       const tp = this.tape;
-      if (!tp.snapped && this.sim && this._leadX >= TRACK_LENGTH) this._snapTape();
+      // under a photo still the tape stays intact: the snap is part of the win beat that plays when the still lifts
+      if (!tp.snapped && this.sim && this._leadX >= TRACK_LENGTH && !this.photo) this._snapTape();
       if (tp.snapped) {
-        tp.t += dt;
-        if (tp.t > 1.8) this.tape = null;
-        else for (const ch of tp.chains) stepChain(ch, dt, 320, 0.985);
+        tp.t += dtW;
+        if (tp.t > 1.1) this.tape = null;
+        else {
+          // the halves visibly retract toward their posts as they whip (ribbon recoil, not debris)
+          const f = clamp(tp.t / 0.5, 0, 1);
+          for (const ch of tp.chains) {
+            ch.seg = tp.seg0 * lerp(1, ch.shrinkTo ?? 0.45, f);
+            stepChain(ch, dtW, 320, 0.985);
+          }
+        }
       }
     }
     if (this.startRope && this.startRope.released) {
       const rp = this.startRope;
-      rp.t += dt;
+      rp.t += dtW;
       if (rp.t > 0.85) this.startRope = null;
       else {
         rp.chain.t = rp.t;
-        stepChain(rp.chain, dt, 900, 0.97);
+        stepChain(rp.chain, dtW, 900, 0.97);
         // each knot splashes once as it lands on its lane's water
         const pts = rp.chain.pts;
         for (let k = 0; k < pts.length; k++) {
@@ -800,33 +947,43 @@ export class RaceScene {
         }
       }
     }
-    if (this.photo && this.wall - this.photo.t0 > this.photo.dur) this.photo = null;
+    if (this.photo && this.wall - this.photo.t0 > this.photo.dur) {
+      // the still lifts: blink, then play the deferred win beat live (tape snap, cannons, strobe, shake, hero push-in)
+      this.photo = null;
+      this.flash = Math.max(this.flash, 0.4);
+      const beat = this._afterPhoto;
+      this._afterPhoto = null;
+      if (beat) beat();
+      if (typeof this.onPhotoDone === 'function') this.onPhotoDone();
+    }
 
-    // ---- particles ----
+    // ---- particles (water-borne kinds live in world time; confetti / text / sparkles in wall time) ----
     const g = 520;
     const arr = this.particles;
     for (let p = arr.length - 1; p >= 0; p--) {
       const q = arr[p];
-      q.age += dt;
+      const k = q.kind;
+      const pdt = k === 'confetti' || k === 'text' || k === 'starburst' || k === 'sparkle' ? dt : dtW;
+      q.age += pdt;
       if (q.age >= q.life) {
         arr[p] = arr[arr.length - 1];
         arr.pop();
         continue;
       }
-      q.ox += q.vx * dt;
-      q.oy += q.vy * dt;
-      if (q.kind === 'drop') q.vy += g * dt;
-      else if (q.kind === 'confetti') {
+      q.ox += q.vx * pdt;
+      q.oy += q.vy * pdt;
+      if (k === 'drop') q.vy += g * pdt;
+      else if (k === 'confetti') {
         const drag = 1 - dt * (q.drag || 0.8);
         q.vx *= drag;
         if (q.vy < 0) q.vy *= drag; // air drag eats the launch, gravity brings it back into frame
         q.vy = Math.min(q.vy + (q.g || 160) * dt, q.streamer ? 140 : 190); // flutter caps the fall speed
         q.rot += q.vr * dt;
-      } else if (q.kind === 'sparkle') {
+      } else if (k === 'sparkle') {
         q.vx *= 1 - dt * 2;
         q.vy *= 1 - dt * 2;
-      } else if (q.kind === 'hotdogDebris') {
-        this._updateDebris(q, dt, t);
+      } else if (k === 'hotdogDebris') {
+        this._updateDebris(q, pdt, t);
       }
     }
   }
@@ -891,19 +1048,77 @@ export class RaceScene {
       ranks[r.i] = k;
     });
     this.ranks = ranks;
-    this.leaderIdx = t > 0.05 ? rows[0].i : -1;
+    // no leader (and no crown) in the start scramble: the sim calls no lead before t > 3 s either
+    const racing = phase === 'race' || phase === 'finish';
+    let leader = racing && t > 3.0 && rows[0].x > 40 ? rows[0].i : -1;
+    // The crown follows the sim's CALLED leader (its 'lead' events carry 4 units of hysteresis) while the raw
+    // leader is within that hysteresis, so crown, live-order board and commentary always name the same duck —
+    // also straight after a jump/cut, where a per-frame hysteresis of our own would restart from the raw order.
+    if (leader >= 0 && !rows[0].done) {
+      const called = this._calledLeaderAt(t);
+      if (called >= 0 && called !== leader) {
+        const cf = sim.finishTimes[called];
+        if ((cf === null || t < cf) && rows[0].x - this.duckX(called, t) <= 0.004 * TRACK_LENGTH) leader = called;
+      }
+    }
+    this.leaderIdx = leader;
   }
 
-  _updateLeaderMark(dt, t, racing) {
+  /** Duck named by the last sim 'lead' event at or before t (-1 before the first call). Cursor-cached, jump-safe. */
+  _calledLeaderAt(t) {
+    const ev = this.sim && this.sim.events;
+    if (!ev || !ev.length) return -1;
+    let c = this._leadCur;
+    if (!c || c.ev !== ev || c.t > t) c = this._leadCur = { ev, k: 0, duck: -1, t: -1 };
+    while (c.k < ev.length && ev[c.k].t <= t) {
+      if (ev[c.k].type === 'lead') c.duck = ev[c.k].duck;
+      c.k++;
+    }
+    c.t = t;
+    return c.duck;
+  }
+
+  _updateLeaderMark(dt, t, racing, dtW = dt) {
     const lm = this.leaderMark;
     const rm = this.reduceMotion;
     if (!racing || !this.sim || this.leaderIdx < 0) {
       lm.holder = -1;
       lm.flight = null;
       lm.toss = null;
+      lm.hover = null;
+      lm.hoverP = 0;
       return;
     }
     lm.popT += dt;
+    // contested crown: in a photo-finish slow-mo with the top two within 8 units, it lifts off the holder and leans toward the challenger
+    const sim0 = this.sim;
+    let hovering = false;
+    if (lm.holder >= 0 && lm.holder < this.looks.length) {
+      const hf = sim0.finishTimes[lm.holder];
+      const holderLive = hf === null || t < hf;
+      if (this.slowmo > 0.5 && holderLive && !lm.toss) {
+        let r = -1;
+        let rx = -Infinity;
+        for (let i = 0; i < this.looks.length; i++) {
+          if (i === lm.holder) continue;
+          const f = sim0.finishTimes[i];
+          if (f !== null && t >= f) continue;
+          const x = this.duckX(i, t);
+          if (x > rx) {
+            rx = x;
+            r = i;
+          }
+        }
+        if (r >= 0 && Math.abs(this.duckX(lm.holder, t) - rx) < 8) {
+          if (!lm.hover || lm.hover.a !== lm.holder || lm.hover.b !== r) lm.hover = { a: lm.holder, b: r, since: this.wall };
+          hovering = true;
+        }
+      }
+    }
+    if (!hovering && lm.hover && this.wall - lm.hover.since > 0.3) lm.hover = null;
+    lm.hoverP = approach(lm.hoverP || 0, lm.hover ? 1 : 0, dt / 0.3);
+    // under the photo still nothing is visible: hold the crown where it is so its flight to the winner is seen afterwards
+    if (this.photo) return;
     // who should hold it? follow the display leader with a little hysteresis
     let want = this.leaderIdx;
     if (lm.holder >= 0 && want !== lm.holder && lm.holder < this.looks.length) {
@@ -920,10 +1135,10 @@ export class RaceScene {
     lm.pendingFrom = -1;
     if (lm.toss) {
       const ts = lm.toss;
-      ts.t += dt;
-      ts.vy += 600 * dt;
-      ts.y += ts.vy * dt;
-      ts.rot += 12 * dt;
+      ts.t += dtW;
+      ts.vy += 600 * dtW;
+      ts.y += ts.vy * dtW;
+      ts.rot += 12 * dtW;
       if (ts.t >= 0.6) {
         // fly from the tossed position to whoever leads now
         lm.toss = null;
@@ -933,8 +1148,12 @@ export class RaceScene {
       return;
     }
     if (lm.holder < 0) {
+      // coronation: the first crown of the race drops in from above onto the ~3 s leader (in place after a cut)
       lm.holder = want;
       lm.flight = null;
+      lm.popT = 0;
+      const rest = this._crownRestPos(want);
+      if (!rm && rest && this.wall - (this._cutAt ?? -9) > 1 && this.duckFx[want]?.visible) this._startCrownFlight(want, rest.x, rest.y - 140 * this.ui, 0.6);
       return;
     }
     if (want !== lm.holder) {
@@ -946,7 +1165,7 @@ export class RaceScene {
         lm.holder = want;
       } else {
         const from = this._crownRestPos(lm.holder) || { x: lm.x, y: lm.y };
-        const cur = lm.flight ? { x: lm.x, y: lm.y } : from;
+        const cur = lm.flight || lm.hoverP > 0 ? { x: lm.x, y: lm.y } : from;
         this._startCrownFlight(want, cur.x, cur.y);
         lm.holder = want;
       }
@@ -966,9 +1185,9 @@ export class RaceScene {
     }
   }
 
-  _startCrownFlight(to, fromX, fromY) {
+  _startCrownFlight(to, fromX, fromY, dur = 0.45) {
     const lm = this.leaderMark;
-    lm.flight = { from: { x: fromX, y: fromY }, to, start: this.wall, dur: 0.45, p: 0 };
+    lm.flight = { from: { x: fromX, y: fromY }, to, start: this.wall, dur, p: 0 };
   }
 
   /** Screen position where the crown rests above duck i's headgear (from last frame's pose). */
@@ -1073,47 +1292,100 @@ export class RaceScene {
       this.cheer = Math.min(1, this.cheer + 0.5);
       fx.quack = 1;
       fx.lastEvent = this.wall;
+      fx.tagEvent = this.wall;
       this.leaderMark.pendingFrom = ev.duck; // bypass hysteresis: the sim called it
     } else if (ev.type === 'finish') {
-      this.cheer = 1;
       const first = !this._firstFinishSeen;
       if (fx.place === 0) fx.place = first ? 1 : 2;
       fx.finishSeenAt = t;
       this._spawnRing(ev.duck, t, 0.8);
       // place from the sim's finish order (events arrive in order, but be exact)
+      const n = this.looks.length;
       const place = this.sim ? this.sim.order.indexOf(ev.duck) + 1 : first ? 1 : 4;
-      if (!rm) {
-        if (place === 1) this._cannons(120);
-        else if (place <= 3) this._cannons(30);
-        else {
-          // everyone else: a puff of foam at the line
-          const nf = Math.round(8 * this.quality.particles);
-          for (let k = 0; k < nf; k++) this._spawnFoam(ev.duck, t, 0);
+      if (place <= 3) fx.tagEvent = this.wall;
+      if (place > 1) {
+        this.cheer = 1;
+        if (!rm) {
+          if (place <= 3) {
+            // podium puff; in a photo finish it lands under the winner's still, so it joins the deferred beat
+            if (this.photo) {
+              const prev = this._afterPhoto;
+              this._afterPhoto = () => {
+                if (prev) prev();
+                this._cannons(30);
+              };
+            } else this._cannons(30);
+          } else {
+            // everyone else: a puff of foam at the line
+            const nf = Math.round(8 * this.quality.particles);
+            for (let k = 0; k < nf; k++) this._spawnFoam(ev.duck, t, 0);
+          }
+        }
+        // race for last / first pick: freeze-frame a tight finish at the back (batch B arms tailStakes)
+        if (place === n && n >= 3 && this.tailStakes && !rm && this.W && this.sim) {
+          const o = this.sim.order;
+          const f = this.sim.finishTimes;
+          if (f[o[n - 1]] - f[o[n - 2]] < 0.25) this._capturePhoto(ev.duck, this.tailStakes === 'pick1' ? 'FIRST PICK DECIDED' : 'PHOTO FOR LAST', 0.9);
         }
       }
       if (first) {
         this._firstFinishSeen = true;
-        this._shakeNative(8, 0.7071, 0.7071);
-        fx.celebrate = 2.5;
-        this.strobe = rm ? 0 : 1;
-        // photo-finish still: freeze the frame the winner touched in, hold the race clock while it shows
-        const margin = this.sim ? this.sim.margin : Infinity;
-        if (!rm && margin < 0.6 && this.W) this._capturePhoto(ev.duck);
+        const sim = this.sim;
+        // freeze-frame first: the frame the winner touched in, held as a grayscale still (race clock creeps meanwhile);
+        // the live celebration (tape snap, cannons, strobe, shake, hero push-in, crown, wings-up V) plays when it lifts
+        const margin = sim ? sim.margin : Infinity;
+        const isPhoto = !!(sim && sim.photoFinish);
+        if (!rm && margin < 0.6 && this.W) this._capturePhoto(ev.duck, isPhoto ? 'PHOTO FINISH' : 'AT THE LINE', isPhoto ? 1.1 : 0.65);
         else this.pendingHoldMs = Math.max(this.pendingHoldMs, 90);
         // hero framing on a clear winner (skip for photo finishes: the pack tells that story)
-        if (!this._heroDone && this.sim) {
+        let hero = false;
+        if (!this._heroDone && sim) {
           this._heroDone = true;
-          const fts = this.sim.finishTimes;
+          const fts = sim.finishTimes;
           const me = fts[ev.duck];
           const close = fts.some((f, j) => j !== ev.duck && f !== null && Math.abs(f - me) < 0.25);
-          if (!close && !rm && lane) this.zoomTo(1.22, this.sx(TRACK_LENGTH) - 40 * this.ui, this._zoomFloorY(), 1400);
+          hero = !close && !rm && !!lane;
         }
+        const winner = ev.duck;
+        const lm = this.leaderMark;
+        lm.hover = null;
+        const beat = () => {
+          this._snapTape();
+          if (!this.reduceMotion) {
+            this._cannons(120);
+            this.strobe = 1;
+            this._shakeNative(8, 0.7071, 0.7071);
+          }
+          if (hero) this.zoomTo(1.22, this.sx(TRACK_LENGTH) - 40 * this.ui, this._zoomFloorY(), 1400);
+          this.cheer = 1;
+          const wfx = this.duckFx[winner];
+          if (wfx) wfx.victory = 1.1; // wings-up V; the hopping celebration starts when it expires
+          // the crown lands on the real winner, on screen
+          lm.hover = null;
+          if (lm.holder === winner && !lm.flight && !lm.toss) {
+            lm.popT = 0;
+            const at = this._crownRestPos(winner);
+            if (at) this._sparkles(at.x, at.y, 8);
+          } else if (lm.holder >= 0 && !this.reduceMotion) {
+            lm.toss = null;
+            this._startCrownFlight(winner, lm.x, lm.y, 0.5);
+            lm.holder = winner;
+          } else {
+            lm.holder = winner;
+            lm.flight = null;
+            lm.toss = null;
+            lm.popT = 0;
+          }
+        };
+        if (this.photo) this._afterPhoto = beat;
+        else beat();
       }
     } else if (ev.type === 'stretch') {
       this.cheer = Math.min(1, this.cheer + 0.7);
       this.camMode = 'stretch';
     } else if (ev.type === 'hotdog') {
       fx.lastEvent = this.wall;
+      fx.tagEvent = this.wall;
       this._kick(fx, 0.8, 0.2);
       fx.spin = 0; // starts the hop + flip
       fx.stars = 1;
@@ -1139,7 +1411,7 @@ export class RaceScene {
         }
         const hx = px ? px.x : this.sx(wx) - (NOSE - 16) * scale;
         const hy = px ? px.y : lane.y - 20 * scale;
-        this._pushParticle({ kind: 'hotdogDebris', wx: this.wxOf(hx), lane: ev.duck, ox: 0, oy: hy - lane.y, vx: rm ? -60 : -140, vy: rm ? -60 : -280, rot: this.wall * 14, vr: rm ? 4 : 22, state: 'fly', floatT: 0, sinkA: 1, scale, age: 0, life: 8 });
+        this._pushParticle({ kind: 'hotdogDebris', wx: this.wxOf(hx), lane: ev.duck, ox: 0, oy: hy - lane.y, vx: rm ? -60 : -140, vy: rm ? -60 : -280, rot: this.wallW * 14, vr: rm ? 4 : 22, state: 'fly', floatT: 0, sinkA: 1, scale, age: 0, life: 8 });
       }
       // crown: knocked off the leader, lands on whoever leads 600 ms later
       const lm = this.leaderMark;
@@ -1186,7 +1458,7 @@ export class RaceScene {
     const lane = this.lanes[i];
     if (!lane) return;
     const victimX = this.sx(this.duckX(i, tNow)) - (NOSE - 10) * lane.duckScale;
-    const screenX0 = clamp(victimX + 220 * this.ui, this.insets.left + 40, this.W - this.insets.right - 40);
+    const screenX0 = clamp(victimX + 220 * this.ui, this.insets.left + 60, this.W - this.insets.right - 60);
     const u = screenX0 + this.cam.x * this.cam.ppu * this.standsPar; // stands-layer offset: scrolls with the crowd
     const h = ((i * 7919 + Math.floor(tHit * 10) * 104729) >>> 0) % 8;
     this.throwers = this.throwers.filter((th) => th.duck !== i || Math.abs(th.tHit - tHit) > 0.01);
@@ -1237,46 +1509,80 @@ export class RaceScene {
     }
   }
 
-  /** Copy the frame the winner touched in; render() shows it as a grayscale photo for 650 ms of wall time. */
-  _capturePhoto(winner) {
+  /**
+   * Freeze-frame: copy the last rendered frame at CSS resolution with the grayscale grade, paper tint,
+   * film border and sprocket ticks baked in once; render() shows only this still (plus the red line and
+   * the stamp) for `durSec` of wall time while the race clock creeps (pendingHoldMs).
+   */
+  _capturePhoto(duck, label, durSec = 0.65) {
     try {
+      const w = Math.max(1, Math.round(this.W));
+      const h = Math.max(1, Math.round(this.H));
       const c = document.createElement('canvas');
-      c.width = this.canvas.width;
-      c.height = this.canvas.height;
-      c.getContext('2d').drawImage(this.canvas, 0, 0);
-      const ft = this.sim ? this.sim.finishTimes[winner] : 0;
-      const label = this.sim && this.sim.photoFinish ? 'PHOTO FINISH' : 'AT THE LINE';
-      this.photo = { c, t0: this.wall, dur: 0.65, label, lineX: this.sx(TRACK_LENGTH), midY: (this.ropeYs[0] + this.ropeYs[this.ropeYs.length - 1]) / 2, time: ft || 0, zf: this._zf, zc: this._zc };
-      this.pendingHoldMs = Math.max(this.pendingHoldMs, 650);
+      c.width = w;
+      c.height = h;
+      const x = c.getContext('2d');
+      if ('filter' in x) {
+        x.filter = 'grayscale(1) contrast(1.15)';
+        x.drawImage(this.canvas, 0, 0, w, h);
+        x.filter = 'none';
+      } else {
+        x.drawImage(this.canvas, 0, 0, w, h);
+        x.globalCompositeOperation = 'saturation';
+        x.fillStyle = '#000';
+        x.fillRect(0, 0, w, h);
+        x.globalCompositeOperation = 'source-over';
+      }
+      const ui = this.ui;
+      // cool paper tint
+      x.fillStyle = 'rgba(20,26,40,0.12)';
+      x.fillRect(0, 0, w, h);
+      // film border + sprocket ticks along the top/bottom bars
+      const b = Math.round(24 * ui);
+      x.fillStyle = '#0b0b0f';
+      x.fillRect(0, 0, w, b);
+      x.fillRect(0, h - b, w, b);
+      x.fillRect(0, 0, b, h);
+      x.fillRect(w - b, 0, b, h);
+      x.fillStyle = 'rgba(255,255,255,0.18)';
+      for (let sxp = b + 6; sxp < w - b; sxp += 34 * ui) {
+        x.fillRect(sxp, b * 0.35, 14 * ui, b * 0.3);
+        x.fillRect(sxp, h - b * 0.65, 14 * ui, b * 0.3);
+      }
+      const ft = this.sim ? this.sim.finishTimes[duck] : 0;
+      this.photo = { c, cssW: w, cssH: h, border: b, t0: this.wall, dur: durSec, label, lineX: this.sx(TRACK_LENGTH), midY: (this.ropeYs[0] + this.ropeYs[this.ropeYs.length - 1]) / 2, time: ft || 0, zf: this._zf, zc: this._zc, duck };
+      this.pendingHoldMs = Math.max(this.pendingHoldMs, durSec * 1000);
     } catch {
       this.photo = null; // tainted/unsupported canvas: just carry on live
       this.pendingHoldMs = Math.max(this.pendingHoldMs, 90);
     }
   }
 
-  /** The intact tape becomes two 8-segment chains anchored top and bottom, free ends kicked downstream. */
+  /** The intact tape becomes two 6-segment chains anchored top and bottom, free ends kicked downstream, recoiling to the posts. */
   _snapTape() {
     const tp = this.tape;
     if (!tp || tp.snapped) return;
     const top = this.ropeYs[0];
     const bottom = this.ropeYs[this.ropeYs.length - 1];
     const mid = (top + bottom) / 2;
-    const mk = (y0, y1, vyEnd, floor) => {
-      const N = 8;
+    const N = 6;
+    const ui = this.ui;
+    const mk = (y0, y1, vyEnd, shrinkTo, fadeAt, fadeDur) => {
       const pts = [];
       for (let k = 0; k <= N; k++) {
         const y = lerp(y0, y1, k / N);
         const f = k / N; // 0 at the anchor, 1 at the free end
-        const p = { ox: 0, y, pox: -180 * f * (1 / 60), py: y - vyEnd * f * (1 / 60) };
-        if (floor !== undefined) p.floor = floor;
-        pts.push(p);
+        // verlet: (x0 - prev) is the launch velocity per 60 Hz frame — downstream, ends flicked apart
+        pts.push({ ox: 0, y, pox: (-320 * ui * f * f) / 60, py: y - (vyEnd * ui * f) / 60 });
       }
-      return { pts, seg: Math.abs(y1 - y0) / N, anchored: true };
+      return { pts, seg: Math.abs(y1 - y0) / N, anchored: true, shrinkTo, fadeAt, fadeDur };
     };
     tp.snapped = true;
     tp.t = 0;
-    // top half whips from the far post; the near half drops onto the water by the pylon and slides downstream
-    tp.chains = this.reduceMotion ? [] : [mk(top, mid, -60), mk(bottom, mid, 60, bottom + 3)];
+    tp.seg0 = Math.abs(mid - top) / N;
+    // both halves whip downstream from their posts and retract toward them; the top half curls under the
+    // gantry for ~1 s, the bottom half (which can only pile onto the pylon) is reeled in and gone by ~0.65 s
+    tp.chains = this.reduceMotion ? [] : [mk(top, mid, -120, 0.45, 0.35, 0.65), mk(bottom, mid, 90, 0.25, 0.15, 0.5)];
   }
 
   /** GO: the start rope is let go — every knot drops onto its own lane's water with a little splash, gone in 0.8 s. */
@@ -1363,6 +1669,12 @@ export class RaceScene {
     const zs = this._zoomState();
     this._zf = zs.zf;
     this._zc = zs;
+    // freeze-frame: while a photo still is up nothing behind it is drawn (update() keeps ticking)
+    if (this.photo && this.wall - this.photo.t0 <= this.photo.dur) {
+      this._drawPhotoStill();
+      this.frameMsAvg = lerp(this.frameMsAvg, performance.now() - t0, 0.05);
+      return;
+    }
     ctx.save();
     ctx.translate(ox, oy);
     if (zs.zf > 1.0005) {
@@ -1404,21 +1716,34 @@ export class RaceScene {
 
     // screen-anchored UI: unzoomed, unshaken
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // push-ins (countdown, hero zoom) scale the venue up under the floating top bar on wide layouts:
+    // a sky-coloured scrim keeps the wordmark / code chip / buttons sitting on calm sky
+    if (zs.zf > 1.002 && (this.insets.top || 0) === 0) {
+      // opaque behind the whole bar (56 px + a little), then a soft fall-off: at full hero zoom the crowd texture sits
+      // right under the wordmark, and a merely translucent band there read as "stands greyed out", not sky
+      const a = clamp((zs.zf - 1) / 0.06, 0, 1);
+      const sg = ctx.createLinearGradient(0, 0, 0, 132);
+      sg.addColorStop(0, hexA(this.theme.skyTop, a));
+      sg.addColorStop(0.47, hexA(this.theme.skyTop, a * 0.97));
+      sg.addColorStop(0.72, hexA(this.theme.skyTop, a * 0.55));
+      sg.addColorStop(1, hexA(this.theme.skyTop, 0));
+      ctx.fillStyle = sg;
+      ctx.fillRect(-10, -10, W + 20, 142);
+    }
     this._drawEdgeMarkers(t, phase);
     this._drawVignette();
 
-    if (this.flash > 0 && !this.photo) {
+    if (this.flash > 0) {
       // reduced motion: no full-screen white strobe, just a faint blink
       const a = this.reduceMotion ? Math.min(this.flash, 1) * 0.25 : this.flash * 0.85;
       ctx.fillStyle = `rgba(255,255,255,${a})`;
       ctx.fillRect(-10, -10, W + 20, H + 20);
     }
-    if (this.photo) this._drawPhotoStill();
 
     this.frameMsAvg = lerp(this.frameMsAvg, performance.now() - t0, 0.05); // metric only; main.js governs quality from frame cadence
   }
 
-  /** Photo-finish still: the captured frame in grayscale, slowly pushing in about the line, film border, red line, stamp. */
+  /** Photo-finish still: the pre-graded captured frame slowly pushing in about the line, red line, stamp, entry flash. */
   _drawPhotoStill() {
     const ph = this.photo;
     const { ctx, W, H, dpr } = this;
@@ -1430,41 +1755,21 @@ export class RaceScene {
     const zc = ph.zc || { zf: 1, cx: 0, cy: 0 };
     const lx = zc.zf > 1.0005 ? zc.cx + (ph.lineX - zc.cx) * zc.zf : ph.lineX;
     const my = zc.zf > 1.0005 ? zc.cy + (ph.midY - zc.cy) * zc.zf : ph.midY;
+    const b = ph.border || Math.round(24 * ui);
     ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const canFilter = 'filter' in ctx;
-    if (canFilter) ctx.filter = 'grayscale(1) contrast(1.15)';
-    ctx.translate(lx * dpr, my * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#0b0b0f';
+    ctx.fillRect(0, 0, W, H); // behind the print (a resize mid-still never shows stale pixels)
+    ctx.translate(lx, my);
     ctx.scale(k, k);
-    ctx.translate(-lx * dpr, -my * dpr);
-    ctx.drawImage(ph.c, 0, 0);
-    if (canFilter) ctx.filter = 'none';
+    ctx.translate(-lx, -my);
+    ctx.drawImage(ph.c, 0, 0, ph.cssW, ph.cssH);
+    // 2px red timing line, inside the print
+    ctx.fillStyle = 'rgba(230,30,50,0.9)';
+    ctx.fillRect(Math.round(lx) - 1, b, 2, ph.cssH - 2 * b);
     ctx.restore();
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (!canFilter) {
-      ctx.fillStyle = 'rgba(255,255,255,0.15)';
-      ctx.fillRect(0, 0, W, H);
-    }
-    // cool paper tint + vignette
-    ctx.fillStyle = 'rgba(20,26,40,0.12)';
-    ctx.fillRect(0, 0, W, H);
-    // 2px red timing line
-    ctx.fillStyle = 'rgba(230,30,50,0.9)';
-    ctx.fillRect(Math.round(lx) - 1, 0, 2, H);
-    // film border
-    const b = Math.round(24 * ui);
-    ctx.fillStyle = '#0b0b0f';
-    ctx.fillRect(0, 0, W, b);
-    ctx.fillRect(0, H - b, W, b);
-    ctx.fillRect(0, 0, b, H);
-    ctx.fillRect(W - b, 0, b, H);
-    // sprocket ticks along the top/bottom bars
-    ctx.fillStyle = 'rgba(255,255,255,0.18)';
-    for (let x = b + 6; x < W - b; x += 34 * ui) {
-      ctx.fillRect(x, b * 0.35, 14 * ui, b * 0.3);
-      ctx.fillRect(x, H - b * 0.65, 14 * ui, b * 0.3);
-    }
     // stamp: slams in 1.6 -> 1 over 120 ms
     const sc = age < 0.12 ? lerp(1.6, 1, easeOutCubic(age / 0.12)) : 1;
     const text = `${ph.label}  ${ph.time.toFixed(2)}`;
@@ -1514,8 +1819,11 @@ export class RaceScene {
     ctx.fillStyle = g;
     ctx.fillRect(-20, -20, W + 40, h + 22);
 
-    // sun: pre-rendered bloom + slow rays + disc
-    const sunX = W * 0.8 - this.cam.x * this.cam.ppu * 0.01 + zx;
+    // sun: pre-rendered bloom + slow rays + disc — kept inside the playfield (left of a docked HUD panel),
+    // eased so opening/closing the panel never pops it
+    const sunWant = (this.insets.left || 0) + this.effectiveW() * 0.8 - this.cam.x * this.cam.ppu * 0.01 + zx;
+    this._sunX = this._sunX === undefined ? sunWant : lerp(this._sunX, sunWant, 1 - Math.exp(-(this._dt || 1 / 60) * 6));
+    const sunX = this._sunX;
     const sunY = h * 0.42;
     this.sunX = sunX;
     const sunR = Math.max(6, h * 0.075);
@@ -1549,14 +1857,16 @@ export class RaceScene {
     ctx.arc(sunX, sunY, sunR, 0, TAU);
     ctx.fill();
 
-    // clouds (two depths)
+    // clouds (two depths); on wide layouts the transparent top bar floats over the sky, so no cloud sits behind the wordmark / buttons
+    const clearTop = W >= 700 && (this.insets.top || 0) === 0;
     for (const c of this.clouds) {
       const span = W + 300;
-      const far = c.y < 0.2;
+      const far = c.far;
       const drift = this.reduceMotion ? 0 : this.wall * c.v * 120;
       const x = ((((c.x * span + drift - this.cam.x * this.cam.ppu * (far ? 0.02 : 0.03) + zx) % span) + span) % span) - 150;
-      const y = c.y * h;
-      this._cloud(x, y, c.s * (h / 200) * (far ? 0.7 : 1), c, far ? 0.85 : 1);
+      let y = c.y * h;
+      if (clearTop) y = Math.max(y, 56 + c.s * 24);
+      this._cloud(x, y, c.s * (h / 200) * (far ? 0.6 : 1), c, far ? 0.75 : 1);
     }
   }
 
@@ -1598,22 +1908,47 @@ export class RaceScene {
     const { ctx, W, theme } = this;
     const h = this.skyH;
     const zx = -(this._zf - 1) * 40;
-    // cool far silhouette (distant treeline / town) peeking above the far hills
+    // cool far silhouette: a soft canopy ridge (arcs) with a pale landmark every ~9 bumps, 35% off the sky so it recedes
     {
       const par = 0.03;
       const off = this.cam.x * this.cam.ppu * par - zx;
-      ctx.fillStyle = theme.far;
+      const fg = ctx.createLinearGradient(0, h * 0.4, 0, h * 0.64);
+      fg.addColorStop(0, '#9CC0DA');
+      fg.addColorStop(1, '#B4D3E6');
+      ctx.fillStyle = fg;
       ctx.beginPath();
-      ctx.moveTo(-20, h + 2);
-      const step = 14;
-      const kk0 = Math.floor((off - 20) / step);
-      for (let kk = kk0; kk * step - off <= W + 20 + step; kk++) {
+      ctx.moveTo(-30, h + 2);
+      const step = 18;
+      const kk0 = Math.floor((off - 30) / step);
+      for (let kk = kk0; kk * step - off <= W + 30 + step; kk++) {
         const x = kk * step - off;
-        const hh = hash01(kk * 2654435761) ;
-        const blockH = h * (0.05 + hh * 0.08) + (kk % 7 === 0 ? h * 0.06 : 0);
-        const y = h * 0.6 - blockH;
-        ctx.lineTo(x, y);
-        ctx.lineTo(x + step, y);
+        const hh = hash01(kk * 2654435761);
+        const ridge = h * 0.56 - Math.sin(kk * 0.21) * h * 0.03;
+        const r = step * (0.55 + hh * 0.5);
+        if (kk % 9 === 4) {
+          // landmark: spire / water tower / block, thin and pale
+          const kind = Math.floor(hh * 3);
+          const top = ridge - h * (0.12 + hh * 0.08);
+          if (kind === 0) {
+            ctx.lineTo(x - 3, ridge - r * 0.6);
+            ctx.lineTo(x, top);
+            ctx.lineTo(x + 3, ridge - r * 0.6);
+          } else if (kind === 1) {
+            ctx.lineTo(x - 5, ridge - r * 0.5);
+            ctx.lineTo(x - 5, top + 6);
+            ctx.lineTo(x - 8, top + 6);
+            ctx.lineTo(x - 6, top);
+            ctx.lineTo(x + 6, top);
+            ctx.lineTo(x + 8, top + 6);
+            ctx.lineTo(x + 5, top + 6);
+            ctx.lineTo(x + 5, ridge - r * 0.5);
+          } else {
+            ctx.lineTo(x - 7, ridge - r * 0.5);
+            ctx.lineTo(x - 7, top + 4);
+            ctx.lineTo(x + 7, top + 4);
+            ctx.lineTo(x + 7, ridge - r * 0.5);
+          }
+        } else ctx.arc(x, ridge - r * 0.15, r, Math.PI * 1.08, Math.PI * 1.92);
       }
       ctx.lineTo(W + 40, h + 2);
       ctx.closePath();
@@ -1652,6 +1987,10 @@ export class RaceScene {
     const dpr = this.dpr;
     const tileW = 480;
     const tileH = Math.max(40, Math.round(this.skyH * 0.42));
+    // everything below derives from the sky height and dpr (never W): same key, same tiles — skip the rebuild
+    const key = `${tileH}|${Math.max(16, Math.round(2.4 * this.skyH))}|${dpr}`;
+    if (this._tileKey === key && this.tiles) return;
+    this._tileKey = key;
     const make = (w, h) => {
       const c = document.createElement('canvas');
       c.width = Math.max(1, Math.round(w * dpr));
@@ -1752,12 +2091,14 @@ export class RaceScene {
       const rx = ripple.x;
       const rr = createRng(4242);
       const strokes = [];
-      for (let k = 0; k < 220; k++) {
+      const INK_LIGHT = 'rgba(255,255,255,0.10)';
+      const INK_DARK = 'rgba(8,40,110,0.07)';
+      for (let k = 0; k < 80; k++) {
         const fy = Math.pow(rr.next(), 1.25); // denser toward the top (far water)
         const y = fy * RH;
-        const len = lerp(10, 60, fy) * rr.range(0.6, 1.15);
-        const th = lerp(1, 3, fy) * rr.range(0.7, 1.1);
-        strokes.push({ x: rr.range(0, RW), y, len, th, ink: rr.chance(0.52) ? 'rgba(255,255,255,0.11)' : 'rgba(4,30,90,0.10)' });
+        const len = lerp(22, 120, fy) * rr.range(0.6, 1.15);
+        const th = lerp(0.8, 2.6, fy) * rr.range(0.7, 1.1);
+        strokes.push({ x: rr.range(0, RW), y, len, th, ink: rr.chance(0.62) ? INK_LIGHT : INK_DARK });
       }
       const lens = (x, y, len, th) => {
         rx.moveTo(x - len / 2, y);
@@ -1765,7 +2106,7 @@ export class RaceScene {
         rx.quadraticCurveTo(x, y + th, x - len / 2, y);
         rx.closePath();
       };
-      for (const ink of ['rgba(255,255,255,0.11)', 'rgba(4,30,90,0.10)']) {
+      for (const ink of [INK_LIGHT, INK_DARK]) {
         rx.fillStyle = ink;
         rx.beginPath();
         for (const s of strokes) {
@@ -1829,7 +2170,6 @@ export class RaceScene {
     const par = this.standsPar;
     const y0 = this.skyH - tileH - Math.round(this.skyH * 0.1);
     this.standsY = y0 + tileH * 0.55;
-    this.standsTop = y0;
     const zx = -(this._zf - 1) * 25;
     const off = this.cam.x * this.cam.ppu * par - zx;
     const start = -(((off % tileW) + tileW) % tileW);
@@ -1843,8 +2183,8 @@ export class RaceScene {
       kinds.push({ x, kind });
       if (kind === 'stand') {
         // alternate poses over time when cheering
-        const pose = mod2(cheering > 0.05 && !this.reduceMotion ? Math.floor(this.wall * 6 + k) : k);
-        const dy = bounce > 0 ? -Math.abs(Math.sin(this.wall * 9 + k)) * 3 * bounce : 0;
+        const pose = mod2(cheering > 0.05 && !this.reduceMotion ? Math.floor(this.wallW * 6 + k) : k);
+        const dy = bounce > 0 ? -Math.abs(Math.sin(this.wallW * 9 + k)) * 3 * bounce : 0;
         ctx.drawImage(stand[pose].c, x, y0 + dy, tileW, tileH);
         standTiles.push({ x, dy });
       } else if (kind === 'box') {
@@ -1888,6 +2228,14 @@ export class RaceScene {
       const bstart = -(((boff % bw) + bw) % bw);
       const by = y0 + roofH - 3;
       for (let x = bstart; x < W; x += bw) ctx.drawImage(this.tiles.bunting, x, by, bw, 26);
+    }
+    // aerial perspective: a cool veil over the whole venue band, densest at the ground line (throwers stay full contrast)
+    if (this.qualityTier < 2) {
+      const hz = ctx.createLinearGradient(0, y0, 0, this.skyH);
+      hz.addColorStop(0, 'rgba(200,222,246,0.04)');
+      hz.addColorStop(1, 'rgba(200,222,246,0.16)');
+      ctx.fillStyle = hz;
+      ctx.fillRect(-20, y0 - 30, W + 40, this.skyH - y0 + 30);
     }
     this._drawThrowers(t);
   }
@@ -1965,7 +2313,10 @@ export class RaceScene {
     }
   }
 
-  /** Thrower pose at race time t (screen coords). */
+  /**
+   * Thrower pose at race time t (screen coords). The figure is up to 1.7x crowd scale and stands a head
+   * above the stand; both shrink to whatever headroom a docked top strip (compact HUD) leaves.
+   */
   _throwerPose(th, t) {
     if (!this.tiles) return null;
     const zx = -(this._zf - 1) * 25;
@@ -1975,7 +2326,11 @@ export class RaceScene {
     const end = th.tHit + 0.6;
     const sink = clamp((t - end) / 0.15, 0, 1);
     if (sink >= 1) return null;
-    const baseY = this.standsY + 6 - 10 * rise + 10 * sink;
+    const seat = this.standsY + 6;
+    const room = seat - ((this.insets.top || 0) + 6); // px between the seat row and anything docked over the sky
+    const S = clamp((room - 9) / 25, 1, THROWER_S);
+    const lift = clamp(room - (25 * S + 6), 3, 18);
+    const baseY = seat - lift * rise + lift * sink;
     let arm; // radians, 0 = straight up, negative = wound back (away from the water)
     let holding = true;
     let cheerPose = false;
@@ -1988,12 +2343,12 @@ export class RaceScene {
       cheerPose = true;
       arm = (25 + (this.reduceMotion ? 0 : Math.sin(this.wall * 14) * 12)) * (Math.PI / 180);
     }
-    const shoulderX = x + 3;
-    const shoulderY = baseY - 12;
-    const armLen = 13;
+    const shoulderX = x + 3 * S;
+    const shoulderY = baseY - 12 * S;
+    const armLen = 13 * S;
     const handX = shoulderX + Math.sin(arm) * armLen;
     const handY = shoulderY - Math.cos(arm) * armLen;
-    return { x, baseY, arm, holding, cheerPose, shoulderX, shoulderY, handX, handY };
+    return { x, baseY, arm, holding, cheerPose, shoulderX, shoulderY, handX, handY, tL, S };
   }
 
   _drawThrowers(t) {
@@ -2002,36 +2357,87 @@ export class RaceScene {
       if (t < th.t0) continue;
       const pose = this._throwerPose(th, t);
       if (!pose) continue;
-      const { x, baseY } = pose;
-      if (x < -40 || x > this.W + 40) continue;
+      const { x, baseY, tL, S } = pose;
+      if (x < -60 || x > this.W + 60) continue;
+      // follow-spot during the wind-up (fades over 0.2 s after the release) so the eye finds the culprit
+      const spot = t < tL ? clamp((t - th.t0) / 0.12, 0, 1) : clamp(1 - (t - tL) / 0.2, 0, 1);
+      if (spot > 0 && this.quality.flashes) {
+        const pulse = this.reduceMotion ? 0.9 : 0.75 + 0.25 * Math.sin(this.wall * 10);
+        const sr = 22 * S;
+        const sy = baseY - 13 * S;
+        const sg = ctx.createRadialGradient(x, sy, 1, x, sy, sr);
+        sg.addColorStop(0, `rgba(255,249,220,${0.8 * pulse * spot})`);
+        sg.addColorStop(0.62, `rgba(255,246,205,${0.5 * pulse * spot})`);
+        sg.addColorStop(1, 'rgba(255,246,205,0)');
+        ctx.fillStyle = sg;
+        ctx.fillRect(x - sr, sy - sr, sr * 2, sr * 2);
+      }
       // body
       ctx.fillStyle = th.color;
-      roundRectPath(ctx, x - 5, baseY - 14, 10, 14, 3);
+      roundRectPath(ctx, x - 5 * S, baseY - 14 * S, 10 * S, 14 * S, 3 * S);
       ctx.fill();
       // arms
       ctx.strokeStyle = th.color;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 3 * S;
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(pose.shoulderX, pose.shoulderY);
       ctx.lineTo(pose.handX, pose.handY);
       // other arm: down until the throw, then up cheering
       const oa = pose.cheerPose ? (-25 + (this.reduceMotion ? 0 : Math.sin(this.wall * 14 + 1.5) * 12)) * (Math.PI / 180) : -160 * (Math.PI / 180);
-      ctx.moveTo(x - 3, baseY - 12);
-      ctx.lineTo(x - 3 + Math.sin(oa) * 12, baseY - 12 - Math.cos(oa) * 12);
+      ctx.moveTo(x - 3 * S, baseY - 12 * S);
+      ctx.lineTo(x - 3 * S + Math.sin(oa) * 12 * S, baseY - 12 * S - Math.cos(oa) * 12 * S);
       ctx.stroke();
       // hands + head
+      const hr = 3.8 * S;
       ctx.fillStyle = th.skin;
       ctx.beginPath();
-      ctx.arc(pose.handX, pose.handY, 2, 0, TAU);
-      ctx.moveTo(x + 4, baseY - 18);
-      ctx.arc(x, baseY - 18, 4, 0, TAU);
+      ctx.arc(pose.handX, pose.handY, 1.9 * S, 0, TAU);
+      ctx.moveTo(x + hr, baseY - 18 * S);
+      ctx.arc(x, baseY - 18 * S, hr, 0, TAU);
       ctx.fill();
       ctx.fillStyle = '#2B2B2B';
       ctx.beginPath();
-      ctx.arc(x, baseY - 19.5, 4, Math.PI * 1.05, Math.PI * 1.95);
+      ctx.arc(x, baseY - 18 * S - 0.37 * hr, hr, Math.PI * 1.05, Math.PI * 1.95);
       ctx.fill();
-      if (pose.holding) drawHotdog(ctx, pose.handX + 2, pose.handY - 4, 0.55, -0.5 + pose.arm * 0.5);
+      if (pose.holding) drawHotdog(ctx, pose.handX + 2 * S, pose.handY - 4 * S, 0.5 * S, -0.5 + pose.arm * 0.5);
+    }
+  }
+
+  /** Dotted preview of the throw during the wind-up: the first 60% of the hand->victim arc (intent, not a plot). */
+  _drawAimArcs(t) {
+    if (this.reduceMotion) return;
+    const { ctx } = this;
+    for (const th of this.throwers) {
+      if (t < th.t0 || t >= th.tHit - 0.8) continue;
+      const pose = this._throwerPose(th, t);
+      const lane = this.lanes[th.duck];
+      if (!pose || !lane) continue;
+      const scale = lane.duckScale;
+      const tx = this.sx(this.duckX(th.duck, t)) - (NOSE - 16) * scale;
+      const ty = lane.y - 20 * scale;
+      const hx = pose.handX;
+      const hy = pose.handY;
+      const cx = (hx + tx) / 2;
+      const cy = Math.max(Math.min(hy, ty) - 120 * this.ui, (this.insets.top || 0) + 8); // stays below a docked top strip
+      const grow = clamp((t - th.t0) / 0.3, 0, 1); // draws itself out over the first 300 ms
+      ctx.save();
+      ctx.setLineDash(AIM_DASH);
+      ctx.lineDashOffset = -this.wall * 40;
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(hx, hy);
+      const pEnd = 0.6 * grow;
+      for (let k = 1; k <= 12; k++) {
+        const p = (k / 12) * pEnd;
+        const u = 1 - p;
+        ctx.lineTo(u * u * hx + 2 * u * p * cx + p * p * tx, u * u * hy + 2 * u * p * cy + p * p * ty);
+      }
+      ctx.stroke();
+      ctx.setLineDash(NO_DASH);
+      ctx.restore();
     }
   }
 
@@ -2109,7 +2515,7 @@ export class RaceScene {
   _lilyPad(x, y, s, k) {
     const { ctx } = this;
     if (x < -20 || x > this.W + 20) return;
-    const bob = this.reduceMotion ? 0 : Math.sin(this.wall * 2 + k) * 0.8;
+    const bob = this.reduceMotion ? 0 : Math.sin(this.wallW * 2 + k) * 0.8;
     const rx = 9 * s;
     const ry = 3.4 * s;
     const notch = 0.35 + (k % 3) * 0.4;
@@ -2173,11 +2579,17 @@ export class RaceScene {
     const Hw = H - y0;
     const g = ctx.createLinearGradient(0, y0, 0, H);
     g.addColorStop(0, theme.waterTop);
-    g.addColorStop(0.1, theme.water2);
-    g.addColorStop(0.55, theme.water3);
+    g.addColorStop(0.07, theme.water2);
+    g.addColorStop(0.45, theme.water3);
     g.addColorStop(1, theme.waterBottom);
     ctx.fillStyle = g;
     ctx.fillRect(-20, y0, W + 40, Hw + 20);
+    // warm sky reflection near the horizon (time-of-day warmth bleeding into the far water)
+    const wg = ctx.createLinearGradient(0, y0, 0, y0 + Hw * 0.22);
+    wg.addColorStop(0, 'rgba(255,231,190,0.26)');
+    wg.addColorStop(1, 'rgba(255,231,190,0)');
+    ctx.fillStyle = wg;
+    ctx.fillRect(-20, y0, W + 40, Hw * 0.22);
 
     // grandstand reflection
     if (this.quality.reflections && !this.reduceMotion && this.tiles) this._drawReflection();
@@ -2189,11 +2601,30 @@ export class RaceScene {
     ctx.fillStyle = rg;
     ctx.fillRect(-20, y0, W + 40, 18);
 
+    // broad swells: a handful of very large soft light bands give the surface scale without texture noise
+    {
+      const drift = this.reduceMotion ? 0 : this.wallW * 6;
+      const span = W * 1.4;
+      ctx.beginPath();
+      for (let i = 0; i < 7; i++) {
+        const fy = Math.pow((i + 0.5) / 7, 1.3);
+        const y = y0 + 14 + fy * (Hw - 28);
+        const x = ((((hash01(i * 977 + 5) * span - this.cam.x * this.cam.ppu * 0.9 - drift * (0.5 + fy)) % span) + span) % span) - W * 0.2;
+        const rx = lerp(60, 220, fy);
+        const ry = lerp(2.5, 9, fy);
+        ctx.moveTo(x + rx, y);
+        ctx.ellipse(x, y, rx, ry, 0, 0, TAU);
+        ctx.moveTo(x + span * 0.5 + rx * 0.8, y + ry * 2);
+        ctx.ellipse(x + span * 0.5, y + ry * 2, rx * 0.8, ry * 0.8, 0, 0, TAU);
+      }
+      ctx.fillStyle = 'rgba(180,225,250,0.10)';
+      ctx.fill();
+    }
     // ripple texture: two cached layers drifting against each other, in perspective bands
     if (this.tiles?.ripple) {
-      const drift = this.reduceMotion ? 0 : this.wall;
+      const drift = this.reduceMotion ? 0 : this.wallW;
       this._blitRipple(this.cam.x * this.cam.ppu * 0.95 - drift * 12, 0, 1);
-      if (this.quality.rippleB) this._blitRipple(this.cam.x * this.cam.ppu * 1.06 + drift * 7, 1, 0.6);
+      if (this.quality.rippleB) this._blitRipple(this.cam.x * this.cam.ppu * 1.06 + drift * 7, 1, 0.5);
     }
 
     // shimmer highlights (alpha-bucketed into 3 batched fills)
@@ -2204,7 +2635,7 @@ export class RaceScene {
         const fy = (i * 0.3819) % 1;
         const x = ((((fx * W * 1.3 - this.cam.x * this.cam.ppu * (0.95 + fy * 0.15)) % (W * 1.3)) + W * 1.3) % (W * 1.3)) - W * 0.15;
         const y = y0 + 10 + fy * (Hw - 20);
-        const a = 0.5 + 0.5 * Math.sin(this.wall * 3 + i * 1.7);
+        const a = 0.5 + 0.5 * Math.sin(this.wallW * 3 + i * 1.7);
         const b = a < 0.34 ? 0 : a < 0.67 ? 1 : 2;
         const rx = 10 + fy * 16;
         buckets[b].moveTo(x + rx, y);
@@ -2222,14 +2653,14 @@ export class RaceScene {
       const nb = 4;
       const buckets = [];
       for (let b = 0; b < nb; b++) buckets.push(new Path2D());
-      const n = 34;
+      const n = 46;
       for (let i = 0; i < n; i++) {
         const fy = Math.pow((i + 0.5) / n, 1.6);
         const y = y0 + 4 + fy * (Hw - 8);
-        const spread = lerp(20, 70, fy);
+        const spread = lerp(16, 110, fy); // narrow at the horizon, fanning toward the viewer
         const jx = (hash01(i * 7919 + 3) - 0.5) * 2 * spread;
         const w = lerp(6, 22, fy) * (0.6 + hash01(i * 104729 + 11) * 0.8);
-        const a = this.reduceMotion ? 0.5 : 0.25 + 0.75 * Math.max(0, Math.sin(this.wall * 5 + i * 2.3));
+        const a = this.reduceMotion ? 0.5 : 0.25 + 0.75 * Math.max(0, Math.sin(this.wallW * 5 + i * 2.3));
         const b = Math.min(nb - 1, Math.floor(a * nb));
         buckets[b].moveTo(sxg + jx + w / 2, y);
         buckets[b].ellipse(sxg + jx, y, w / 2, lerp(1, 2, fy) / 2 + 0.4, 0, 0, TAU);
@@ -2237,7 +2668,7 @@ export class RaceScene {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       for (let b = 0; b < nb; b++) {
-        ctx.fillStyle = `rgba(255,250,225,${0.55 * ((b + 0.5) / nb)})`;
+        ctx.fillStyle = `rgba(255,246,214,${0.7 * ((b + 0.5) / nb)})`;
         ctx.fill(buckets[b]);
       }
       ctx.restore();
@@ -2313,12 +2744,12 @@ export class RaceScene {
     }
     ctx.restore();
     // water lines across the reflection + fade out with depth
-    ctx.fillStyle = 'rgba(58,179,230,0.5)';
+    ctx.fillStyle = 'rgba(93,182,228,0.5)';
     ctx.beginPath();
     for (let y = y0 + 1; y < y0 + refH; y += 3) ctx.rect(-20, y, W + 40, 1);
     ctx.fill();
     const fg = ctx.createLinearGradient(0, y0, 0, y0 + Math.min(40, refH));
-    fg.addColorStop(0, 'rgba(127,214,247,0)');
+    fg.addColorStop(0, 'rgba(168,220,239,0)');
     fg.addColorStop(1, theme.water2);
     ctx.fillStyle = fg;
     ctx.fillRect(-20, y0, W + 40, refH + 1);
@@ -2464,7 +2895,7 @@ export class RaceScene {
         ctx.fillRect(x - w / 2 + 2, by + h - 4 * ui, w - 4, 3 * ui);
       }
       ctx.fillStyle = '#FFE066';
-      ctx.font = `800 ${Math.round(13 * ui)}px ${this.displayFont}`;
+      ctx.font = `${Math.round(13 * ui)}px ${this.displayFont}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(label, x, by + h / 2 + 1);
@@ -2484,7 +2915,7 @@ export class RaceScene {
     const { ctx } = this;
     const ui = this.ui;
     const fy = (ropeY - this.waterTop) / Math.max(1, this.H - this.waterTop);
-    const bob = this.reduceMotion ? 0 : Math.sin(this.wall * 3 + Math.round(x) * 0.02 + r) * lerp(0.6, 1.6, fy);
+    const bob = this.reduceMotion ? 0 : Math.sin(this.wallW * 3 + Math.round(x) * 0.02 + r) * lerp(0.6, 1.6, fy);
     const y = ropeY + bob;
     const pw = 5 * ui;
     const ph = 22 * ui;
@@ -2513,29 +2944,6 @@ export class RaceScene {
     ctx.lineTo(x + pw / 2, y - ph + 7 * ui);
     ctx.closePath();
     ctx.fill();
-  }
-
-  _banner(x, top, text, color) {
-    const { ctx } = this;
-    const ui = this.ui;
-    const y = Math.max(16, top - 34 * ui);
-    ctx.fillStyle = '#6E4A2A';
-    ctx.fillRect(x - 2, y - 6, 4, top - y + 8);
-    ctx.font = `800 ${Math.round(13 * ui)}px ${this.displayFont}`;
-    const w = this._measure(text, ctx.font) + 18 * ui;
-    const h = 20 * ui;
-    ctx.fillStyle = color;
-    roundRectPath(ctx, x - w / 2, y - h - 2, w, h, 6 * ui);
-    ctx.fill();
-    ctx.save();
-    ctx.clip();
-    ctx.fillStyle = 'rgba(0,0,0,0.22)';
-    ctx.fillRect(x - w / 2, y - 2 - 3 * ui, w, 3 * ui);
-    ctx.restore();
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, x, y - h / 2 - 1);
   }
 
   _measure(text, font) {
@@ -2580,7 +2988,7 @@ export class RaceScene {
     const nP = clamp(Math.round(bw / 36), 7, 9);
     for (let k = 0; k < nP; k++) {
       const px = bx + ((k + 0.5) / nP) * bw;
-      const sway = this.reduceMotion ? 0 : Math.sin(this.wall * 4 + k) * 3;
+      const sway = this.reduceMotion ? 0 : Math.sin(this.wallW * 4 + k) * 3;
       ctx.fillStyle = PENNANT_COLS[k % PENNANT_COLS.length];
       ctx.beginPath();
       ctx.moveTo(px - 6 * ui, by + bh - 1);
@@ -2613,12 +3021,12 @@ export class RaceScene {
     ctx.fillStyle = shade;
     ctx.fillRect(bx, by, bw, bh);
     // centre plate
-    const pw = Math.max(bw * 0.5, this._measure('FINISH', `900 ${Math.round(22 * ui)}px ${this.displayFont}`) + 26 * ui);
+    const pw = Math.max(bw * 0.5, this._measure('FINISH', `${Math.round(22 * ui)}px ${this.displayFont}`) + 26 * ui);
     ctx.fillStyle = 'rgba(226,61,78,0.96)';
     roundRectPath(ctx, fx - pw / 2, by + 5 * ui, pw, bh - 10 * ui, 5 * ui);
     ctx.fill();
     ctx.restore();
-    ctx.font = `900 ${Math.round(22 * ui)}px ${this.displayFont}`;
+    ctx.font = `${Math.round(22 * ui)}px ${this.displayFont}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 2;
@@ -2628,7 +3036,7 @@ export class RaceScene {
     ctx.fillStyle = '#fff';
     ctx.fillText('FINISH', fx, by + bh / 2 + 1);
     // flags on top
-    const wave = this.reduceMotion ? 0 : Math.sin(this.wall * 6) * 3;
+    const wave = this.reduceMotion ? 0 : Math.sin(this.wallW * 6) * 3;
     for (const side of [-1, 1]) {
       const px = fx + side * (bw / 2 + 1);
       ctx.strokeStyle = '#555';
@@ -2734,7 +3142,7 @@ export class RaceScene {
     roundRectPath(ctx, bx, by, g.w, g.h, 6 * ui);
     ctx.fill();
     // green plate
-    ctx.font = `900 ${Math.round(16 * ui)}px ${this.displayFont}`;
+    ctx.font = `${Math.round(16 * ui)}px ${this.displayFont}`;
     const pw = Math.max(g.w * 0.62, this._measure('START', ctx.font) + 22 * ui);
     ctx.fillStyle = '#1E9E52';
     roundRectPath(ctx, sx0 - pw / 2, by + 4 * ui, pw, g.h - 8 * ui, 4 * ui);
@@ -2860,7 +3268,7 @@ export class RaceScene {
       pts = [];
       for (let k = 0; k < n; k++) {
         const y = this.ropeYs[k];
-        const bob = rm ? 0 : Math.sin(this.wall * 2.2 + k * 0.7) * 1.5;
+        const bob = rm ? 0 : Math.sin(this.wallW * 2.2 + k * 0.7) * 1.5;
         pts.push({ x: sx0 + bob * (k === 0 || k === n - 1 ? 0.3 : 1), y });
       }
     } else {
@@ -2894,7 +3302,7 @@ export class RaceScene {
       const b = pts[k + 1];
       const mx = (a.x + b.x) / 2;
       const myy = (a.y + b.y) / 2;
-      const flut = rm ? 0 : Math.sin(this.wall * 7 + k * 1.3) * 2.5 * ui;
+      const flut = rm ? 0 : Math.sin(this.wallW * 7 + k * 1.3) * 2.5 * ui;
       const len = (11 + (k % 2) * 2) * ui;
       ctx.fillStyle = PENNANT_COLS[k % PENNANT_COLS.length];
       ctx.beginPath();
@@ -2928,7 +3336,7 @@ export class RaceScene {
     const ui = this.ui;
     const top = this.ropeYs[0];
     const bottom = this.ropeYs[this.ropeYs.length - 1];
-    const strokeRibbon = (build, alpha) => {
+    const strokeRibbon = (build, alpha, dashed = true) => {
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.lineCap = 'butt';
@@ -2942,11 +3350,13 @@ export class RaceScene {
       ctx.beginPath();
       build(0, 0);
       ctx.stroke();
-      ctx.strokeStyle = '#E5233B';
-      ctx.setLineDash([7 * ui, 7 * ui]);
-      ctx.lineDashOffset = 0;
-      ctx.stroke();
-      ctx.setLineDash([]);
+      if (dashed) {
+        ctx.strokeStyle = '#E5233B';
+        ctx.setLineDash([7 * ui, 7 * ui]);
+        ctx.lineDashOffset = 0;
+        ctx.stroke();
+        ctx.setLineDash(NO_DASH);
+      }
       // specular edge
       ctx.strokeStyle = 'rgba(255,255,255,0.5)';
       ctx.lineWidth = 1;
@@ -2958,7 +3368,7 @@ export class RaceScene {
     if (!tp.snapped) {
       const lead = this._leadX;
       const bulge = this.reduceMotion ? 0 : clamp(1 - (TRACK_LENGTH - lead) / 25, 0, 1) * 5 * ui; // bows as the leader bears down on it
-      const wob = this.reduceMotion ? 0 : Math.sin(this.wall * 3) * 1.2;
+      const wob = this.reduceMotion ? 0 : Math.sin(this.wallW * 3) * 1.2;
       strokeRibbon((dx, dy) => {
         ctx.moveTo(fx + dx, top + dy);
         ctx.quadraticCurveTo(fx + dx + bulge + wob, (top + bottom) / 2 + dy, fx + dx, bottom + dy);
@@ -2966,12 +3376,25 @@ export class RaceScene {
       return;
     }
     if (!tp.chains || !tp.chains.length) return;
-    const alpha = clamp(1 - (tp.t - 0.5) / 1.1, 0, 1);
-    if (alpha <= 0.01) return;
     for (const ch of tp.chains) {
-      strokeRibbon((dx, dy) => {
-        ch.pts.forEach((p, k) => (k ? ctx.lineTo(fx + p.ox + dx, p.y + dy) : ctx.moveTo(fx + p.ox + dx, p.y + dy)));
-      }, alpha);
+      const alpha = clamp(1 - (tp.t - (ch.fadeAt ?? 0.35)) / (ch.fadeDur ?? 0.65), 0, 1);
+      if (alpha <= 0.01) continue;
+      // each half as one smooth curve through the midpoints of its chain (ribbon recoil, never a polyline of debris)
+      strokeRibbon(
+        (dx, dy) => {
+          const pts = ch.pts;
+          ctx.moveTo(fx + pts[0].ox + dx, pts[0].y + dy);
+          for (let k = 1; k + 1 < pts.length; k++) {
+            const mx = (pts[k].ox + pts[k + 1].ox) / 2;
+            const myy = (pts[k].y + pts[k + 1].y) / 2;
+            ctx.quadraticCurveTo(fx + pts[k].ox + dx, pts[k].y + dy, fx + mx + dx, myy + dy);
+          }
+          const last = pts[pts.length - 1];
+          ctx.lineTo(fx + last.ox + dx, last.y + dy);
+        },
+        alpha,
+        alpha >= 0.5, // thin dashes at low alpha are what read as stray pink lines
+      );
     }
     void t;
   }
@@ -2979,10 +3402,11 @@ export class RaceScene {
   // ---- lane float-lines ----------------------------------------------------
 
   /**
-   * Lane lines as continuous shaded float bands: colour-zoned runs (red for the first/last 5 m,
-   * gold triplets on every 10 m mark, white alternating with the lane's towel colour), a specular
-   * top line, a dark underside and 1 px disc separators. Cheap: a few strokes per rope plus one
-   * batched rect path, instead of ~1,000 ellipse fills.
+   * Lane lines as quiet pearl float ropes: mostly white, a towel-coloured identity block under the
+   * start pills, one towel float every 8th in open water, gold triplets on every 10 m mark, identity
+   * ramping back in for the run-in, and classic red/white only on the two boundary ropes' first and
+   * last 5 m. A specular top line, a dark underside and 1 px disc separators give the band volume.
+   * Allocation-free: two shared run lists per frame, <= 4 strokes + 1 dashed stroke per rope.
    */
   _drawRopes() {
     const { ctx, W, theme } = this;
@@ -2996,66 +3420,56 @@ export class RaceScene {
     const x0 = Math.max(-10, xStart);
     const x1 = W + 10;
     if (x1 <= x0) return;
+    const pitchPx = FLOAT_PITCH * ppu;
     const kFirst = Math.max(0, Math.floor(this.wxOf(x0) / FLOAT_PITCH));
     const kLast = Math.ceil(this.wxOf(x1) / FLOAT_PITCH);
     const rm = this.reduceMotion;
-    const seps = new Path2D();
-    const colourAt = (k, laneCol) => {
-      const wxk = k * FLOAT_PITCH;
-      if (wxk < 50 || (wxk > TRACK_LENGTH - 50 && wxk <= TRACK_LENGTH + 1)) return '#E23D4E';
-      if (wxk > TRACK_LENGTH + 1) return '#FFFFFF';
-      const m = Math.round(wxk / 100);
-      if (m > 0 && Math.abs(wxk - m * 100) <= FLOAT_PITCH * 1.5) return '#FFD23F';
-      return Math.floor(k / 4) % 2 ? '#FFFFFF' : laneCol;
-    };
+    // colour runs are identical for every inner rope (only the towel colour differs) and for the two
+    // boundary ropes: build both flat [code, xa, xb, ...] lists once per frame, reusing the arrays
+    const runsIn = this._ropeRuns || (this._ropeRuns = []);
+    const runsBd = this._ropeRunsB || (this._ropeRunsB = []);
+    buildFloatRuns(runsIn, false, kFirst, kLast, xStart, pitchPx, x0, x1);
+    buildFloatRuns(runsBd, true, kFirst, kLast, xStart, pitchPx, x0, x1);
+    const dash = this._ropeDash || (this._ropeDash = [1, 1]);
+    dash[1] = Math.max(1, pitchPx - 1);
+    const dashOff = -(xStart + (kFirst - 0.5) * pitchPx - 0.5 - x0); // first separator, then one every pitchPx
     ctx.lineCap = 'butt';
     for (let r = 0; r < n; r++) {
       const yBase = this.ropeYs[r];
       if (yBase < -10 || yBase > this.H + 10) continue;
       const fy = clamp((yBase - this.waterTop) / Math.max(1, this.H - this.waterTop), 0, 1);
       const boundary = r === 0 || r === n - 1;
-      const size = (1.9 + fy * 2.1) * sizeK * (boundary ? 1.22 : 1); // half-height of the band
-      const bob = rm ? 0 : Math.sin(this.wall * 2.1 + r * 0.9) * lerp(0.5, 1.4, fy);
+      const laneHpx = r + 1 < n ? this.ropeYs[r + 1] - yBase : yBase - this.ropeYs[r - 1];
+      // half-height of the band: grows toward the viewer, capped by lane height so 16 lanes on a phone stay hairlines
+      const size = Math.min((1.25 + fy * 1.45) * sizeK * (boundary ? 1.3 : 1), Math.max(1.1, laneHpx * 0.075));
+      const bob = rm ? 0 : Math.sin(this.wallW * 2.1 + r * 0.9) * lerp(0.5, 1.4, fy);
       const y = yBase + bob;
       const laneCol = this.looks[r]?.towel?.bg || theme.buoyA; // lane BELOW this rope
       // underside shadow on the water
-      ctx.strokeStyle = 'rgba(0,20,60,0.22)';
+      ctx.strokeStyle = 'rgba(0,20,60,0.16)';
       ctx.lineWidth = size * 0.9;
       ctx.beginPath();
       ctx.moveTo(x0, y + size * 0.95);
       ctx.lineTo(x1, y + size * 0.95);
       ctx.stroke();
-      // colour runs
-      const runs = new Map();
-      let runCol = null;
-      let runStart = 0;
-      const flush = (col, xa, xb) => {
-        if (!col || xb <= x0 || xa >= x1) return;
-        let p = runs.get(col);
-        if (!p) {
-          p = new Path2D();
-          runs.set(col, p);
-        }
-        p.moveTo(Math.max(x0, xa), y);
-        p.lineTo(Math.min(x1, xb), y);
-      };
-      for (let k = kFirst; k <= kLast + 1; k++) {
-        const col = k <= kLast ? colourAt(k, laneCol) : null;
-        if (col !== runCol) {
-          if (runCol) flush(runCol, this.sx((runStart - 0.5) * FLOAT_PITCH), this.sx((k - 0.5) * FLOAT_PITCH));
-          runCol = col;
-          runStart = k;
-        }
-        // disc separators (only where floats are big enough to read)
-        if (size > 2.3 && k <= kLast) {
-          const xs = this.sx((k - 0.5) * FLOAT_PITCH);
-          if (xs > x0 && xs < x1) seps.rect(xs - 0.5, y - size, 1, size * 2);
-        }
-      }
+      // colour runs: one path + one stroke per colour code (<= 4)
+      const runs = boundary ? runsBd : runsIn;
       ctx.lineWidth = size * 2;
-      for (const [col, p] of runs) {
-        ctx.strokeStyle = col;
-        ctx.stroke(p);
+      for (let c = 0; c < 4; c++) {
+        let any = false;
+        for (let q = 0; q < runs.length; q += 3) {
+          if (runs[q] !== c) continue;
+          if (!any) {
+            ctx.beginPath();
+            any = true;
+          }
+          ctx.moveTo(runs[q + 1], y);
+          ctx.lineTo(runs[q + 2], y);
+        }
+        if (any) {
+          ctx.strokeStyle = c === 3 ? laneCol : FLOAT_COLS[c];
+          ctx.stroke();
+        }
       }
       // specular top line + soft lower shade give the band a cylindrical read
       ctx.strokeStyle = 'rgba(255,255,255,0.38)';
@@ -3070,16 +3484,27 @@ export class RaceScene {
       ctx.moveTo(x0, y + size * 0.62);
       ctx.lineTo(x1, y + size * 0.62);
       ctx.stroke();
-      // round end caps at the start line
+      // disc separators (only where floats are big enough to read): one dashed hairline stroke per rope
+      if (size > 2.6) {
+        ctx.setLineDash(dash);
+        ctx.lineDashOffset = dashOff;
+        ctx.strokeStyle = 'rgba(0,0,0,0.16)';
+        ctx.lineWidth = size * 2;
+        ctx.beginPath();
+        ctx.moveTo(x0, y);
+        ctx.lineTo(x1, y);
+        ctx.stroke();
+        ctx.setLineDash(NO_DASH);
+        ctx.lineDashOffset = 0;
+      }
+      // round end cap at the start line in the lane colour (classic red on the boundary ropes)
       if (xStart > -10 && xStart < W + 10) {
-        ctx.fillStyle = '#E23D4E';
+        ctx.fillStyle = boundary ? FLOAT_COLS[0] : laneCol;
         ctx.beginPath();
         ctx.arc(xStart, y, size, 0, TAU);
         ctx.fill();
       }
     }
-    ctx.fillStyle = 'rgba(0,0,0,0.16)';
-    ctx.fill(seps);
   }
 
   // ---- ducks -----------------------------------------------------------------
@@ -3111,7 +3536,7 @@ export class RaceScene {
       const scale = lane.duckScale;
       const pad = fx.pad;
       let x = this.sx(wx) - NOSE * scale;
-      const legacyBob = Math.sin(this.wall * 2.6 * look.bobRate + look.bobPhase) * 2.2 * scale;
+      const legacyBob = Math.sin(this.wallW * 2.6 * look.bobRate + look.bobPhase) * 2.2 * scale;
       let y;
       if (idle) {
         y = lane.y + legacyBob;
@@ -3148,7 +3573,7 @@ export class RaceScene {
         ctx.beginPath();
         for (let s = 0; s < 3; s++) {
           const ly = y - 14 * scale + s * 10 * scale;
-          const lx = x - 48 * scale - s * 6 * scale - ((this.wall * 200) % 30) * scale;
+          const lx = x - 48 * scale - s * 6 * scale - ((this.wallW * 200) % 30) * scale;
           ctx.moveTo(lx, ly);
           ctx.lineTo(lx - 22 * scale, ly);
         }
@@ -3156,10 +3581,15 @@ export class RaceScene {
         ctx.restore();
       }
 
-      // soft contact shadow on the water
-      ctx.fillStyle = 'rgba(6,40,100,0.18)';
+      // light pool behind the hull: separates navy/black plumage from the deep near-water
+      ctx.fillStyle = 'rgba(190,230,255,0.16)';
       ctx.beginPath();
-      ctx.ellipse(x + 2 * scale, lane.y + 10 * scale, 34 * scale, 5 * scale, 0, 0, TAU);
+      ctx.ellipse(x - 2 * scale, lane.y + 6 * scale, 52 * scale, 11 * scale, 0, 0, TAU);
+      ctx.fill();
+      // soft contact shadow on the water
+      ctx.fillStyle = 'rgba(6,40,100,0.22)';
+      ctx.beginPath();
+      ctx.ellipse(x + 2 * scale, lane.y + 10 * scale, 36 * scale, 5.5 * scale, 0, 0, TAU);
       ctx.fill();
 
       // focus halo (batch C may point focusDuck at "my duck")
@@ -3197,15 +3627,27 @@ export class RaceScene {
           tailWag += 0.14;
         }
       } else if (!idle) tilt += fx.lean; // eases back out over the first strides
-      // winner: 2.5 s of hopping, flapping, quacking under a golden halo (crown stays on via the leader mark)
+      // winner: a held wings-up V (~1 s), then 2.5 s of hopping, flapping, quacking under a golden halo
+      const vict = fx.victory > 0 && !spinning;
       const celeb = fx.celebrate > 0 && !spinning;
       let tau = 0;
-      if (celeb) {
-        tau = 2.5 - fx.celebrate;
-        const fade = clamp(fx.celebrate / 0.4, 0, 1);
-        if (!rm) hop += Math.abs(Math.sin(Math.PI * 2.4 * tau)) * 10 * scale * fade;
-        if (tau % 1.25 < 0.4) flap = Math.max(flap, rm ? 0.4 : 1);
-        beakOpen = Math.max(beakOpen, Math.max(0, Math.sin(TAU * 1.6 * tau)) > 0.55 ? 1 : 0);
+      if (vict) {
+        const p = 1.1 - fx.victory;
+        const out = clamp(fx.victory / 0.25, 0, 1);
+        wingLift = 0.95 * easeOutBack(clamp(p / 0.18, 0, 1)) * out;
+        flap = 0;
+        beakOpen = 1;
+        tailWag += 0.12 * out;
+        if (!rm) hop += 7 * scale * clamp(p / 0.12, 0, 1) * clamp(fx.victory / 0.2, 0, 1);
+      }
+      if (celeb || vict) {
+        const fade = celeb ? clamp(fx.celebrate / 0.4, 0, 1) : clamp((1.1 - fx.victory) / 0.15, 0, 1);
+        if (celeb) {
+          tau = 2.5 - fx.celebrate;
+          if (!rm) hop += Math.abs(Math.sin(Math.PI * 2.4 * tau)) * 10 * scale * fade;
+          if (tau % 1.25 < 0.4) flap = Math.max(flap, rm ? 0.4 : 1);
+          beakOpen = Math.max(beakOpen, Math.max(0, Math.sin(TAU * 1.6 * tau)) > 0.55 ? 1 : 0);
+        }
         const hr = 60 * scale;
         const hg = ctx.createRadialGradient(x + 4 * scale, y - 14 * scale, 2, x + 4 * scale, y - 14 * scale, hr);
         hg.addColorStop(0, `rgba(255,214,80,${0.3 * fade})`);
@@ -3218,7 +3660,7 @@ export class RaceScene {
         x,
         y: y - hop,
         scale,
-        t: this.wall + i * 0.37,
+        t: this.wallW + i * 0.37,
         effort: idle ? 0.15 : effVis,
         pad,
         squash: fx.sq * amp,
@@ -3279,7 +3721,7 @@ export class RaceScene {
     const effort = 0.7 + effVis * 0.55;
     const len = (40 + effort * 70) * scale * (rank === 0 ? 1.25 : 1);
     const spread = Math.min((10 + effort * 10) * scale, lane.h * 0.42);
-    const alphaK = rank === 0 ? 0.85 : rank >= 5 ? 0.45 : 0.65;
+    const alphaK = rank === 0 ? 0.85 : rank >= 5 ? 0.55 : 0.65;
     const sternX = x - 28 * scale;
     const wy = y + 8 * scale;
     if (sternX - len > this.W || sternX < clipX) return;
@@ -3290,7 +3732,7 @@ export class RaceScene {
       ctx.clip();
     }
     const hw = 4.5 * scale; // half-width at the stern
-    const wob = this.reduceMotion ? 0 : Math.sin(this.wall * 8 + i) * 0.6;
+    const wob = this.reduceMotion ? 0 : Math.sin(this.wallW * 8 + i) * 0.6;
     const flat = this.quality.wakes === 'flat';
     // three nested tapered arms per side, wide+faint to narrow+bright (one flat band on the low-fx path)
     const bands = flat
@@ -3319,7 +3761,7 @@ export class RaceScene {
       ctx.lineWidth = 1.6 * scale;
       ctx.lineCap = 'round';
       ctx.beginPath();
-      const scroll = this.reduceMotion ? 0 : (this.wall * 60 * scale) % (14 * scale);
+      const scroll = this.reduceMotion ? 0 : (this.wallW * 60 * scale) % (14 * scale);
       for (let d = 0; d < 3; d++) {
         const dx = sternX - 6 * scale - d * 14 * scale - scroll;
         ctx.moveTo(dx, wy + (d % 2 ? 1.5 : -1.5) * scale);
@@ -3329,7 +3771,7 @@ export class RaceScene {
     }
     // bow wave
     ctx.strokeStyle = `rgba(255,255,255,${0.7 * alphaK})`;
-    ctx.lineWidth = 1.6 * scale;
+    ctx.lineWidth = (rank === 0 ? 1.8 : 1.6) * scale;
     ctx.beginPath();
     ctx.arc(x + 30 * scale, wy + 1, 7 * scale * (0.6 + effort * 0.5), Math.PI * 1.1, Math.PI * 1.75);
     ctx.stroke();
@@ -3350,6 +3792,7 @@ export class RaceScene {
     let y;
     let rot = 0;
     let scl = 1;
+    let glowK = 1;
     const rest = this._crownRestPos(lm.holder);
     if (lm.toss) {
       x = lm.toss.x;
@@ -3367,14 +3810,33 @@ export class RaceScene {
       scl = 1 - 0.3 * Math.sin(Math.PI * p);
     } else if (rest) {
       x = rest.x;
-      y = rest.y + (this.reduceMotion ? 0 : Math.sin(this.wall * 4) * 2);
+      y = rest.y + (this.reduceMotion ? 0 : Math.sin(this.wallW * 4) * 2);
       if (lm.popT < 0.16) scl = lerp(1.45, 1, easeOutBack(lm.popT / 0.16));
+      // contested: lifts off the holder, wobbling, leaning toward the challenger (eased in/out over 0.3 s)
+      const hp = lm.hoverP || 0;
+      const hv = lm.hover;
+      if (hp > 0 && hv) {
+        const pa = this._crownRestPos(hv.a);
+        const pb = this._crownRestPos(hv.b);
+        if (pa && pb) {
+          const e = easeInOutCubic(hp);
+          // stays over the holder's head (lifted, wobbling, leaning toward the challenger): parking it "between"
+          // two ducks three lanes apart put a glowing crown in somebody else's open water, which read as a glitch
+          const hxm = pa.x + clamp((pb.x - pa.x) / 2, -12 * scale, 12 * scale);
+          const hym = pa.y - 9 * scale + (this.reduceMotion ? 0 : Math.sin(this.wall * 6) * 4 * scale);
+          x = lerp(x, hxm, e);
+          y = lerp(y, hym, e);
+          rot = (this.reduceMotion ? 0 : Math.sin(this.wall * 3.1) * 0.28) * e;
+          scl *= 1 + 0.12 * e;
+          glowK = 1 + 0.4 * e;
+        }
+      }
     } else return;
     lm.x = x;
     lm.y = y;
-    if (!fx.visible && !lm.flight && !lm.toss) return;
+    if (!fx.visible && !lm.flight && !lm.toss && !(lm.hoverP > 0)) return;
     // glow
-    const gr = 18 * scale * scl;
+    const gr = 18 * scale * scl * glowK;
     const g = ctx.createRadialGradient(x, y, 1, x, y, gr);
     g.addColorStop(0, 'rgba(255,220,90,0.35)');
     g.addColorStop(1, 'rgba(255,220,90,0)');
@@ -3384,7 +3846,12 @@ export class RaceScene {
     void t;
   }
 
-  /** Name pills: start-list style beside the beak while idle/early, then broadcast tags above the head. */
+  /**
+   * Name pills: start-list style beside the beak while idle / just off the line (leaving in a rank
+   * stagger), then broadcast tags in the water behind the story ducks: the crown holder (or both ducks
+   * contesting it), the front three late on, the race-for-last pair, a hot-dog victim, a fresh lead /
+   * finish; bursts only early. Low churn: a shown tag holds >= 1.5 s, a dropped one stays off >= 1 s.
+   */
   _drawNameTags(t, phase) {
     const n = this.looks.length;
     if (!n) return;
@@ -3393,100 +3860,177 @@ export class RaceScene {
     const idle = !this.sim || phase === 'setup' || phase === 'intro' || phase === 'countdown';
     const racing = phase === 'race' || phase === 'finish';
     const off = this.labelMode === 'off';
-    const allMode = !off && (idle || (racing && t < 4));
     const cap = this.W <= 720 ? 3 : 4;
+    const wall = this.wall;
+    const lm = this.leaderMark;
+    const late = racing && (this.camMode === 'stretch' || this.camMode === 'tail' || this._leadX > 0.8 * TRACK_LENGTH);
     // --- pick which top pills are wanted ---
-    const wantTop = new Array(n).fill(false);
-    if (!off && racing && !allMode) {
+    const wantTop = this._wantTop && this._wantTop.length === n ? this._wantTop : (this._wantTop = new Array(n));
+    wantTop.fill(false);
+    if (!off && racing && t >= 3.2 && this.sim) {
       if (this.labelMode === 'all') wantTop.fill(true);
       else {
-        const cands = [];
+        const pri = this._tagPri && this._tagPri.length === n ? this._tagPri : (this._tagPri = new Array(n));
+        const chatCand = this._tagChat && this._tagChat.length === n ? this._tagChat : (this._tagChat = new Array(n));
+        const crownA = lm.hover ? lm.hover.a : lm.holder >= 0 ? lm.holder : this.leaderIdx;
+        const crownB = lm.hover ? lm.hover.b : -1;
+        const pair = Array.isArray(this.tailPair) && this.tailPair.length ? this.tailPair : null;
+        const tailMode = this.camMode === 'tail';
+        const chat = this._chat || (this._chat = { i: -1, at: -99 });
+        if (chat.i >= 0 && !this.duckFx[chat.i]?.tagWant) chat.i = -1;
+        let front0 = -1;
+        let front1 = -1;
         for (let i = 0; i < n; i++) {
           const fx = this.duckFx[i];
-          let pri = -1;
-          if (i === this.focusDuck) pri = 100;
-          else if (i === this.leaderMark.holder || (this.leaderMark.holder < 0 && i === this.leaderIdx)) pri = 90;
-          else {
-            const age = this.wall - fx.lastEvent;
-            if (age < 2.5) pri = Math.max(pri, 80 - age);
-            const ft = this.sim.finishTimes[i];
-            if (ft !== null && t >= ft && t - ft < 2) pri = Math.max(pri, 60 - (t - ft));
+          const rank = this.ranks[i] ?? i;
+          const ft = this.sim.finishTimes[i];
+          const finished = ft !== null && t >= ft;
+          let p = -1;
+          chatCand[i] = false;
+          if (i === this.focusDuck) p = 100;
+          if (i === crownA) p = Math.max(p, 90);
+          else if (i === crownB) p = Math.max(p, 89);
+          if (late && !tailMode && !finished && rank <= 2) {
+            // the fight at the front
+            p = Math.max(p, 88 - 2 * rank);
+            if (rank === 0) front0 = i;
+            else if (rank === 1) front1 = i;
           }
-          if (pri >= 0) cands.push({ i, pri });
+          // the race for last: B's named pair, else the back two while the tail camera is on
+          if (pair ? pair.includes(i) : tailMode && !finished && rank >= n - 2) p = Math.max(p, rank === n - 1 ? 85 : 84);
+          if (fx.sauce > 0.3 && wall - fx.lastEvent < 3) p = Math.max(p, 84); // hot-dog victim
+          if (wall - fx.tagEvent < 3) p = Math.max(p, 80 - (wall - fx.tagEvent)); // fresh lead / hot dog / podium touch
+          if (finished && t - ft < 2 && rank <= 2) p = Math.max(p, 70); // podium finisher
+          // a splash (burst / stumble) from the front two or the backmarker, early only, one at a time, well apart
+          const age = wall - fx.lastEvent;
+          if (!late && age < 2 && (rank <= 1 || rank >= n - 1) && (chat.i === i || (chat.i < 0 && wall - chat.at > 7))) {
+            const pc = 70 - 8 * age;
+            if (pc > p) {
+              p = pc;
+              chatCand[i] = true;
+            }
+          }
+          // dwell hysteresis: a tag on screen holds >= 1.5 s (only focus can evict it); one that just left stays away 1 s
+          if (fx.tagWant) {
+            if (wall - fx.tagOnAt < 1.5) p = Math.max(p, 95);
+          } else if (p < 89 && wall - fx.tagOffAt < 1.0) p = -1; // (the crown holder / focus duck come straight back)
+          pri[i] = p;
         }
-        cands.sort((a, b) => b.pri - a.pri);
-        for (let k = 0; k < Math.min(cap, cands.length); k++) wantTop[cands[k].i] = true;
+        let slots = cap;
+        if (late) {
+          // the fight at the front owns the first two slots
+          for (const i of [front0, front1]) {
+            if (i >= 0 && slots > 0 && pri[i] >= 0) {
+              wantTop[i] = true;
+              slots--;
+            }
+          }
+        }
+        const order = this._tagOrder && this._tagOrder.length === n ? this._tagOrder : (this._tagOrder = this.looks.map((_, i) => i));
+        order.sort((a, b) => pri[b] - pri[a] || a - b);
+        for (let k = 0; k < n && slots > 0; k++) {
+          const i = order[k];
+          if (pri[i] < 0) break;
+          if (wantTop[i]) continue;
+          wantTop[i] = true;
+          slots--;
+        }
+        for (let i = 0; i < n; i++) {
+          if (wantTop[i] && chatCand[i] && !this.duckFx[i].tagWant) {
+            chat.i = i; // this splash took the story slot: no other for a while
+            chat.at = wall;
+          }
+        }
       }
     }
-    // --- ease alphas (250 ms) ---
+    // --- ease alphas (250 ms in, 500 ms out for side pills), bookkeeping for the dwell rules ---
     const step = this._cut ? 1 : dt * 4;
     let any = false;
     for (let i = 0; i < n; i++) {
-      const ts = allMode ? 1 : 0;
+      const fx = this.duckFx[i];
+      const rank = this.ranks[i] ?? i;
+      // start list leaves in a stagger by position (the leader's pill goes last), no global flip
+      const ts = !off && (idle || (racing && t < 3.2 + 0.12 * rank)) ? 1 : 0;
       const tt = wantTop[i] ? 1 : 0;
-      this.labelSide[i] = approach(this.labelSide[i] || 0, ts, this._cut ? 1 : step * (allMode ? 1 : 0.5));
+      if (wantTop[i] !== fx.tagWant) {
+        fx.tagWant = wantTop[i];
+        if (fx.tagWant) fx.tagOnAt = wall;
+        else fx.tagOffAt = wall;
+      }
+      this.labelSide[i] = approach(this.labelSide[i] || 0, ts, this._cut ? 1 : ts ? step : step * 0.5);
       this.labelTop[i] = approach(this.labelTop[i] || 0, tt, step);
       if (this.labelSide[i] > 0.01 || this.labelTop[i] > 0.01) any = true;
     }
     if (!any) return;
     ctx.save();
     ctx.textBaseline = 'middle';
+    const minY = (this.insets.top || 0) + 4;
     for (let i = 0; i < n; i++) {
       const fx = this.duckFx[i];
       const lane = this.lanes[i];
       const look = this.looks[i];
       if (!fx || !lane || !fx.visible) continue;
+      const aSide = this.labelSide[i];
+      const aTop = this.labelTop[i];
+      if (aSide <= 0.01 && aTop <= 0.01) continue;
       const scale = lane.duckScale;
       const fs = Math.round(clamp(11 * scale, 10, 14));
       const font = `800 ${fs}px ${this.uiFont}`;
-      const name = truncName(look.name || `Duck ${i + 1}`, 14);
+      if (look._short === undefined) look._short = shortName(look.name || `Duck ${i + 1}`, 16);
+      const name = look._short;
       const tw = this._measure(name, font);
       const ph = fs + 8;
       const numW = fs + 4;
-      const pw = tw + numW + 16;
-      ctx.font = font;
-      const minY = (this.insets.top || 0) + 4;
-      if (this.labelSide[i] > 0.01) {
+      const pw = tw + numW + 20;
+      if (aSide > 0.01) {
         const px = fx.beakX + 10 * scale;
         const py = Math.max(minY, fx.by - 6 * scale - ph / 2);
-        this._pill(px, py, pw, ph, numW, look, name, this.labelSide[i], fs);
+        this._pill(px, py, pw, ph, numW, look, name, smoothstep(0, 1, aSide), fs);
       }
-      if (this.labelTop[i] > 0.01) {
+      if (aTop > 0.01) {
         // in-lane tag on the water behind the tail (swimming-broadcast style): never covers a neighbour
         let px = fx.bx - 42 * scale - pw;
         if (px < (this.insets.left || 0) + 4) px = fx.beakX + 10 * scale; // no room astern: tag ahead
         const py = clamp(lane.y - ph / 2 + 1 * scale, minY, this.H - ph - 2);
-        this._pill(px, py, pw, ph, numW, look, name, this.labelTop[i] * 0.95, fs);
+        this._pill(px, py, pw, ph, numW, look, name, smoothstep(0, 1, aTop) * 0.95, fs);
       }
     }
     ctx.restore();
   }
 
+  /** Broadcast lower-third pill: dark glass body, towel-coloured number block, white name. */
   _pill(px, py, pw, ph, numW, look, name, alpha, fs) {
     const { ctx } = this;
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    roundRectPath(ctx, px + 1, py + 2, pw, ph, ph / 2);
+    const r = Math.min(7, ph / 2.6);
+    // soft drop shadow
+    ctx.fillStyle = 'rgba(0,10,30,0.28)';
+    roundRectPath(ctx, px + 1, py + 2, pw, ph, r);
     ctx.fill();
+    // dark broadcast glass body
+    ctx.fillStyle = 'rgba(12,24,44,0.86)';
+    roundRectPath(ctx, px, py, pw, ph, r);
+    ctx.fill();
+    // towel-colour number block on the left (the saddle-cloth) + top sheen, clipped to the pill
+    ctx.save();
+    ctx.clip();
     ctx.fillStyle = look.towel.bg;
-    roundRectPath(ctx, px, py, pw, ph, ph / 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-    ctx.lineWidth = 1.2;
+    ctx.fillRect(px, py, numW + 6, ph);
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    ctx.fillRect(px, py, pw, Math.max(1, ph * 0.45));
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+    ctx.lineWidth = 1;
+    roundRectPath(ctx, px + 0.5, py + 0.5, pw - 1, ph - 1, r);
     ctx.stroke();
-    // number disc
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.beginPath();
-    ctx.arc(px + 4 + numW / 2, py + ph / 2, numW / 2, 0, TAU);
-    ctx.fill();
-    ctx.fillStyle = '#111';
-    ctx.textAlign = 'center';
-    ctx.font = `900 ${Math.round(fs * 0.85)}px ${this.uiFont}`;
-    ctx.fillText(String(look.number), px + 4 + numW / 2, py + ph / 2 + 0.5);
     ctx.fillStyle = look.towel.text;
+    ctx.textAlign = 'center';
+    ctx.font = `900 ${Math.round(fs * 0.9)}px ${this.uiFont}`;
+    ctx.fillText(String(look.number), px + (numW + 6) / 2, py + ph / 2 + 0.5);
+    ctx.fillStyle = '#FFFFFF';
     ctx.textAlign = 'left';
     ctx.font = `800 ${fs}px ${this.uiFont}`;
-    ctx.fillText(name, px + numW + 9, py + ph / 2 + 0.5);
+    ctx.fillText(name, px + numW + 12, py + ph / 2 + 0.5);
     ctx.globalAlpha = 1;
   }
 
@@ -3592,7 +4136,7 @@ export class RaceScene {
         const q = this._particleXY(p);
         if (!q || q.x < -60 || q.x > this.W + 60) continue;
         const s = p.scale * 1.25;
-        const bob = p.state === 'fly' || this.reduceMotion ? 0 : Math.sin(this.wall * 4 + p.wx) * 1.5;
+        const bob = p.state === 'fly' || this.reduceMotion ? 0 : Math.sin(this.wallW * 4 + p.wx) * 1.5;
         ctx.save();
         ctx.globalAlpha = p.state === 'sink' ? clamp(p.sinkA, 0, 1) : 1;
         if (p.state !== 'fly') {
@@ -3724,6 +4268,7 @@ export class RaceScene {
 
   _drawProjectiles(t) {
     const { ctx } = this;
+    this._drawAimArcs(t);
     // reticles: from telegraph until impact
     for (const th of this.throwers) {
       if (t < th.t0 || t > th.tHit + 0.05) continue;
@@ -3742,7 +4287,7 @@ export class RaceScene {
       ctx.ellipse(lerp(sx0, tx, p), lane.y + 10 * scale, (10 + 8 * p) * scale, (3 + 2 * p) * scale, 0, 0, TAU);
       ctx.fill();
       const s = scale * (1.1 + 0.6 * p);
-      const rot = this.reduceMotion ? 0.4 : this.wall * 14;
+      const rot = this.reduceMotion ? 0.4 : this.wallW * 14;
       // afterimages
       if (!this.reduceMotion) {
         const alphas = [0.35, 0.2, 0.12, 0.07];
@@ -3844,8 +4389,27 @@ export class RaceScene {
   }
 
   _drawVignette() {
-    if (this.slowmo <= 0.01 || this.reduceMotion) return;
     const { ctx, W, H } = this;
+    if (this.qualityTier < 2) {
+      // always-on soft corner vignette, cached at quarter res (rebuilt on resize)
+      let v = this._vig;
+      if (!v || v.w !== W || v.h !== H) {
+        const c = document.createElement('canvas');
+        const w = Math.max(1, Math.round(W / 4));
+        const h = Math.max(1, Math.round(H / 4));
+        c.width = w;
+        c.height = h;
+        const x = c.getContext('2d');
+        const g = x.createRadialGradient(w / 2, h * 0.45, Math.min(w, h) * 0.42, w / 2, h * 0.45, Math.hypot(w, h) * 0.56);
+        g.addColorStop(0, 'rgba(8,20,50,0)');
+        g.addColorStop(1, 'rgba(8,20,50,0.28)');
+        x.fillStyle = g;
+        x.fillRect(0, 0, w, h);
+        v = this._vig = { c, w: W, h: H };
+      }
+      ctx.drawImage(v.c, 0, 0, W, H);
+    }
+    if (this.slowmo <= 0.01 || this.reduceMotion) return;
     const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
     g.addColorStop(0, 'rgba(0,0,0,0)');
     g.addColorStop(1, `rgba(0,0,20,${0.55 * this.slowmo})`);
@@ -3874,7 +4438,7 @@ export class RaceScene {
 // ---------------------------------------------------------------------------
 
 function newLeaderMark() {
-  return { holder: -1, x: 0, y: 0, flight: null, toss: null, popT: 9, pendingFrom: -1 };
+  return { holder: -1, x: 0, y: 0, flight: null, toss: null, popT: 9, pendingFrom: -1, hover: null, hoverP: 0 };
 }
 
 /**
@@ -3933,6 +4497,41 @@ function stepChain(ch, dt, gravity, damping) {
   }
 }
 
+/** Colour code of lane-line float k (0 red, 1 pearl white, 2 gold, 3 lane towel); `boundary` = top/bottom rope. */
+function floatCode(k, boundary) {
+  const wx = k * FLOAT_PITCH;
+  if (wx > TRACK_LENGTH + 1) return 1;
+  if (boundary && (wx < 50 || wx > TRACK_LENGTH - 50)) return Math.floor(k / 2) % 2 ? 1 : 0; // classic red/white, first/last 5 m
+  if (wx < 22) return 3; // start-gate identity block under the side pills
+  const m = Math.round(wx / 100);
+  if (m > 0 && Math.abs(wx - m * 100) <= 1.5 * FLOAT_PITCH) return 2; // 10 m triplets
+  if (wx > TRACK_LENGTH - 50) return Math.floor(k / 4) % 2 ? 1 : 3; // identity ramps back in for the run-in / photo
+  return k % 8 === 0 ? 3 : 1; // open water: pearl with one towel float every 8th
+}
+
+/**
+ * Fill `list` with [code, xa, xb, ...] colour runs for floats kFirst..kLast (screen x clamped to
+ * [x0, x1]); float k spans xStart + (k -/+ 0.5) * pitchPx. Reuses the array (length reset).
+ */
+function buildFloatRuns(list, boundary, kFirst, kLast, xStart, pitchPx, x0, x1) {
+  list.length = 0;
+  let cur = -1;
+  let xa = 0;
+  let xk = xStart + (kFirst - 0.5) * pitchPx; // left edge of float kFirst, advanced incrementally
+  for (let k = kFirst; k <= kLast + 1; k++, xk += pitchPx) {
+    const code = k <= kLast ? floatCode(k, boundary) : -1;
+    if (code === cur) continue;
+    if (cur >= 0) {
+      const a = xa > x0 ? xa : x0;
+      const b = xk < x1 ? xk : x1;
+      if (b > a) list.push(cur, a, b);
+    }
+    cur = code;
+    xa = xk;
+  }
+  return list;
+}
+
 function clockValue(sim, t) {
   const win = sim.finishTimes[sim.order[0]];
   if (win !== null && win !== undefined && t >= win) return win.toFixed(2);
@@ -3948,9 +4547,19 @@ function approach(v, target, step) {
   return Math.max(target, v - step);
 }
 
-function truncName(name, max) {
-  const cps = Array.from(String(name));
-  return cps.length > max ? cps.slice(0, max).join('') + '…' : cps.join('');
+/** Pill name: whole if it fits, else "First L." on a word boundary ('Feather Locklear' -> 'Feather L.'), else truncated. */
+function shortName(name, max) {
+  const str = String(name).trim();
+  const cps = Array.from(str);
+  if (cps.length <= max) return str;
+  const sp = str.indexOf(' ');
+  if (sp > 0) {
+    const first = str.slice(0, sp);
+    const ini = Array.from(str.slice(str.lastIndexOf(' ') + 1))[0];
+    const cand = ini ? `${first} ${ini}.` : first;
+    if (Array.from(cand).length <= max) return cand;
+  }
+  return cps.slice(0, max - 1).join('') + '…';
 }
 
 function hash01(n) {

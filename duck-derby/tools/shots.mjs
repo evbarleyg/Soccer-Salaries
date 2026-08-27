@@ -61,8 +61,8 @@ const flow = async (page, snap) => {
   await page.waitForTimeout(1600);
   await snap('6-line');
   await page.evaluate(() => window.__duckDerby.skipToResults());
-  await page.waitForTimeout(1250);
-  await snap('7a-ceremony'); // mid-reveal: plinths up, board rows landing from the last pick
+  await page.waitForTimeout(3100);
+  await snap('7a-ceremony'); // mid-reveal: gold plinth up on the fanfare hit, board rows landing from the last pick
   await page.evaluate(() => document.querySelector('#btn-reveal-all')?.click()); // completes the ceremony instantly
   await page.waitForTimeout(500);
   await snap('7-results');
