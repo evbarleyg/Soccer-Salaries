@@ -5,16 +5,17 @@ import * as THREE from 'three';
 export const PAL = {
   skyTop: 0x3d8fd9,
   skyMid: 0x8cc8f0,
-  skyHorizon: 0xffe0b8,
-  sun: 0xfff1cc,
+  skyHorizon: 0xf2ddc2,
+  sun: 0xffe6bf,
   sunDir: new THREE.Vector3(-0.55, 0.62, 0.56).normalize(),
-  fog: 0xcfe3ee,
+  rim: 0xbfdcff, // cool back-rim light opposite the sun
+  fog: 0xf2ddc2, // = sky horizon so distant terrain melts into the sky instead of a blue-grey wall
   ambientSky: 0xcfe6ff,
-  ambientGround: 0x5a4a2c,
-  grass: 0x79c05a,
-  grassDark: 0x4f9a45,
-  grassLight: 0xa8d86a,
-  meadow: 0x93cf5d,
+  ambientGround: 0xa08c6c, // warm ground bounce keeps shadow sides from going murky
+  grass: 0x8dc65a,
+  grassDark: 0x5e9f48,
+  grassLight: 0xa3cf58,
+  meadow: 0xb6d96c,
   sand: 0xe9d29c,
   mud: 0x8a6a45,
   rock: 0x9a8f86,
@@ -22,17 +23,26 @@ export const PAL = {
   rockWarm: 0xb98f6a,
   cliff: 0xc98b5c,
   cliffDark: 0x8e5f43,
+  // canyon terrace bands, bottom-up, plus the grass lip and ledge shrubs
+  strata: [0xa8683f, 0xd99a62, 0xc4814f, 0xe8b47c],
+  grassLip: 0x8fc95a,
+  shrub: 0x6cbc55,
+  granite: 0x8f8a80,
+  graniteDark: 0x74706a,
   snow: 0xffffff,
   wood: 0x9c6b3c,
   woodDark: 0x6b4423,
   woodLight: 0xc99555,
   quay: 0xd9cdb8,
+  quayFace: 0xb8ab94,
   roofRed: 0xd9493b,
   roofBlue: 0x3c6fd1,
   wall: 0xf3ead8,
-  waterDeep: 0x1c6fa6,
-  waterShallow: 0x3fb9c9,
+  waterDeep: 0x1b62a3,
+  waterShallow: 0x47c9c3,
   waterFoam: 0xf4fbff,
+  waterSky: 0xbfe3f5, // what the fresnel term reflects
+  waterTunnel: 0x12405e,
   marsh: 0x4d8f55,
   lily: 0x5fbf4a,
   lilyDark: 0x3f8f3a,
@@ -122,12 +132,30 @@ export function makeSky() {
 }
 
 export function makeLights(scene, camera) {
+  // main.js drives hemi/sun/fill .intensity every frame (1.15 / 2.1 / 0.55 outdoors, dimmed in the
+  // tunnel), so the art-directed levels (hemi ~1.0, sun ~1.9) are baked into the light colours instead.
   const hemi = new THREE.HemisphereLight(PAL.ambientSky, PAL.ambientGround, 1.15);
+  hemi.color.multiplyScalar(1.0 / 1.15);
+  hemi.groundColor.multiplyScalar(1.0 / 1.15);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(PAL.sun, 2.1);
+  sun.color.multiplyScalar(1.9 / 2.1);
   sun.position.copy(PAL.sunDir).multiplyScalar(300);
   scene.add(sun);
   scene.add(sun.target);
+  // cool back-rim light opposite the sun's azimuth at ~25 degrees elevation: separates ducks, trees and
+  // cliff edges from the warm key side and keeps shadow sides readable
+  const rim = new THREE.DirectionalLight(PAL.rim, 0.45);
+  {
+    const az = Math.hypot(PAL.sunDir.x, PAL.sunDir.z) || 1;
+    const el = 25 * Math.PI / 180;
+    rim.position.set((-PAL.sunDir.x / az) * Math.cos(el), Math.sin(el), (-PAL.sunDir.z / az) * Math.cos(el)).multiplyScalar(300);
+  }
+  scene.add(rim);
+  scene.add(rim.target);
+  // follow the key light's dimming (tunnel) without any per-frame bookkeeping: the renderer reads
+  // .intensity when it uploads light uniforms, so derive it from the sun's current level
+  Object.defineProperty(rim, 'intensity', { get: () => 0.45 * (sun.intensity / 2.1), set: () => {}, configurable: true });
   // soft camera-aligned fill so faces are never lost in shadow (grid line-up, podium)
   const fill = new THREE.DirectionalLight(0xfff4e0, 0.55);
   if (camera) {
@@ -137,7 +165,7 @@ export function makeLights(scene, camera) {
     camera.add(fill.target);
     scene.add(camera);
   }
-  return { hemi, sun, fill };
+  return { hemi, sun, fill, rim };
 }
 
 /** Cheap deterministic value-noise helpers shared by procedural builders. */
