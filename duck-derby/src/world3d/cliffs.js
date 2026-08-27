@@ -153,14 +153,21 @@ function buildStations(course, profileAt, side, kind) {
     const top = (d) => yFoot + H + RIM_SLOPE * Math.max(0, d - zn.liftFrom);
     // cross-section polyline (d, y, colour key of the segment that STARTS at this point)
     const pts = [];
-    pts.push({ d: w0, y: yFoot - K.under - (end ? 0.6 : 0), c: 'face0' });
+    const BAND = 0.25; // sun-bleached band along the top of every face (one tone lighter)
+    let footY = yFoot - K.under - (end ? 0.6 : 0);
+    pts.push({ d: w0, y: footY, c: 'face0' });
     for (let i = 0; i < T; i++) {
-      const faceTopD = dFace[i] + K.lean;
+      const faceTopD = dFace[i] + K.lean - (i < T - 1 ? 0 : 0.03);
+      const faceTopY = i < T - 1 ? yFoot + L[i] : yFoot + Math.max(0, H - K.lip);
+      const fh = faceTopY - footY;
+      const f = fh > BAND + 0.05 ? 1 - BAND / fh : 0.5; // (collapsed faces at the wall ends keep the point count)
+      pts.push({ d: lerp(dFace[i], faceTopD, f), y: lerp(footY, faceTopY, f), c: 'band' + i });
       if (i < T - 1) {
-        pts.push({ d: faceTopD, y: yFoot + L[i], c: 'ledge' + i }); // top of face i = inner edge of ledge i
-        pts.push({ d: dFace[i + 1], y: yFoot + L[i] + 0.05, c: 'face' + (i + 1) }); // outer edge of ledge i = foot of face i+1
+        pts.push({ d: faceTopD, y: faceTopY, c: 'ledge' + i }); // top of face i = inner edge of ledge i
+        footY = faceTopY + 0.05;
+        pts.push({ d: dFace[i + 1], y: footY, c: 'face' + (i + 1) }); // outer edge of ledge i = foot of face i+1
       } else {
-        pts.push({ d: faceTopD - 0.03, y: yFoot + Math.max(0, H - K.lip), c: 'lip' }); // rock part of the top face ends
+        pts.push({ d: faceTopD, y: faceTopY, c: 'lip' }); // rock part of the top face ends
         pts.push({ d: rim, y: yFoot + H, c: 'shelf' }); // rim edge
       }
     }
@@ -199,18 +206,23 @@ function segmentColor(kind, key, out, st, q, x, z) {
   if (key === 'lip') return out.copy(colorOf(PAL.grassLip));
   if (kind === 'canyon') {
     const strata = PAL.strata;
+    const light = strata[strata.length - 1];
     if (key.startsWith('face')) {
       const i = Number(key.slice(4));
       out.copy(colorOf(strata[Math.min(i, strata.length - 1)]));
-      // chunky hand-painted variation: some blocks darker / redder
+      // chunky hand-painted variation: some blocks a touch darker / redder, some sandier
       const v = hash2(st.k * 3.17 + i * 11.1, q * 1.7 + st.side);
-      if (v < 0.22) out.lerp(colorOf(PAL.cliffDark), 0.28);
+      if (v < 0.22) out.lerp(colorOf(PAL.cliffDark), 0.12);
       else if (v > 0.85) out.lerp(colorOf(PAL.sand), 0.18);
       return out;
     }
+    if (key.startsWith('band')) {
+      const i = Number(key.slice(4));
+      return i >= strata.length - 1 ? out.copy(colorOf(light)).lerp(colorOf(PAL.sand), 0.4) : out.copy(colorOf(strata[i])).lerp(colorOf(light), 0.55);
+    }
     if (key.startsWith('ledge')) {
       const i = Number(key.slice(5));
-      return out.copy(colorOf(strata[Math.min(i, strata.length - 1)])).lerp(colorOf(PAL.sand), 0.3);
+      return out.copy(colorOf(strata[Math.min(i, strata.length - 1)])).lerp(colorOf(light), 0.6).lerp(colorOf(PAL.sand), 0.15);
     }
   } else {
     if (key.startsWith('face')) {
@@ -219,7 +231,8 @@ function segmentColor(kind, key, out, st, q, x, z) {
       if (v > 0.86) out.lerp(colorOf(PAL.rock), 0.4);
       return out;
     }
-    if (key.startsWith('ledge')) return out.copy(colorOf(PAL.granite)).lerp(colorOf(PAL.rock), 0.35);
+    if (key.startsWith('band')) return out.copy(colorOf(PAL.granite)).lerp(colorOf(PAL.sand), 0.3);
+    if (key.startsWith('ledge')) return out.copy(colorOf(PAL.granite)).lerp(colorOf(PAL.rock), 0.35).lerp(colorOf(PAL.sand), 0.12);
   }
   return out.copy(colorOf(0xff00ff));
 }
@@ -259,7 +272,7 @@ function buildStripMesh(table) {
       e1.subVectors(C, A);
       e2.subVectors(B, A);
       n.crossVectors(e1, e2);
-      const faceKey = key.startsWith('face') || key === 'lip';
+      const faceKey = key.startsWith('face') || key.startsWith('band') || key === 'lip';
       const expect = faceKey ? inward : n.y >= 0 ? n : inward; // ledges/shelf just need to face up
       const flip = n.dot(expect) < 0 || (!faceKey && n.y < 0);
       if (faceKey) {
@@ -267,7 +280,7 @@ function buildStripMesh(table) {
         n.normalize();
         if (flip) n.negate();
         const lit = n.dot(PAL.sunDir);
-        cc.multiplyScalar(lerp(1.4, 1.0, smoothstep(-0.1, 0.55, lit)));
+        cc.multiplyScalar(lerp(1.62, 1.0, smoothstep(-0.1, 0.55, lit)));
       }
       // split the quad along the shorter diagonal for chunkier facets
       const dAD = A.distanceToSquared(D);
@@ -284,19 +297,22 @@ function buildStripMesh(table) {
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   geo.computeVertexNormals();
   geo.computeBoundingSphere();
-  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, emissive: kind === 'canyon' ? 0x2c1d12 : PAL.rockEmissive }));
   mesh.name = `${kind}-wall-${table.side > 0 ? 'L' : 'R'}`;
   mesh.matrixAutoUpdate = false;
   mesh.updateMatrix();
   return mesh;
 }
 
-/** Instanced ledge shrubs + rim boulders for the canyon tables (deterministic). */
+/** Instanced ledge-top shrub clumps, clustered half-sunk rim boulders and grass tufts (deterministic). */
 function buildDressing(tables) {
-  const shrubGeo = new THREE.IcosahedronGeometry(0.55, 0);
+  const shrubGeo = new THREE.IcosahedronGeometry(1, 0);
   const rockGeo = new THREE.DodecahedronGeometry(1, 0);
-  const shrubs = [];
-  const rocks = [];
+  const tuftGeo = new THREE.ConeGeometry(0.28, 0.6, 5);
+  tuftGeo.translate(0, 0.3, 0);
+  const shrubs = []; // { x, y, z, r, rot }
+  const rocks = []; // { x, y, z, sc, kind, r:[...], squash }
+  const tufts = []; // { x, y, z, sc, rot }
   const v = new THREE.Vector3();
   for (const t of tables) {
     if (!t) continue;
@@ -304,32 +320,41 @@ function buildDressing(tables) {
     for (const st of t.stations) {
       if (st.end || st.H < 3) continue;
       if (t.kind === 'canyon') {
-        // shrubs on the ledges (not in the waterfall notches)
+        // shrub clumps (two blobs, 0.6-1.0 m) sitting ON the deeper ledges, never in the waterfall notches
         for (let i = 0; i < K.terraces - 1; i++) {
-          const h = st.jit(20 + i);
-          if (h > 0.14 || st.notch > 0.2) continue;
-          const d = st.dFace[i] + K.lean + (0.3 + 0.4 * st.jit(24 + i)) * st.b[i];
-          const sc = 0.6 + 0.6 * st.jit(27 + i);
-          toWorld(st, d, st.yFoot + st.L[i] + 0.05 + 0.3 * sc, v);
-          shrubs.push({ x: v.x, y: v.y, z: v.z, sc, rot: 6 * st.jit(30 + i) });
-        }
-        // second shrub row hugging the foot of the top face here and there
-        if (st.jit(35) < 0.1 && st.notch < 0.2) {
-          const i = K.terraces - 2;
-          const d = st.dFace[i + 1] - 0.35;
-          const sc = 0.8 + 0.4 * st.jit(36);
-          toWorld(st, d, st.yFoot + st.L[i] + 0.05 + 0.3 * sc, v);
-          shrubs.push({ x: v.x, y: v.y, z: v.z, sc, rot: 6 * st.jit(37) });
+          if (st.jit(20 + i) > 0.2 || st.notch > 0.2 || st.b[i] < 0.9) continue;
+          const r = 0.3 + 0.2 * st.jit(27 + i);
+          const d = st.dFace[i] + K.lean + 0.5 * st.b[i];
+          const yTop = st.yFoot + st.L[i] + 0.03;
+          toWorld(st, d, yTop + 0.5 * r, v);
+          const rot = 6 * st.jit(30 + i);
+          shrubs.push({ x: v.x, y: v.y, z: v.z, r, rot });
+          // second, smaller blob beside it along the ledge
+          const off = (st.jit(33 + i) < 0.5 ? -1 : 1) * r * 0.95;
+          shrubs.push({ x: v.x + st.p.tx * off, y: v.y - 0.12 * r, z: v.z + st.p.tz * off, r: r * 0.72, rot: rot + 1.3 });
         }
       }
-      // boulders on the rim shelf
+      // boulder clusters on the rim shelf (3-5 squashed, a third sunk) with a grass tuft beside each boulder
       const pr = t.kind === 'canyon' ? 0.15 : 0.12;
       if (st.jit(40) < pr && st.notch < 0.2) {
-        const d = st.rim + 0.9 + 2.6 * st.jit(41);
-        const sc = t.kind === 'canyon' ? 0.8 + 1.0 * st.jit(42) : 0.6 + 0.7 * st.jit(42);
-        const y = st.yFoot + st.H + RIM_SLOPE * Math.max(0, d - st.zn.liftFrom) + (d > st.zn.D2 - 0.5 ? st.zn.clear : 0.1) + 0.35 * sc;
-        toWorld(st, d, y, v);
-        rocks.push({ x: v.x, y: v.y, z: v.z, sc, kind: t.kind, r: [6 * st.jit(43), 6 * st.jit(44), 6 * st.jit(45)], squash: 0.55 + 0.3 * st.jit(46) });
+        const d0 = st.rim + 1.3 + 2.4 * st.jit(41);
+        const base = t.kind === 'canyon' ? 0.8 + 0.9 * st.jit(42) : 0.6 + 0.6 * st.jit(42);
+        const n = t.kind === 'canyon' ? 3 + Math.floor(3 * st.jit(47)) : 2 + Math.floor(2 * st.jit(47));
+        for (let bi = 0; bi < n; bi++) {
+          const ang = (bi / n) * Math.PI * 2 + 3 * st.jit(48);
+          const rr = bi === 0 ? 0 : base * (0.9 + 0.6 * st.jit(49 + bi));
+          const d = d0 + Math.cos(ang) * rr * 0.8;
+          const along = Math.sin(ang) * rr;
+          const sc = base * (bi === 0 ? 1 : 0.45 + 0.4 * st.jit(53 + bi));
+          const squash = 0.6;
+          const ground = st.yFoot + st.H + RIM_SLOPE * Math.max(0, d - st.zn.liftFrom) + (d > st.zn.D2 - 0.5 ? st.zn.clear : 0.08);
+          toWorld(st, d, ground + sc * squash * 0.3, v); // ~35% of its height under the ground
+          v.x += st.p.tx * along;
+          v.z += st.p.tz * along;
+          rocks.push({ x: v.x, y: v.y, z: v.z, sc, kind: t.kind, r: [0.3 * st.jit(43 + bi), 6 * st.jit(44 + bi), 0.3 * st.jit(45 + bi)], squash });
+          const ta = ang + 1.7;
+          tufts.push({ x: v.x + Math.cos(ta) * sc * 0.95, y: ground - 0.05, z: v.z + Math.sin(ta) * sc * 0.95, sc: 0.7 + 0.6 * st.jit(57 + bi), rot: 6 * st.jit(58 + bi) });
+        }
       }
     }
   }
@@ -339,25 +364,29 @@ function buildDressing(tables) {
   const e = new THREE.Euler();
   const sc = new THREE.Vector3();
   const p = new THREE.Vector3();
+  const finish = (mesh, name) => {
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.name = name;
+    mesh.computeBoundingSphere();
+    mesh.frustumCulled = true;
+    group.add(mesh);
+  };
   if (shrubs.length) {
-    const mesh = new THREE.InstancedMesh(shrubGeo, new THREE.MeshLambertMaterial({ color: PAL.shrub, flatShading: true }), shrubs.length);
+    const mesh = new THREE.InstancedMesh(shrubGeo, new THREE.MeshLambertMaterial({ color: PAL.shrub, flatShading: true, emissive: PAL.rockEmissive }), shrubs.length);
     shrubs.forEach((sh, i) => {
-      e.set(0.2 * Math.sin(sh.rot * 3), sh.rot, 0);
+      e.set(0.3 * Math.sin(sh.rot * 3), sh.rot, 0.2 * Math.cos(sh.rot * 2));
       q.setFromEuler(e);
-      sc.set(sh.sc * 1.15, sh.sc * 0.8, sh.sc * 1.15);
+      sc.set(sh.r * 1.1, sh.r * 0.85, sh.r * 1.1);
       p.set(sh.x, sh.y, sh.z);
       m.compose(p, q, sc);
       mesh.setMatrixAt(i, m);
     });
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.name = 'ledge-shrubs';
-    mesh.frustumCulled = false;
-    group.add(mesh);
+    finish(mesh, 'ledge-shrubs');
   }
   for (const kind of ['canyon', 'rapids']) {
     const list = rocks.filter((r) => r.kind === kind);
     if (!list.length) continue;
-    const mesh = new THREE.InstancedMesh(rockGeo, new THREE.MeshLambertMaterial({ color: kind === 'canyon' ? PAL.rockWarm : PAL.granite, flatShading: true }), list.length);
+    const mesh = new THREE.InstancedMesh(rockGeo, new THREE.MeshLambertMaterial({ color: kind === 'canyon' ? PAL.rockWarm : PAL.granite, flatShading: true, emissive: PAL.rockEmissive }), list.length);
     list.forEach((r, i) => {
       e.set(r.r[0], r.r[1], r.r[2]);
       q.setFromEuler(e);
@@ -366,10 +395,19 @@ function buildDressing(tables) {
       m.compose(p, q, sc);
       mesh.setMatrixAt(i, m);
     });
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.name = `${kind}-rim-boulders`;
-    mesh.frustumCulled = false;
-    group.add(mesh);
+    finish(mesh, `${kind}-rim-boulders`);
+  }
+  if (tufts.length) {
+    const mesh = new THREE.InstancedMesh(tuftGeo, new THREE.MeshLambertMaterial({ color: PAL.grassLight, flatShading: true, emissive: PAL.rockEmissive }), tufts.length);
+    tufts.forEach((tf, i) => {
+      e.set(0.15 * Math.sin(tf.rot), tf.rot, 0.15 * Math.cos(tf.rot));
+      q.setFromEuler(e);
+      sc.set(tf.sc, tf.sc * 1.2, tf.sc);
+      p.set(tf.x, tf.y, tf.z);
+      m.compose(p, q, sc);
+      mesh.setMatrixAt(i, m);
+    });
+    finish(mesh, 'rim-tufts');
   }
   return group;
 }

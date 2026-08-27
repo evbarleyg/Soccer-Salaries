@@ -1330,7 +1330,7 @@ function step(dt) {
       }
       ctx.isTarget = i === state.target;
       if (d.duck.lod && d.duck.lod.far) {
-        const showDecals = dist < 45 && !(state.lod >= 1 && !ctx.isTarget);
+        const showDecals = dist < (state.lod >= 1 && !ctx.isTarget ? 20 : 45);
         for (const o of d.duck.lod.far) o.visible = showDecals;
       }
       d.anim.update(dt, ds, ctx);

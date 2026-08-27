@@ -103,27 +103,34 @@ export function mergedMesh(geos, { flat = true, material } = {}) {
   return mesh;
 }
 
-/** Collect instance transforms, then build an InstancedMesh. */
+/**
+ * Collect instance transforms, then build an InstancedMesh (or one per key with buildSplit). Built meshes
+ * get a bounding sphere over all instances and are frustum-cullable; callers that animate instances far
+ * from their build positions should set frustumCulled = false themselves.
+ * opts: { colors: per-instance colours, keyOf: () => key recorded with each add() (e.g. the current section) }.
+ */
 export class Instancer {
-  constructor(geo, mat, { colors = false } = {}) {
+  constructor(geo, mat, { colors = false, keyOf = null } = {}) {
     this.geo = geo;
     this.mat = mat;
     this.items = [];
     this.useColors = colors;
+    this.keyOf = keyOf;
   }
-  add(pos, rotY = 0, scale = 1, color = null, rot = null) {
-    this.items.push({ pos: pos.clone ? pos.clone() : new THREE.Vector3(pos[0], pos[1], pos[2]), rotY, scale, color, rot });
+  add(pos, rotY = 0, scale = 1, color = null, rot = null, extra = null) {
+    this.items.push({ pos: pos.clone ? pos.clone() : new THREE.Vector3(pos[0], pos[1], pos[2]), rotY, scale, color, rot, extra, key: this.keyOf ? this.keyOf() : null });
     return this;
   }
-  build(name = '') {
-    const n = this.items.length;
+  _build(items, name) {
+    const n = items.length;
     const mesh = new THREE.InstancedMesh(this.geo, this.mat, Math.max(1, n));
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const sc = new THREE.Vector3();
     const e = new THREE.Euler();
+    const c = new THREE.Color();
     for (let i = 0; i < n; i++) {
-      const it = this.items[i];
+      const it = items[i];
       if (it.rot) e.set(it.rot[0], it.rot[1], it.rot[2]);
       else e.set(0, it.rotY, 0);
       q.setFromEuler(e);
@@ -131,14 +138,31 @@ export class Instancer {
       else sc.set(it.scale[0], it.scale[1], it.scale[2]);
       m.compose(it.pos, q, sc);
       mesh.setMatrixAt(i, m);
-      if (this.useColors) mesh.setColorAt(i, new THREE.Color(it.color ?? 0xffffff));
+      if (this.useColors) mesh.setColorAt(i, c.set(it.color ?? 0xffffff));
     }
     mesh.count = n;
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.name = name;
-    mesh.frustumCulled = false;
+    mesh.userData.items = items;
+    if (n) {
+      mesh.computeBoundingSphere();
+      mesh.frustumCulled = true;
+    } else mesh.frustumCulled = false;
     return mesh;
+  }
+  build(name = '') {
+    return this._build(this.items, name);
+  }
+  /** One mesh per distinct key (see keyOf): returns [{ key, mesh }] (keys in first-seen order; null for unkeyed adds). */
+  buildSplit(name = '') {
+    const byKey = new Map();
+    for (const it of this.items) {
+      if (!byKey.has(it.key)) byKey.set(it.key, []);
+      byKey.get(it.key).push(it);
+    }
+    if (!byKey.size) byKey.set(null, []);
+    return [...byKey.entries()].map(([key, items]) => ({ key, mesh: this._build(items, key ? `${name}-${key}` : name) }));
   }
 }
 

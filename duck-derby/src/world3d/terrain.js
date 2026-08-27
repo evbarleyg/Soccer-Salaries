@@ -234,13 +234,39 @@ export function buildTerrain(course) {
   const info = new Array(nx * nz);
   const col = new THREE.Color();
   const cA = new THREE.Color();
+  const cA2 = new THREE.Vector3();
   const C = {
     grass: new THREE.Color(PAL.grass), grassDark: new THREE.Color(PAL.grassDark), grassLight: new THREE.Color(PAL.grassLight),
     meadow: new THREE.Color(PAL.meadow), sand: new THREE.Color(PAL.sand), mud: new THREE.Color(PAL.mud), rock: new THREE.Color(PAL.rock),
     rockDark: new THREE.Color(PAL.rockDark), cliff: new THREE.Color(PAL.cliff), cliffDark: new THREE.Color(PAL.cliffDark),
     quay: new THREE.Color(PAL.quay), quayFace: new THREE.Color(PAL.quayFace), marsh: new THREE.Color(PAL.marsh), bed: new THREE.Color(0x2f5a57), snow: new THREE.Color(PAL.snow),
     strata0: new THREE.Color(PAL.strata[0]), granite: new THREE.Color(PAL.graniteDark),
+    flowerY: new THREE.Color(0xf2e07a), flowerP: new THREE.Color(0xe8a0c8), hedge: new THREE.Color(0x4f8a3c),
   };
+  /**
+   * Field pattern at world (x, z): ~60 m cells with wobbly borders. Returns the cell's mowing-stripe phase
+   * (0/1, direction hashed per cell, some cells unmown = -1), distance to the nearest border (m) and a
+   * per-cell flower hue pick.
+   */
+  const FIELD = 60;
+  function fieldAt(x, z) {
+    const wx = x + 16 * (noise2(x * 0.011 + 5, z * 0.011) - 0.5);
+    const wz = z + 16 * (noise2(x * 0.011 - 9, z * 0.011 + 4) - 0.5);
+    const fx = wx / FIELD;
+    const fz = wz / FIELD;
+    const cx = Math.floor(fx);
+    const cz = Math.floor(fz);
+    const ux = fx - cx;
+    const uz = fz - cz;
+    const border = Math.min(ux, 1 - ux, uz, 1 - uz) * FIELD;
+    const hc = hash2(cx * 1.71 + 0.3, cz * 2.37 + 1.1);
+    let stripe = -1;
+    if (hc > 0.3) {
+      const ang = hash2(cx * 0.53 + 7, cz * 0.91 + 3) * Math.PI;
+      stripe = Math.floor((x * Math.cos(ang) + z * Math.sin(ang)) / 9) & 1;
+    }
+    return { stripe, border, hue: hash2(cx + 0.5, cz + 0.25) };
+  }
   for (let j = 0; j < nz; j++) {
     for (let i = 0; i < nx; i++) {
       let x = minX + i * GRID;
@@ -252,6 +278,26 @@ export function buildTerrain(course) {
           x += (hash2(i * 0.913 + 3.1, j * 1.117) - 0.5) * 2 * JITTER * w;
           z += (hash2(i * 1.271 + 5.3, j * 0.697 + 11) - 0.5) * 2 * JITTER * w;
         } else hint = ni; // unmoved: the nearest sample is already known
+      }
+      // straight quay walls: pull the two vertex rings nearest a quay edge exactly onto the wall foot / cap edge
+      // so the rendered waterline runs dead straight under the (straight) shoreline foam
+      if (i > 0 && j > 0 && i < nx - 1 && j < nz - 1) {
+        const loc = locate(x, z);
+        const q0 = loc.q;
+        const quayK = Math.max(smoothstep(0.6, 0.8, q0.marina), loc.lat < 0 ? smoothstep(0.6, 0.8, q0.harbor) : 0);
+        if (quayK > 0) {
+          const vis = loc.lat >= 0 ? q0.visL : q0.visR;
+          const d = Math.abs(loc.lat);
+          let target = null;
+          if (d >= vis - GRID * 0.5 && d < vis + GRID * 0.5) target = vis + 0.02;
+          else if (d >= vis + GRID * 0.5 && d < vis + GRID * 1.5) target = vis + q0.slopeW + 0.02;
+          if (target !== null) {
+            const shift = (target - d) * quayK * Math.sign(loc.lat);
+            x += q0.nx * shift;
+            z += q0.nz * shift;
+            hint = -1;
+          }
+        }
       }
       const ev = evaluate(x, z, hint);
       const k = j * nx + i;
@@ -270,11 +316,19 @@ export function buildTerrain(course) {
       else if (ev.kind === 'bank') {
         col.copy(C.sand).lerp(C.mud, 0.55 * q.lily * noise2(x * 0.2, z * 0.2)).lerp(C.rock, Math.min(1, q.rapids + q.drop)).lerp(C.quayFace, Math.max(q.marina, q.harbor));
       } else if (ev.kind === 'hill') {
-        col.copy(C.grassDark).lerp(C.grass, ev.hills).lerp(C.grassLight, patch * 0.5).lerp(C.rock, smoothstep(22, 34, ev.h - ev.waterY) * 0.6);
+        col.copy(C.grassDark).lerp(C.grass, ev.hills).lerp(C.grassLight, patch * 0.5).lerp(C.rock, smoothstep(16, 30, ev.h - ev.waterY) * 0.6);
       } else {
         col.copy(C.grass).lerp(C.meadow, 0.5 * ev.bumps).lerp(C.grassLight, patch * 0.85).lerp(C.grassDark, shade * 0.45).lerp(C.marsh, 0.45 * q.lily * (1 - smoothstep(0, 14, ev.d - (ev.lat >= 0 ? q.visL : q.visR) - q.slopeW)));
         // stone quay caps around the marina basin and along the harbour's town side
-        col.lerp(C.quay, 0.9 * Math.max(q.marina * (1 - smoothstep(30, 60, ev.d - 38)), q.harbor * (ev.lat < 0 ? 1 - smoothstep(10, 40, ev.d - 21) : 0)));
+        const quayK = 0.9 * Math.max(q.marina * (1 - smoothstep(30, 60, ev.d - 38)), q.harbor * (ev.lat < 0 ? 1 - smoothstep(10, 40, ev.d - 21) : 0));
+        if (quayK < 0.3 && ev.kind === 'top') {
+          // farmland dressing: hedgerow lines along the field-cell borders and meadow-flower speckle patches
+          const fld = fieldAt(x, z);
+          if (fld.border < 1.8) col.lerp(C.hedge, 0.55 * (1 - fld.border / 1.8));
+          const fp = noise2(x * 0.045 + 21, z * 0.045 - 13);
+          if (fp > 0.7 && hash2(i * 2.13 + 0.7, j * 3.71 + 0.2) > 0.45) col.lerp(fld.hue > 0.5 ? C.flowerY : C.flowerP, 0.12 + 0.1 * (fp - 0.7) / 0.3);
+        }
+        col.lerp(C.quay, quayK);
       }
       col.multiplyScalar(tint);
       colors[k * 3] = col.r;
@@ -282,11 +336,13 @@ export function buildTerrain(course) {
       colors[k * 3 + 2] = col.b;
     }
   }
-  // slope-based rock tint (second pass using neighbours), capped so shadow sides don't go murky
+  // second pass using neighbours: slope-based rock tint (capped so shadow sides don't go murky) and, on flat
+  // open ground, mown-field striping (+-4% luminance, direction hashed per field cell)
   for (let j = 1; j < nz - 1; j++) {
     for (let i = 1; i < nx - 1; i++) {
       const k = j * nx + i;
-      const kindK = info[k].kind;
+      const ev = info[k];
+      const kindK = ev.kind;
       if (kindK === 'bed' || kindK === 'toe' || kindK === 'cliff' || kindK === 'bank') continue;
       const hL = positions[(k - 1) * 3 + 1];
       const hR = positions[(k + 1) * 3 + 1];
@@ -295,8 +351,18 @@ export function buildTerrain(course) {
       const slope = Math.hypot(hR - hL, hU - hD) / (2 * GRID);
       if (slope > 0.9) {
         cA.setRGB(colors[k * 3], colors[k * 3 + 1], colors[k * 3 + 2]);
-        cA.lerp(C.rockDark, clamp((slope - 0.9) * 0.6, 0, 0.35));
+        cA.lerp(C.rockDark, clamp((slope - 0.9) * 0.6, 0, 0.2));
         colors[k * 3] = cA.r; colors[k * 3 + 1] = cA.g; colors[k * 3 + 2] = cA.b;
+      } else if (slope < 0.15 && kindK === 'top') {
+        const q = ev.q;
+        const open = (1 - q.marina * (1 - smoothstep(30, 70, ev.d - 38))) * (1 - q.harbor * (ev.lat < 0 ? 1 - smoothstep(10, 50, ev.d - 21) : 0)) * (1 - 0.8 * q.lily);
+        if (open > 0.5) {
+          const fld = fieldAt(positions[k * 3], positions[k * 3 + 2]);
+          if (fld.stripe >= 0) {
+            const m = fld.stripe ? 1.04 : 0.96;
+            colors[k * 3] *= m; colors[k * 3 + 1] *= m; colors[k * 3 + 2] *= m;
+          }
+        }
       }
     }
   }
@@ -316,15 +382,63 @@ export function buildTerrain(course) {
       else idx.push(a, c, d, a, d, b);
     }
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  geo.setIndex(idx);
-  geo.computeVertexNormals();
-  geo.computeBoundingSphere();
+  // one shared vertex/colour/normal buffer set, drawn as CHUNK_X x CHUNK_Z chunk meshes (an index buffer and
+  // tight bounds each) so the renderer can frustum-cull most of the heightfield every frame
+  const full = new THREE.BufferGeometry();
+  const posAttr = new THREE.BufferAttribute(positions, 3);
+  const colAttr = new THREE.BufferAttribute(colors, 3);
+  full.setAttribute('position', posAttr);
+  full.setAttribute('color', colAttr);
+  full.setIndex(idx);
+  full.computeVertexNormals();
+  const nrmAttr = full.getAttribute('normal');
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = new THREE.Group();
   mesh.name = 'terrain';
+  const CHUNK_X = 8;
+  const CHUNK_Z = 5;
+  const cw = Math.ceil((nx - 1) / CHUNK_X);
+  const ch = Math.ceil((nz - 1) / CHUNK_Z);
+  for (let cj = 0; cj < CHUNK_Z; cj++) {
+    for (let ci = 0; ci < CHUNK_X; ci++) {
+      const i0 = ci * cw;
+      const i1 = Math.min(nx - 1, i0 + cw);
+      const j0 = cj * ch;
+      const j1 = Math.min(nz - 1, j0 + ch);
+      if (i1 <= i0 || j1 <= j0) continue;
+      const cidx = [];
+      const box = new THREE.Box3();
+      box.min.set(Infinity, Infinity, Infinity);
+      box.max.set(-Infinity, -Infinity, -Infinity);
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const k = j * nx + i;
+          box.expandByPoint(cA2.set(positions[k * 3], positions[k * 3 + 1], positions[k * 3 + 2]));
+          if (i === i1 || j === j1) continue;
+          const a = k;
+          const b = a + 1;
+          const c = a + nx;
+          const d = c + 1;
+          const dAD = Math.abs(positions[a * 3 + 1] - positions[d * 3 + 1]);
+          const dBC = Math.abs(positions[b * 3 + 1] - positions[c * 3 + 1]);
+          if (dBC <= dAD) cidx.push(a, c, b, b, c, d);
+          else cidx.push(a, c, d, a, d, b);
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', posAttr);
+      geo.setAttribute('color', colAttr);
+      geo.setAttribute('normal', nrmAttr);
+      geo.setIndex(cidx);
+      geo.boundingBox = box;
+      geo.boundingSphere = box.getBoundingSphere(new THREE.Sphere());
+      const chunk = new THREE.Mesh(geo, mat);
+      chunk.name = 'terrain-chunk';
+      chunk.matrixAutoUpdate = false;
+      chunk.updateMatrix();
+      mesh.add(chunk);
+    }
+  }
   mesh.matrixAutoUpdate = false;
   mesh.updateMatrix();
 

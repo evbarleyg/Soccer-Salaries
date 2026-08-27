@@ -18,8 +18,8 @@ export const PAL = {
   meadow: 0xb6d96c,
   sand: 0xe9d29c,
   mud: 0x8a6a45,
-  rock: 0x9a8f86,
-  rockDark: 0x6f645d,
+  rock: 0xb09a84,
+  rockDark: 0x8a735f,
   rockWarm: 0xb98f6a,
   cliff: 0xc98b5c,
   cliffDark: 0x8e5f43,
@@ -27,8 +27,9 @@ export const PAL = {
   strata: [0xa8683f, 0xd99a62, 0xc4814f, 0xe8b47c],
   grassLip: 0x8fc95a,
   shrub: 0x6cbc55,
-  granite: 0x8f8a80,
-  graniteDark: 0x74706a,
+  granite: 0xa59480,
+  graniteDark: 0x7f6d5c,
+  rockEmissive: 0x1a1410, // emissive floor for rock / vegetation Lambert materials (shadow sides never go dead)
   snow: 0xffffff,
   wood: 0x9c6b3c,
   woodDark: 0x6b4423,
@@ -88,7 +89,7 @@ export function makeSky() {
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
-    depthTest: false,
+    depthTest: true, // drawn last of the opaques at the far plane (z = w below), so covered sky costs nothing
     fog: false,
     uniforms: {
       top: { value: new THREE.Color(PAL.skyTop) },
@@ -111,13 +112,34 @@ export function makeSky() {
       varying vec3 vDir;
       uniform vec3 top, mid, horizon, fogCol, sunCol, sunDir;
       uniform float dim;
+      float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+      float vnoise(vec2 p) {
+        vec2 i = floor(p); vec2 f = fract(p);
+        float a = hash21(i), b = hash21(i + vec2(1.0, 0.0)), c = hash21(i + vec2(0.0, 1.0)), d = hash21(i + vec2(1.0, 1.0));
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+      }
       void main() {
-        float h = clamp(vDir.y, -1.0, 1.0);
-        vec3 col = mix(horizon, mid, smoothstep(0.0, 0.28, h));
+        vec3 dir = normalize(vDir);
+        float h = clamp(dir.y, -1.0, 1.0);
+        vec3 sdir = normalize(sunDir);
+        float sd = max(dot(dir, sdir), 0.0);
+        // the warm horizon band reaches higher and glows peach on the sun's side; away from it the blue starts lower
+        vec2 az = normalize(dir.xz + 1e-5);
+        vec2 sunAz = normalize(sdir.xz);
+        float sunSide = smoothstep(-0.2, 1.0, dot(az, sunAz));
+        vec3 col = mix(horizon, mid, smoothstep(0.0, mix(0.19, 0.32, sunSide), h));
         col = mix(col, top, smoothstep(0.25, 0.9, h));
+        col = mix(col, vec3(1.0, 0.84, 0.62), 0.28 * sunSide * sunSide * (1.0 - smoothstep(0.02, 0.28, abs(h))));
         col = mix(fogCol, col, smoothstep(-0.08, 0.06, h)); // blend into fog at the horizon and below
-        float sd = max(dot(normalize(vDir), normalize(sunDir)), 0.0);
         col += sunCol * (0.35 * pow(sd, 24.0) + 0.9 * smoothstep(0.9975, 0.999, sd));
+        // faint high cirrus so the sky overhead isn't empty: value noise on the sky plane, thresholded into wisps
+        if (h > 0.2) {
+          vec2 cp = dir.xz / max(dir.y, 0.2) * 3.0;
+          float n = vnoise(cp * vec2(0.55, 1.6) + vec2(3.0, 11.0)) * 0.65 + vnoise(cp * vec2(1.3, 3.7)) * 0.35;
+          float wisp = smoothstep(0.52, 0.72, n) * smoothstep(0.2, 0.42, h) * (1.0 - smoothstep(0.8, 1.0, h));
+          col = mix(col, vec3(1.0), 0.07 * wisp);
+        }
         col = mix(col, col * 0.25, dim);
         gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>
@@ -125,7 +147,7 @@ export function makeSky() {
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.scale.setScalar(900);
-  mesh.renderOrder = -100;
+  mesh.renderOrder = 100;
   mesh.frustumCulled = false;
   mesh.name = 'sky';
   return mesh;
