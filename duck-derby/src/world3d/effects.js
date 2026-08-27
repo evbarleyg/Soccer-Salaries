@@ -338,10 +338,11 @@ export class Effects {
       }
       if (!best) continue;
       const from = best.pos.clone();
-      // very long throws look silly: launch from part-way along the line instead
+      // a very long throw launches from part-way along the line (and we don't show a floating thrower)
       const d = from.distanceTo(target);
-      if (d > 55) from.lerp(target, 1 - 55 / d).setY(Math.max(from.y, target.y + 5));
-      this.hotdogs.push({ t: ev.t, t0: ev.t - lead, duck: ev.duck, from, target, result: ev.result, spot: { ...best, pos: from.clone().setY(best.pos.y) } });
+      let showThrower = true;
+      if (d > 75) { from.lerp(target, 1 - 75 / d).setY(Math.max(from.y, target.y + 5)); showThrower = false; }
+      this.hotdogs.push({ t: ev.t, t0: ev.t - lead, duck: ev.duck, from, target, result: ev.result, spot: best, showThrower });
     }
   }
 
@@ -403,7 +404,7 @@ export class Effects {
           const windup = 0.55;
           if (t < hd.t0 - windup - 1.5 || t > hd.t + 1.3) continue;
           const thr = this._get('thrower', used.thrower++);
-          thr.visible = true;
+          thr.visible = hd.showThrower;
           thr.position.copy(hd.spot.pos).y -= 1.2;
           // face the target
           thr.lookAt(this._v.set(hd.target.x, thr.position.y, hd.target.z));
