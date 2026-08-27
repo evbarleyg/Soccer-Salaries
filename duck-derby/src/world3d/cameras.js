@@ -175,7 +175,12 @@ export class CameraRig {
       // aiming a little above it seats the duck in the lower-middle of the frame
       tmpLook.copy(d.pos).sub(outPos).setY(0).normalize();
       const aheadY = outLook.y;
+      const ax = outLook.x;
+      const az = outLook.z;
       outLook.copy(d.pos).addScaledVector(tmpLook, 11);
+      // blend the through-the-duck ray with the down-course point so bends still show where we're going
+      outLook.x += (ax - outLook.x) * 0.45;
+      outLook.z += (az - outLook.z) * 0.45;
       outLook.y = aheadY; // same pitch as the landscape framing: horizon mid-frame, course ahead visible
     }
     if ((d.airborne || d.spinning) && d.pos) {
