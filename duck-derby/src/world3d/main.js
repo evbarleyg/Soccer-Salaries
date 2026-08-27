@@ -1650,8 +1650,9 @@ function jump(t) {
   hud.lastTarget = state.target;
   for (const d of state.ducks) d.anim.prevLat = null;
   rig.cut();
-  // settle springs
+  // settle springs, then refresh the HUD so a seek is immediately consistent
   for (let k = 0; k < 3; k++) rig.update(0.5, frameCtx(0.5));
+  hud.update(frameCtx(0));
   state.jumping = false;
 }
 window.__duckWorld = {
