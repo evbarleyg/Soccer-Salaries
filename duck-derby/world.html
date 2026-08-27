@@ -93,7 +93,7 @@
     <button id="hud-name" type="button" title="Switch duck"><i id="hud-swatch"></i><span id="hud-name-text"></span></button>
   </div>
   <div id="hud-item" class="empty"><canvas id="item-canvas" width="120" height="120"></canvas><div id="item-label">NO ITEM</div></div>
-  <div id="hud-top"><div id="hud-section"></div><div id="hud-comm"></div></div>
+  <div id="hud-top"><div id="hud-section" aria-live="polite"></div><div id="hud-comm" aria-live="polite"></div></div>
   <div id="hud-tr">
     <button id="btn-more" type="button" aria-label="Menu" title="Menu">⋯</button>
     <div id="hud-menu">
@@ -109,7 +109,7 @@
   <ol id="hud-ladder"></ol>
   <div id="progress"><div id="progress-track"><div id="progress-fill"></div></div><div id="progress-dots"></div><div id="progress-secs"></div></div>
   <canvas id="minimap" width="220" height="220"></canvas>
-  <div id="toast"></div>
+  <div id="toast" aria-live="polite"></div>
   <div id="popup"></div>
   <div id="countdown"></div>
   <div id="banner"></div>
@@ -122,9 +122,9 @@
   <div id="free-hint">Free camera · WASD / arrows move · drag to look · Shift fast · E/Q up/down · F to return</div>
 </div>
 
-<div id="picker" hidden><div class="picker-inner"><h3>Ride with…</h3><ul id="picker-list"></ul><button id="picker-close" type="button">Close</button></div></div>
+<div id="picker" role="dialog" aria-modal="true" aria-label="Choose a duck to ride with" hidden><div class="picker-inner"><h3>Ride with…</h3><ul id="picker-list"></ul><button id="picker-close" type="button">Close</button></div></div>
 
-<section id="results" class="panel" hidden>
+<section id="results" class="panel" role="dialog" aria-label="Race result and draft order" hidden>
   <div class="panel-inner">
     <header class="res-head">
       <div>
@@ -153,7 +153,7 @@
 </section>
 <div id="lower-third" hidden><div class="lt-kicker"></div><div class="lt-title"></div><div class="lt-sub"></div></div>
 <div id="title-card"><div class="logo"><span>Duck Derby</span><b>WORLD</b></div><div class="tc-sub"></div></div>
-<div id="finish-card" hidden><div class="fc-place"></div><div class="fc-pick"></div></div>
+<div id="finish-card" role="status" aria-live="polite" hidden><div class="fc-place"></div><div class="fc-pick"></div></div>
 <div id="letterbox"><i></i><i></i><span id="lb-caption"></span></div>
 
 <noscript><p style="color:#fff;padding:2rem">Duck Derby World needs JavaScript and WebGL.</p></noscript>
