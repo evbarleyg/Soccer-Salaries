@@ -27,7 +27,7 @@ export const PALETTES = [
 /** Headgear catalogue (drawn procedurally in draw-duck.js). */
 export const HATS = [
   { id: 'tophat', name: 'Top Hat' },
-  { id: 'crown', name: 'Crown' },
+  { id: 'crown', name: 'Silver Tiara' }, // silver on purpose: gold is the race leader's floating crown
   { id: 'cowboy', name: 'Cowboy Hat' },
   { id: 'viking', name: 'Viking Helmet' },
   { id: 'pirate', name: 'Pirate Bandana' },

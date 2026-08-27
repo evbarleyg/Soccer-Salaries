@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { assignLooks, PALETTES, HATS, SAMPLE_NAMES } from '../src/ducks.js';
 import { HAT_IDS } from '../src/draw-duck.js';
-import { seedToCode, codeToSeed, mulberry32, hashString } from '../src/rng.js';
+import { seedToCode, codeToSeed, canonicalSeedCode, mulberry32, hashString } from '../src/rng.js';
 
 test('every duck gets a unique palette and hat (up to 16)', () => {
   for (const n of [8, 10, 12, 16]) {
@@ -37,8 +37,28 @@ test('seed codes round-trip', () => {
   for (const seed of [0, 1, 123456789, 4294967295, 987654321]) {
     assert.equal(codeToSeed(seedToCode(seed)), seed >>> 0);
   }
-  assert.equal(codeToSeed('7gq-m2xd'), codeToSeed('7GQM2XD'));
+  assert.equal(codeToSeed('3gq-m2xd'), codeToSeed('3GQM2XD'));
+  assert.equal(codeToSeed('3gq m2xd'), 3782871981);
   assert.equal(codeToSeed(''), null);
+});
+
+test('seed codes are canonical and never alias', () => {
+  assert.equal(seedToCode(codeToSeed('3ZZ-ZZZZ')), '3ZZ-ZZZZ');
+  assert.equal(codeToSeed('7GQ-M2XD'), null); // would need 35 bits
+  assert.equal(codeToSeed('ABCDEFGHJ'), null); // wrong length
+  assert.equal(codeToSeed('4294967296'), null); // integer form out of uint32 range
+  assert.equal(codeToSeed('4294967295'), 4294967295);
+  assert.equal(codeToSeed('000-0000'), 0);
+  assert.equal(canonicalSeedCode('3gqm2xd'), '3GQ-M2XD');
+  assert.equal(canonicalSeedCode('7GQ-M2XD'), null);
+  assert.equal(canonicalSeedCode(''), null);
+  const next = mulberry32(5);
+  for (let k = 0; k < 200; k++) {
+    const x = Math.floor(next() * 4294967296) >>> 0;
+    const code = seedToCode(x);
+    assert.ok('0123'.includes(code[0]), `code ${code} for ${x} starts outside 0123`);
+    assert.equal(codeToSeed(code), x);
+  }
 });
 
 test('rng is reproducible', () => {
@@ -47,4 +67,16 @@ test('rng is reproducible', () => {
   for (let i = 0; i < 5; i++) assert.equal(a(), b());
   assert.equal(hashString('duck'), hashString('duck'));
   assert.notEqual(hashString('duck'), hashString('Duck'));
+});
+
+// a duck's jingle is keyed by its (normalised) name: the same three notes every season, on every device
+import { motifNotes } from '../src/audio.js';
+import { normalizeName } from '../src/ducks.js';
+test('name-keyed motifs are stable and stay on the pentatonic scale', () => {
+  const bits = hashString(normalizeName('Puddles')) & 0x1ff;
+  assert.deepEqual(motifNotes(bits), motifNotes(hashString(normalizeName('  puddles ')) & 0x1ff));
+  assert.deepEqual(motifNotes(bits), motifNotes(bits));
+  const scale = new Set([523.25, 587.33, 659.25, 783.99, 880.0, 1046.5, 1174.66, 1318.51]);
+  for (let b = 0; b < 512; b += 37) for (const f of motifNotes(b)) assert.ok(scale.has(f), String(f));
+  assert.equal(motifNotes(bits).length, 3);
 });
