@@ -9,9 +9,9 @@
     <meta property="og:description" content="Race a flock of ducks to decide your fantasy draft order. Fair, replayable, shareable." />
     <meta name="theme-color" content="#1560A8" />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet" />
+    <!-- typefaces ship with the game (fonts/, SIL OFL): no third-party request; the display face is preloaded for the countdown -->
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="fonts/bungee-latin-400.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="fonts/nunito-latin-800.woff2" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body class="phase-setup">
@@ -19,7 +19,7 @@
 
     <header class="topbar">
       <div class="brand" aria-label="Duck Derby">
-        <span class="brand-duck" aria-hidden="true">🦆</span>
+        <span class="brand-duck" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" focusable="false"><rect width="64" height="64" rx="14" fill="#1e88d6"/><path d="M6 46c8 4 44 4 52 0v18H6z" fill="#1560a8"/><ellipse cx="28" cy="40" rx="19" ry="12" fill="#ffd93b"/><path d="M10 36c-3-6-4-10-5-15 5 3 9 4 13 8z" fill="#f0b400"/><circle cx="42" cy="24" r="10" fill="#ffd93b"/><path d="M49 22c6-1 10 1 12 4-4 2-8 2-12 1z" fill="#ff8a00"/><circle cx="45" cy="21" r="2.2" fill="#1b1b1b"/><circle cx="45.8" cy="20.2" r=".7" fill="#fff"/><path d="M14 38c6-6 16-6 20 2-8 4-14 4-20-2z" fill="#f7c331"/></svg></span>
         <span class="brand-text">DUCK<em>DERBY</em></span>
         <span id="brand-tag" class="brand-tag">Draft Order Decider</span>
       </div>
@@ -77,7 +77,7 @@
           </div>
           <p id="rule-help" class="fine rule-help">1st across the line drafts 1.01, 2nd drafts 1.02…</p>
           <button id="btn-fair" class="link-btn fair-btn" type="button" aria-expanded="false" aria-controls="fair-text">How is this fair?</button>
-          <p id="fair-text" class="fine fair-text" hidden>Every lane draws speed, stamina and luck from identical odds — names and lane numbers change nothing. The race code is drawn at random the moment you press Start (only type one if your league agreed on it in advance — it fixes the result). Hot dogs always target whoever is leading, same rule for everyone. Anyone can re-run the identical race from the share link to check.</p>
+          <p id="fair-text" class="fine fair-text" hidden>Every lane draws speed, stamina and luck from identical odds — names and lane numbers change nothing. The race code is drawn at random the moment you press Start (only type one if your league agreed on it in advance — it fixes the result). Hot dogs always target whoever is leading, same rule for everyone. Anyone can re-run the identical race from the share link to check. (The thrower credit is just for laughs — the target is always whoever leads.)</p>
         </div>
 
         <div id="last-result" class="share-banner last-result" hidden>
@@ -101,7 +101,7 @@
 
         <div class="field field-league">
           <label class="field-label" for="opt-league">League name <small>(optional)</small></label>
-          <input id="opt-league" class="text-input" type="text" maxlength="40" placeholder="e.g. Sunday Scaries — 2026 Draft" autocomplete="off" spellcheck="false" />
+          <input id="opt-league" class="text-input" type="text" placeholder="e.g. Sunday Scaries — 2026 Draft" autocomplete="off" spellcheck="false" />
         </div>
 
         <details class="advanced">
@@ -180,12 +180,14 @@
           <button id="btn-reveal-all" class="link-btn reveal-all" type="button" hidden>Reveal all</button>
         </div>
         <div id="hero" class="hero-card" hidden></div>
-        <p id="podium-cap" class="podium-cap" hidden>Race podium (bragging rights only)</p>
-        <div id="podium" class="podium"></div>
+        <div id="podium-shelf" class="podium-shelf">
+          <p id="podium-cap" class="podium-cap" hidden>Race podium (bragging rights only)</p>
+          <div id="podium" class="podium"></div>
+        </div>
         <ol id="draft-board" class="draft-board"></ol>
       </div>
       <div class="panel-footer results-actions">
-        <button id="btn-share" class="cta small" type="button"><span class="cta-main">Share result</span><span class="cta-sub">link replays this exact race</span></button>
+        <button id="btn-share" class="cta small" type="button" title="The link replays this exact race on any device" aria-description="The link replays this exact race on any device"><span class="cta-main">Share result</span></button>
         <button id="btn-copylink" class="link-btn copy-link" type="button">Copy link</button>
         <button id="btn-save" class="sec-btn" type="button">Save image</button>
         <button id="btn-copy" class="sec-btn" type="button">Copy as text</button>

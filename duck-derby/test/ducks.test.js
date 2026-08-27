@@ -68,3 +68,15 @@ test('rng is reproducible', () => {
   assert.equal(hashString('duck'), hashString('duck'));
   assert.notEqual(hashString('duck'), hashString('Duck'));
 });
+
+// a duck's jingle is keyed by its (normalised) name: the same three notes every season, on every device
+import { motifNotes } from '../src/audio.js';
+import { normalizeName } from '../src/ducks.js';
+test('name-keyed motifs are stable and stay on the pentatonic scale', () => {
+  const bits = hashString(normalizeName('Puddles')) & 0x1ff;
+  assert.deepEqual(motifNotes(bits), motifNotes(hashString(normalizeName('  puddles ')) & 0x1ff));
+  assert.deepEqual(motifNotes(bits), motifNotes(bits));
+  const scale = new Set([523.25, 587.33, 659.25, 783.99, 880.0, 1046.5, 1174.66, 1318.51]);
+  for (let b = 0; b < 512; b += 37) for (const f of motifNotes(b)) assert.ok(scale.has(f), String(f));
+  assert.equal(motifNotes(bits).length, 3);
+});

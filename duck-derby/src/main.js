@@ -7,12 +7,13 @@
 
 import { assignLooks, SAMPLE_NAMES, MIN_DUCKS, MAX_DUCKS, normalizeName } from './ducks.js';
 import { createRace, standingsAt, speedAt, TRACK_LENGTH } from './sim.js'; // playback-side reads only: the sim itself is never touched here
-import { RaceScene } from './scene.js';
-import { renderPortrait, drawDuck } from './draw-duck.js';
+import { RaceScene, CONFETTI_COLS } from './scene.js';
+import { renderPortrait, drawDuck, roundRectPath } from './draw-duck.js';
 import { DuckAudio } from './audio.js';
 import { Commentator, ordinal, metres } from './commentary.js';
-import { randomSeed, seedToCode, codeToSeed, canonicalSeedCode, clamp, lerp } from './rng.js';
-import { encodeShare, decodeShare, sanitizeName, sanitizeLeague, truncateCodePoints, NAME_MAX } from './share.js';
+import { randomSeed, seedToCode, codeToSeed, canonicalSeedCode, clamp, lerp, hashString } from './rng.js';
+import { encodeShare, decodeShare, sanitizeName, sanitizeLeague, truncateCodePoints, shortenedCount, NAME_MAX } from './share.js';
+import { classifyRunIn, nobodyCatching, hotdogCulprits, raceAwards, hotdogLines, RUNIN_AT } from './awards.js';
 
 const $ = (sel) => document.querySelector(sel);
 const els = {
@@ -39,9 +40,11 @@ const els = {
   resultsOverline: $('#results-overline'),
   resultsSub: $('#results-sub'),
   hero: $('#hero'),
+  podiumShelf: $('#podium-shelf'), // cap + podium travel together (beside the hero card / below the board under toilet-bowl rules)
   podiumCap: $('#podium-cap'),
   podium: $('#podium'),
   board: $('#draft-board'),
+  resultsScroll: $('#results .panel-scroll'),
   actions: $('#results .results-actions'),
   quietGroup: $('#results .quiet-group'),
   share: $('#btn-share'),
@@ -154,6 +157,7 @@ const state = {
   lastResult: null, // {url, label} of the last board shown, offered on the setup screen as "Reopen board"
   focus: -1, // "my duck": followed on the water (halo + tag) and on the board; remembered by name (store.me)
   sim: null,
+  awards: null, // {byDuck, headline, culprits} from awards.js — computed once per result (board tags, exports, PNG, share text)
   looks: [],
   raceNames: [],
   lastRoster: null, // snapshot for the Undo toast
@@ -176,6 +180,9 @@ const state = {
   followUps: [], // {t, duck, rankBefore}: hot-dog aftermath lines
   victims: new Set(), // ducks hit by a hot dog this race
   avenged: new Set(), // victims who retook the lead (REVENGE! fires once each)
+  culprits: new Map(), // sim.events index -> the manager whose "section" threw that hot dog (awards.js, seeded; for laughs)
+  hitBy: new Map(), // victim -> culprit duck of the last hot dog that hit them (the REVENGE line names the section)
+  motifT: -9, // race time a leader's jingle last played (4 s cooldown)
   lastHotdogT: -9, // race time of the last hot-dog impact (the board holds still while the victim tumbles)
   impactAt: null, // race time of an in-flight hot dog's impact (arms the undercrank bracket)
   impactUntil: -9, // race time until which the hot-dog bracket keeps the clock slow
@@ -201,6 +208,8 @@ const state = {
   hudChrome: 0, // measured head + foot + padding height of the desktop panel
   recede: false, // rows dimmed during the final stretch (desktop)
   rowH: 32,
+  chipLead: 138, // compact strip: x offset of chip #2 = the leader chip's width (CSS --lead-w) + 6
+  crownSynced: false,
   hudRows: [], // <li> per duck (lane order) with cached child refs
   hudOrder: [], // duck ids as currently displayed, top to bottom
   hudLeader: -1,
@@ -402,12 +411,36 @@ function unlockShared() {
 }
 
 const LIST_PREFIX = /^\s*(\d+[.):\-]?|[-•*@])\s*/;
-/** "1. Alice\n2. Bob…" / comma / semicolon / tab separated text -> clean names (list markers stripped). */
+/** "1. Alice\n2. Bob…" / comma / semicolon / tab separated text -> clean names (list markers stripped). `.shortened`: how many the 22-character rule cut. */
 function splitNameList(text) {
-  return String(text)
+  const raw = String(text)
     .split(/[\n\r,;\t]+/)
-    .map((s) => sanitizeName(s.replace(LIST_PREFIX, '')))
-    .filter(Boolean);
+    .map((s) => s.replace(LIST_PREFIX, ''))
+    .filter((s) => sanitizeName(s));
+  const names = raw.map(sanitizeName);
+  names.shortened = shortenedCount(raw);
+  return names;
+}
+/** "2 names were shortened to 22 characters" (or '' when none were). */
+function shortenedNote(k) {
+  return k > 0 ? `${k === 1 ? '1 name was' : `${k} names were`} shortened to ${NAME_MAX} characters` : '';
+}
+/**
+ * The one name-length rule, live: whatever share.js's sanitizer would make of the typed text replaces it (beyond
+ * trailing whitespace, so a space before the next word can still be typed), caret preserved. No maxlength attribute:
+ * that counts UTF-16 units and would cut an emoji name at 11.
+ */
+function enforceClean(input, sanitize) {
+  const typed = input.value;
+  const clean = sanitize(typed);
+  if (clean === typed.replace(/\s+$/, '')) return;
+  const caret = input.selectionStart ?? clean.length;
+  input.value = clean;
+  try {
+    input.setSelectionRange(Math.min(caret, clean.length), Math.min(caret, clean.length));
+  } catch {
+    /* not focusable / type mismatch */
+  }
 }
 
 function renderRoster() {
@@ -418,7 +451,7 @@ function renderRoster() {
     li.innerHTML = `
       <span class="lane-no" aria-hidden="true">${i + 1}</span>
       <canvas width="44" height="40" aria-hidden="true"></canvas>
-      <input type="text" maxlength="22" placeholder="Duck ${i + 1} name" aria-label="Name for duck ${i + 1}" autocomplete="off" spellcheck="false" enterkeyhint="next" />
+      <input type="text" placeholder="Duck ${i + 1} name" aria-label="Name for duck ${i + 1}" autocomplete="off" spellcheck="false" enterkeyhint="next" />
       ${locked ? '' : `<button type="button" class="remove" aria-label="Remove duck ${i + 1}" title="Remove">×</button>`}`;
     const input = li.querySelector('input');
     input.value = name;
@@ -426,6 +459,7 @@ function renderRoster() {
     if (i === 0 && !locked) input.placeholder = 'Type a name — or paste your whole league';
     input.addEventListener('input', () => {
       if (state.locked) return;
+      enforceClean(input, sanitizeName);
       state.names[i] = input.value;
       touchRoster();
       scheduleLooks();
@@ -491,7 +525,9 @@ function pasteNames(parts, at, replaceAt = false) {
     touchRoster();
     renderRoster();
     saveStore();
-    toast(skipped ? `${MAX_DUCKS} ducks max — ${skipped} name${skipped === 1 ? '' : 's'} left out` : `Added ${k} names · league size set to ${k}`, {
+    const cut = shortenedNote(parts.shortened | 0);
+    toast((skipped ? `${MAX_DUCKS} ducks max — ${skipped} name${skipped === 1 ? '' : 's'} left out` : `Added ${k} names · league size set to ${k}`) + (cut ? ` · ${cut}` : ''), {
+      ms: cut ? 6500 : undefined,
       action: {
         label: 'Undo',
         onClick: () => {
@@ -518,7 +554,8 @@ function pasteNames(parts, at, replaceAt = false) {
   touchRoster();
   renderRoster();
   saveStore();
-  toast(skipped ? `${MAX_DUCKS} ducks max — ${skipped} name${skipped === 1 ? '' : 's'} left out` : `Added ${k} name${k === 1 ? '' : 's'}`);
+  const cut = shortenedNote(parts.shortened | 0);
+  toast((skipped ? `${MAX_DUCKS} ducks max — ${skipped} name${skipped === 1 ? '' : 's'} left out` : `Added ${k} name${k === 1 ? '' : 's'}`) + (cut ? ` · ${cut}` : ''), { ms: cut ? 3000 : undefined });
   els.roster.querySelectorAll('input')[Math.min(at, state.names.length - 1)]?.focus();
 }
 
@@ -632,6 +669,7 @@ ruleChips.forEach((chip, idx) => {
   });
 });
 els.optLeague.addEventListener('input', () => {
+  enforceClean(els.optLeague, sanitizeLeague);
   state.league = sanitizeLeague(els.optLeague.value);
   saveStore();
 });
@@ -855,13 +893,19 @@ function saveStore() {
   }
 }
 
-function readShareParams() {
+function readShareParams({ boot = false } = {}) {
   const data = decodeShare(location.search);
   if (!data) {
     if (/[?&](n|names)=/.test(location.search)) toast('That share link looks broken — check it was copied whole', { ms: 3500 });
     return;
   }
   state.names = data.names;
+  if (boot) {
+    // a hand-edited (or foreign) link with over-long names: say so once — both ends race the shortened names
+    const p = new URLSearchParams(location.search);
+    const cut = shortenedNote(shortenedCount(p.has('n') ? p.getAll('n') : String(p.get('names') ?? '').split('~')));
+    if (cut) toast(cut, { ms: 3000 });
+  }
   if (data.seed !== null) {
     state.sharedSeed = data.seed;
     state.shared = true;
@@ -925,21 +969,40 @@ function setPhase(phase) {
   // a quality-tier change asked for a new canvas resolution mid-race: realise it now that nobody is looking
   if ((phase === 'results' || phase === 'setup') && scene._dprDirty) scene.resize();
   if (phase === 'race') hideTitleCard(600);
-  else if (phase !== 'intro' && phase !== 'countdown') hideTitleCard(0);
+  else if (phase === 'countdown') {
+    // landscape phones have no sky band to park the card in, and a crowded one could not clear lane 1: the lights take over
+    if (landscapeCompact() || titleCard.crowded) hideTitleCard(1); // fade now: the first light is already on
+  } else if (phase !== 'intro') hideTitleCard(0);
   updateInsets();
   if (phase === 'intro') els.hud.focus({ preventScroll: true });
 }
 
-// lower-third title card (league · ducks · rule · code) during intro + countdown -------------
+/** Landscape phone layout (the CSS block `(max-height: 500px) and (min-width: 560px)`): two-column panels, no sky band. */
+const landscapeCompact = () => isCompact() && window.innerHeight <= 500 && window.innerWidth >= 560;
+
+// title card (league · ducks · rule · code) during intro + countdown: in the sky band on wide screens, under the live
+// strip on portrait phones, a lower third on landscape phones (intro only) -----------------------------------------
 let titleCardTimer = 0;
+const titleCard = { crowded: false }; // even the tight card would reach lane 1: the countdown hides it
 function showTitleCard() {
   const tc = els.titleCard;
   clearTimeout(titleCardTimer);
   tc.querySelector('.tc-1').textContent = state.league || 'DUCK DERBY';
   tc.querySelector('.tc-2').textContent = `${state.raceNames.length} DUCKS · ${RULES[state.rule].pill}`;
   tc.querySelector('.tc-3').textContent = `CODE ${seedToCode(state.seed)} · ${SOURCE_LABEL[state.seedSource].toUpperCase()}`;
-  tc.classList.remove('out');
+  tc.classList.remove('out', 'tc-tight');
+  titleCard.crowded = false;
   tc.hidden = false;
+  fitTitleCard();
+}
+/** Keep the card clear of lane 1's pills: first the tight one-line-details form; if even that reaches the top rope, the countdown hides it. */
+function fitTitleCard() {
+  const tc = els.titleCard;
+  if (tc.hidden || tc.classList.contains('out') || !scene.ropeYs.length || landscapeCompact()) return;
+  const limit = scene.ropeYs[0] - 4;
+  if (!tc.classList.contains('tc-tight') && tc.getBoundingClientRect().bottom > limit) tc.classList.add('tc-tight');
+  titleCard.crowded = tc.getBoundingClientRect().bottom > limit;
+  if (titleCard.crowded && state.phase === 'countdown') hideTitleCard(1);
 }
 /** Hide the title card: after `delay` ms with its exit animation, or at once (delay 0). */
 function hideTitleCard(delay = 0) {
@@ -980,16 +1043,18 @@ function updateInsets() {
     const r = els.setup.getBoundingClientRect();
     insets.left = Math.min(r.right + 10, W * 0.55);
   } else if (RACE_PHASES.includes(state.phase)) {
-    const hr = els.hud.getBoundingClientRect();
+    // layout box, not the bounding rect: the strip's 0.4 s entrance transform must not leak into the lanes or the CSS vars
+    const hr = { top: els.hud.offsetTop, left: els.hud.offsetLeft, bottom: els.hud.offsetTop + els.hud.offsetHeight };
     if (compact) insets.top = Math.ceil(hr.bottom) + 6;
     else insets.right = Math.max(safe.right, Math.round(W - hr.left) + 6);
     const tr = els.ticker.getBoundingClientRect();
     if (tr.height) {
       const covered = Math.max(0, H - tr.top);
       // short landscape screens: let the scene's own bottom margin absorb the gap above the ticker
-      insets.bottom = H <= 500 ? Math.max(0, covered - 9) : covered + 4;
+      insets.bottom = H <= 500 && W >= 560 ? Math.max(0, covered - 9) : covered + 4;
     }
   }
+  scene.topBarH = Math.round(document.querySelector('.topbar')?.getBoundingClientRect().bottom || 0) || 0; // hero push-ins keep the venue below the bar
   scene.setInsets(insets);
   scene.layout();
   // ribbon / digit geometry lives on the callout layer (not :root — no document-wide style recalc per write)
@@ -997,12 +1062,22 @@ function updateInsets() {
   setCssPx(els.callout.style, '--sky-h0', skyH); // unzoomed: sizes the ribbon font, which must not breathe with the camera
   setCssPx(els.callout.style, '--water-mid', Math.round(skyH + (H - skyH) / 2));
   publishSkyBand(true);
-  const hud = els.hud.hidden ? null : els.hud.getBoundingClientRect();
+  const hud = els.hud.hidden ? null : { top: els.hud.offsetTop, height: els.hud.offsetHeight };
   const st = document.documentElement.style;
   setCssPx(st, '--hud-top', hud ? Math.round(hud.top) : 0);
   setCssPx(st, '--hud-h', hud ? Math.round(hud.height) : 0);
   state.tickerH = els.ticker.hidden ? 0 : els.ticker.offsetHeight;
   setCssPx(st, '--ticker-h', state.tickerH);
+  publishFooterH();
+  fitTitleCard(); // lane 1 may have moved under the card (strip height, rotation)
+}
+
+/** Toasts on compact layouts sit just above the visible panel's action footer (setup / results): publish its height. */
+function publishFooterH() {
+  const panel = state.phase === 'setup' ? els.setup : state.phase === 'results' ? els.results : null;
+  if (!panel) return;
+  const foot = panel.querySelector('.panel-footer');
+  setCssPx(document.documentElement.style, '--footer-h', foot ? foot.offsetHeight : 0);
 }
 
 /** setProperty only when the value changed (each write on :root restyles the whole document). */
@@ -1055,6 +1130,8 @@ function resetDirector() {
   state.followUps = [];
   state.victims = new Set();
   state.avenged = new Set();
+  state.hitBy = new Map();
+  state.motifT = -9;
   state.lastHotdogT = -9;
   state.impactAt = null;
   state.impactUntil = -9;
@@ -1065,6 +1142,7 @@ function resetDirector() {
   state.soloHurry = false;
   state.climax = false;
   state.calledLeader = -1;
+  state.crownSynced = false; // the board's top row snaps to the scene's first crowned leader the frame the crown lands
   state.holdLeft = 0;
   state.holdMul = 0.05;
   state.hudOrder = [];
@@ -1130,7 +1208,10 @@ function prepareRace(forcedSeed = null, source = null) {
   els.lastResult.hidden = true;
   state.raceNames = names;
   state.looks = assignLooks(names, state.salt);
+  for (const look of state.looks) look.motif = hashString(normalizeName(look.name)) & 0x1ff; // name-keyed jingle: the same three notes every season
   state.sim = null;
+  state.awards = null;
+  state.culprits = new Map();
   resetDirector();
   stopCeremony();
   clearTimeout(state.ambienceTimer);
@@ -1164,6 +1245,7 @@ function startDerby({ seed: forcedSeed = null, source = null } = {}) {
   if (state.paused) setPaused(false);
   const opts = prepareRace(forcedSeed, source);
   setPhase('intro');
+  document.fonts?.load?.('40px Bungee').catch(() => {}); // the countdown digits want the display face; the 2.2 s intro covers the fetch
   showTitleCard(); // league · ducks · rule · code (+ provenance) — phones never used to see the code before the results
   scene.snapCamera(0);
   say(commentator.intro(opts.count, state.league), 2, { t: 0 });
@@ -1177,6 +1259,7 @@ function startDerby({ seed: forcedSeed = null, source = null } = {}) {
     setTimeout(() => {
       if (gen !== raceGen || state.phase !== 'intro') return; // superseded
       state.sim = createRace(opts);
+      state.culprits = hotdogCulprits(state.sim, opts.count); // empty when hazards are off (no hot-dog events)
       scene.setRace(state.sim, state.looks);
       // Optional scene hook (intro dolly): called once per race, after setRace,
       // while phase === 'intro'. scene.update() receives phaseTime, so the move
@@ -1199,6 +1282,7 @@ function showBoardDirect(nav = 'replace', source = 'shared') {
   const opts = prepareRace(state.sharedSeed, source);
   raceGen++;
   state.sim = createRace(opts);
+  state.culprits = hotdogCulprits(state.sim, opts.count);
   scene.setRace(state.sim, state.looks);
   const sim = state.sim;
   state.t = Math.max(...sim.finishTimes) + 0.5;
@@ -1233,6 +1317,7 @@ function setPaused(on) {
   if (on && !PAUSABLE.includes(state.phase)) return;
   state.paused = on;
   syncBodyClasses();
+  if (tk.els) tk.els.tally.textContent = on ? 'PAUSED' : 'LIVE'; // the bar's LIVE tally goes grey and says so (CSS: body.paused)
   els.pause.setAttribute('aria-pressed', String(on));
   els.pause.querySelector('.lbl').textContent = on ? 'Resume' : 'Pause';
   els.pause.title = on ? 'Resume (P)' : 'Pause (P)';
@@ -1246,7 +1331,7 @@ function setPaused(on) {
     showTickerLine('head', { text: coarseMQ.matches ? 'Paused · tap ▶, the banner or the water to resume' : 'Paused · press P or Space, or click ▶ to resume', pri: 2, duck: -1, kind: 'pause' }, performance.now());
   } else {
     dropPersistentCallout();
-    if (tk.head && tk.head.kind === 'pause') hideTickerLine('head'); // the phone bar then fades by itself (B6) until the next line
+    if (tk.head && tk.head.kind === 'pause') hideTickerLine('head'); // the phone bar then fades by itself until the next line
   }
 }
 els.pause.addEventListener('click', () => {
@@ -1282,12 +1367,20 @@ function sizeStandings(n) {
     return 30;
   }
   let hudTop;
-  let chrome;
+  let chrome = 0;
+  const plausible = (c) => c > 60 && c <= 260; // head + foot + gaps + padding; anything else is a mid-transition or clipped read
   if (!els.hud.hidden && els.hud.offsetHeight) {
     hudTop = els.hud.getBoundingClientRect().top;
-    st.height = '0px';
-    chrome = els.hud.offsetHeight; // head + foot + gaps + padding, measured with the list collapsed
-    state.hudChrome = chrome;
+    const listH = els.standings.offsetHeight;
+    if (listH > 0) chrome = els.hud.offsetHeight - listH; // the list keeps its size: nothing collapses, nothing can be caught mid-transition
+    if (!plausible(chrome)) {
+      st.transition = 'none'; // (Calm / reduced motion give every element a 10 ms transition: a collapsed read must not race it)
+      st.height = '0px';
+      chrome = els.hud.offsetHeight;
+      st.transition = '';
+    }
+    if (plausible(chrome)) state.hudChrome = chrome;
+    else chrome = state.hudChrome || 132;
   } else {
     hudTop = 62 + safe.top;
     chrome = state.hudChrome || 132;
@@ -1354,13 +1447,33 @@ function buildStandings() {
   state.lastGapSlow = 0;
   state.lastHud = 0;
   syncHudChrome();
+  if (compact) measureStrip(); // after syncHudChrome: the Skip pill has its compact label by now
   // every viewer of a shared link who picked their duck once is auto-followed in every later race with that name
   state.focus = -1;
   scene.focusDuck = -1;
   const me = stored.me ? state.raceNames.findIndex((nm) => normalizeName(nm) === stored.me) : -1;
   if (me >= 0) setFocus(me, { silent: true });
   updateHud(true);
+  syncStripOverflow();
   updateInsets(); // the compact strip's height depends on its content
+}
+
+/** Compact strip geometry: where chip #2 parks (behind the leader chip, whose width CSS owns) and the Skip column the ribbon must leave free. */
+function measureStrip() {
+  const w = parseFloat(getComputedStyle(els.standings).getPropertyValue('--lead-w')) || 132;
+  state.chipLead = Math.round(w) + 6;
+  setCssPx(document.documentElement.style, '--skip-w', els.skip.offsetWidth || 64);
+}
+
+/** Compact strip: a right-edge fade says "more chips this way" when the field does not fit (16 ducks on a narrow phone). */
+function syncStripOverflow() {
+  if (!isCompact()) {
+    els.standings.classList.remove('overflow');
+    return;
+  }
+  const n = state.hudRows.length;
+  const need = n <= 1 ? 0 : state.chipLead + (n - 2) * 30 + 26; // right edge of the last chip
+  els.standings.classList.toggle('overflow', need > els.standings.clientWidth + 2);
 }
 
 /** HUD foot labels that depend on the layout: the Skip pill text and the Names toggle. */
@@ -1402,20 +1515,16 @@ function setFocus(i, { silent = false } = {}) {
   }
 }
 
-// tap a duck on the water to follow it (release, so a press that merely resumed a paused race doesn't count)
-els.scene.addEventListener('pointerup', (e) => {
-  if (swallowPointerUp) {
-    swallowPointerUp = false;
-    return;
-  }
-  if (state.paused || !RACE_PHASES.includes(state.phase) || !state.sim || !scene.sim) return;
+/** The duck under a canvas point, or -1 (the beak is the anchor: the body trails behind it). */
+function duckAt(x, y) {
+  if (!state.sim || !scene.sim) return -1;
   let best = -1;
   let bestD = Infinity;
   for (let i = 0; i < state.hudRows.length; i++) {
     const a = scene.duckScreen(i, state.t, state.phase);
     if (!a) continue;
-    const dy = Math.abs(e.clientY - a.y);
-    const dx = e.clientX - a.x; // a.x is the beak: the body trails behind it
+    const dy = Math.abs(y - a.y);
+    const dx = x - a.x;
     if (dy > Math.max(40 * a.scale, a.h / 2) || dx > 60 * a.scale || dx < -120 * a.scale) continue;
     const d = dy + Math.abs(dx + 30 * a.scale) * 0.25;
     if (d < bestD) {
@@ -1423,7 +1532,58 @@ els.scene.addEventListener('pointerup', (e) => {
       best = i;
     }
   }
-  if (best >= 0) setFocus(best);
+  return best;
+}
+// tap a duck on the water to follow it (release, so a press that merely resumed a paused race doesn't count);
+// tap YOUR duck and it quacks back; press and hold it (450 ms) to stop following
+const LONG_PRESS_MS = 450;
+const press = { duck: -1, at: 0, x: 0, y: 0, timer: 0, done: false };
+let lastPokeAt = 0;
+function cancelPress() {
+  clearTimeout(press.timer);
+  press.timer = 0;
+}
+els.scene.addEventListener('pointerdown', (e) => {
+  cancelPress();
+  press.done = false;
+  press.duck = -1;
+  if (swallowPointerUp || state.paused || !RACE_PHASES.includes(state.phase)) return; // a press that resumes the race is only that
+  press.at = performance.now();
+  press.x = e.clientX;
+  press.y = e.clientY;
+  press.duck = duckAt(e.clientX, e.clientY);
+  if (press.duck >= 0 && press.duck === state.focus) {
+    press.timer = setTimeout(() => {
+      press.timer = 0;
+      press.done = true; // a long press on my duck: unfollow (the release then does nothing)
+      if (state.focus === press.duck) setFocus(press.duck);
+    }, LONG_PRESS_MS);
+  }
+});
+els.scene.addEventListener('pointermove', (e) => {
+  if (press.timer && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) cancelPress();
+});
+els.scene.addEventListener('pointercancel', cancelPress);
+els.scene.addEventListener('pointerup', (e) => {
+  cancelPress();
+  if (swallowPointerUp) {
+    swallowPointerUp = false;
+    return;
+  }
+  if (press.done || state.paused || !RACE_PHASES.includes(state.phase) || !state.sim || !scene.sim) return;
+  const best = duckAt(e.clientX, e.clientY);
+  if (best < 0) return;
+  if (best === state.focus && best === press.duck) {
+    // a quick tap on the duck I already follow: it answers (rate-limited; a slow release is neither a tap nor a hold)
+    const now = performance.now();
+    if (now - press.at < LONG_PRESS_MS && now - lastPokeAt >= 350) {
+      lastPokeAt = now;
+      scene.poke(best, state.t);
+      sfx().quack(state.looks[best]?.quackPitch || 1, 0.45);
+    }
+    return;
+  }
+  setFocus(best);
 });
 
 let standingsTouchedAt = 0;
@@ -1437,7 +1597,7 @@ function glideRow(li, up) {
   li.classList.add('mv');
   li.classList.toggle('up', !!up);
   clearTimeout(li._mvT);
-  li._mvT = setTimeout(() => li.classList.remove('mv', 'up'), 460);
+  li._mvT = setTimeout(() => li.classList.remove('mv', 'up'), 340);
 }
 
 /** Pop highlight for a row that climbed into the front three (callers batch the reflow: remove 'rise', one offsetWidth, then this). */
@@ -1448,7 +1608,7 @@ function riseRow(li) {
 }
 
 // Board hysteresis. A pass may start at most every PASS_MS — well beyond the
-// .42 s row transition, so every swap lands and rests before the next begins.
+// .30 s row transition, so every swap lands and rests before the next begins.
 const HUD_PASS_MS = 1000; // min interval between reorder passes
 const HUD_GAP_UNITS = 10; // swap at once when the pair is this far apart (1 m)…
 const HUD_PERSIST_MS = 1200; // …or when the truth has disagreed this long
@@ -1496,6 +1656,11 @@ function updateHud(force = false) {
     r.rank = rank;
     info[r.i] = r;
   });
+  // the first crowned leader: the top row agrees with the crown the very frame it lands (scene.update ran before this tick)
+  if (!state.crownSynced && scene.leaderIdx >= 0 && live) {
+    state.crownSynced = true;
+    force = true;
+  }
   const compact = isCompact();
   const lastFirst = state.rule === 'last-first';
 
@@ -1512,8 +1677,9 @@ function updateHud(force = false) {
     state.pendingSince.clear();
     state.lastReorder = now;
     changed = true;
-  } else if (!locked && t >= 1.5 && now - state.lastReorder >= HUD_PASS_MS) {
-    state.lastReorder = now;
+  } else if (!locked && t >= 1.5) {
+    const pass = now - state.lastReorder >= HUD_PASS_MS; // pair swaps start at most once per pass; the leader row reacts on every tick
+    if (pass) state.lastReorder = now;
     const done = [];
     for (const r of truth) {
       if (!r.done) break;
@@ -1523,8 +1689,8 @@ function updateHud(force = false) {
     // far from the truth? one coordinated glide beats a long chain of pair swaps
     let drift = 0;
     rest.forEach((duck, k) => (drift += Math.abs(info[duck].rank - (done.length + k))));
-    let swaps = 0;
-    if (drift >= Math.max(6, rest.length) && now - state.lastResync >= HUD_RESYNC_MS) {
+    let swaps = pass ? 0 : HUD_MAX_SWAPS;
+    if (pass && drift >= Math.max(6, rest.length) && now - state.lastResync >= HUD_RESYNC_MS) {
       state.lastResync = now;
       const synced = truth.filter((r) => !r.done).map((r) => r.i);
       synced.forEach((duck, k) => {
@@ -1538,9 +1704,10 @@ function updateHud(force = false) {
       state.pendingSince.clear();
       swaps = HUD_MAX_SWAPS; // no pair swaps this pass
     }
-    // the leader row is the one everybody reads: promote the true leader directly (not one place per pass), and fast
+    // the leader row is the one everybody reads: promote the true leader directly (not one place per pass), and fast —
+    // this runs on every tick with its own short persistence gate, not just inside a pass
     const trueLead = truth[done.length]?.i;
-    if (swaps < HUD_MAX_SWAPS && trueLead !== undefined && rest[0] !== trueLead) {
+    if (!bulk && trueLead !== undefined && rest[0] !== trueLead) {
       const key = `lead>${trueLead}`;
       let since = state.pendingSince.get(key);
       if (since === undefined) state.pendingSince.set(key, (since = now));
@@ -1550,7 +1717,7 @@ function updateHud(force = false) {
         rows[trueLead]._movedAt = now;
         rows[trueLead]._dir = -1;
         state.pendingSince.delete(key);
-        swaps++;
+        if (pass) swaps++;
       }
     }
     for (let k = 0; k < rest.length - 1 && swaps < HUD_MAX_SWAPS; k++) {
@@ -1605,7 +1772,7 @@ function updateHud(force = false) {
         }
         meta.rank = rank;
       }
-      const tf = compact ? `translateX(${rank === 0 ? 0 : 138 + (rank - 1) * 30}px)` : `translateY(${rank * state.rowH}px)`;
+      const tf = compact ? `translateX(${rank === 0 ? 0 : state.chipLead + (rank - 1) * 30}px)` : `translateY(${rank * state.rowH}px)`;
       if (L.tf !== tf) {
         if (!compact && L.tf) glideRow(li, up); // opaque while it crosses other rows
         li.style.transform = L.tf = tf;
@@ -1749,13 +1916,19 @@ function flashRow(i, cls, ms = 900) {
 // state.transcript (deterministic per link: callers stamp lines with race-clock
 // times, see samplePoll). On phones the single tier fades away when idle.
 const tickerQueue = [];
-const tk = { head: null, sub: null, els: null, idle: false, headOffAt: -1e9 };
+const tk = { head: null, sub: null, tip: null, fill: null, lastFillT: -1e9, fillIdx: 0, quietSince: 0, els: null, idle: false, headOffAt: -1e9, subOffAt: -1e9 };
 const TICKER_HOLD = { 1: 1300, 2: 2000, 3: 2200 }; // min time on air before an equal/lower priority line may replace it
 const TICKER_LINGER = { 1: 2400, 2: 4200, 3: 6000 }; // faded out after this long if nothing replaces it
 const TICKER_LEAD_PREEMPT = 800; // a lead change makes any standing story-beat headline old news this fast
 const TICKER_WIN_PROTECT = 1800; // nothing replaces the winner's headline sooner than this
 const TICKER_STALE = { 2: 2, 3: 3 }; // race seconds after which a queued line is no longer true enough to air
-const TICKER_IDLE_MS = 1200; // phones: the empty bar fades away after this long
+const TICKER_IDLE_MS = 1200; // phones: the empty bar fades away after this long…
+const TICKER_IDLE_WIDE_MS = 2500; // …wide layouts a little later (a filler fact usually arrives first mid-race)
+const TIP_MS = 4000; // the one-time "follow your duck" tip rides the bar this long
+const TIP_HOLD = 1200; // …and, like chatter, may be replaced by a real line once it has had this long (wide; phones: at once)
+const FILL_QUIET_MS = 2500; // wide: a low-key filler fact after this much dead air…
+const FILL_EVERY = 8; // …rotating to the next fact every 8 s of racing
+const FILL_REFRESH_MS = 500; // a filler's number follows the race clock
 
 /**
  * @param {string|null} text
@@ -1802,8 +1975,11 @@ function hushChatter(tEv) {
 
 function ensureTickerDom() {
   if (tk.els && tk.els.head.isConnected) return tk.els;
-  els.ticker.innerHTML = '<span class="mic" aria-hidden="true">🎙️</span><span class="lines"><span class="headline"></span><span class="sub"></span></span>';
-  tk.els = { head: els.ticker.querySelector('.headline'), sub: els.ticker.querySelector('.sub') };
+  els.ticker.innerHTML =
+    '<span class="tally" aria-hidden="true"><i class="dot"></i><b>LIVE</b></span><span class="lines"><span class="headline"></span><span class="sub"></span><span class="tip"></span></span>';
+  const q = (s) => els.ticker.querySelector(s);
+  tk.els = { head: q('.headline'), sub: q('.sub'), tip: q('.tip'), tally: q('.tally b') };
+  tk.els.tally.textContent = state.paused ? 'PAUSED' : 'LIVE';
   return tk.els;
 }
 function setTickerIdle(on) {
@@ -1815,20 +1991,28 @@ function setTickerIdle(on) {
 function clearTicker() {
   tickerQueue.length = 0;
   tk.head = tk.sub = null;
-  tk.headOffAt = -1e9; // nothing on air: a phone's bar may fade right away
+  tk.headOffAt = tk.subOffAt = -1e9; // nothing on air: the bar may fade right away
+  tk.quietSince = performance.now(); // …but a filler fact waits for a real quiet stretch, not a cut
   const d = ensureTickerDom();
-  for (const el of [d.head, d.sub]) {
+  hideTip(false);
+  hideFiller(false);
+  tk.lastFillT = -1e9;
+  tk.fillIdx = 0;
+  for (const el of [d.head, d.sub, d.tip]) {
     el.textContent = '';
-    el.classList.remove('in', 'out', 'p3', 'p1');
+    el.classList.remove('in', 'out', 'p3', 'p1', 'fill');
   }
-  if (isCompact()) setTickerIdle(true);
+  setTickerIdle(true);
 }
 function showTickerLine(tier, line, now) {
   const d = ensureTickerDom();
   const el = tier === 'head' ? d.head : d.sub;
   setTickerIdle(false);
+  // a real line takes the slot back from the tip (phones: the single tier; wide: the sub line) and from any filler fact
+  if (tk.tip && (tier === 'sub' || isCompact())) hideTip();
+  if (tk.fill) hideFiller(tier !== 'sub');
   el.textContent = line.text;
-  el.classList.remove('in', 'out');
+  el.classList.remove('in', 'out', 'fill');
   void el.offsetWidth; // restart the line-in animation
   el.classList.add('in');
   if (tier === 'head') {
@@ -1844,10 +2028,119 @@ function showTickerLine(tier, line, now) {
 function hideTickerLine(tier) {
   tk[tier] = null;
   if (tier === 'head') tk.headOffAt = performance.now();
+  else tk.subOffAt = performance.now();
   if (!tk.els) return;
   const el = tier === 'head' ? tk.els.head : tk.els.sub;
   el.classList.remove('in');
   el.classList.add('out');
+}
+
+// The once-per-browser "follow your duck" tip: a quiet one-liner INSIDE the bar (never a floating box over the lanes),
+// after the launch has settled. It is not commentary: not queued, not in the transcript, and any real line takes its slot.
+function showTip(text) {
+  const d = ensureTickerDom();
+  const now = performance.now();
+  d.tip.textContent = text;
+  d.tip.classList.remove('out');
+  void d.tip.offsetWidth;
+  d.tip.classList.add('in');
+  els.ticker.classList.add('has-tip');
+  tk.tip = { shownAt: now, until: now + TIP_MS };
+  setTickerIdle(false);
+  if (!els.ticker.hidden && els.ticker.offsetHeight !== state.tickerH) updateInsets();
+}
+function hideTip(animate = true) {
+  if (!tk.tip) return;
+  tk.tip = null;
+  tk.subOffAt = Math.max(tk.subOffAt, performance.now()); // the bar had something on it: idle counts from now
+  els.ticker.classList.remove('has-tip');
+  if (!tk.els) return;
+  tk.els.tip.classList.remove('in');
+  if (animate) tk.els.tip.classList.add('out');
+  else tk.els.tip.classList.remove('out');
+}
+/** The tip may take the bar: nothing that matters is on air or waiting (phones have one tier, so nothing at all). */
+function tipSlotFree() {
+  if (tickerQueue.some((l) => l.pri >= 2)) return false;
+  if (isCompact()) return !tk.head;
+  return !(tk.head && tk.head.pri >= 2) && !tk.sub && !tk.fill;
+}
+function maybeShowTip() {
+  if (stored.tip || state.focus >= 0 || mute.ui || els.ticker.hidden) return;
+  if (state.phase !== 'race' || state.finished !== 0 || state.t < 4 || state.t >= 14 || !tipSlotFree()) return;
+  stored.tip = true;
+  saveStore();
+  showTip(coarseMQ.matches ? 'Tip: tap your name to follow your duck' : 'Tip: click your name (or a duck) to follow it');
+}
+
+// Wide layouts: instead of an empty bar through a quiet stretch, one low-key fact that follows the race clock
+// (pure functions of the sim + race time, so every replay shows the same number at the same moment). Never logged.
+function fillerText(k) {
+  const sim = state.sim;
+  const t = state.t;
+  let leadX = 0;
+  for (let i = 0; i < sim.count; i++) leadX = Math.max(leadX, scene.duckX(i, t));
+  leadX = Math.min(leadX, TRACK_LENGTH);
+  switch (k % 3) {
+    case 0:
+      return `${metres(TRACK_LENGTH - leadX)}m to go`;
+    case 1: {
+      let n = 0;
+      for (const ev of sim.events) {
+        if (ev.t > t) break;
+        if (ev.type === 'lead') n++;
+      }
+      return n ? `${n} lead change${n === 1 ? '' : 's'} so far` : 'No lead changes yet';
+    }
+    default:
+      return `Leader's pace ${(leadX / 10 / Math.max(1, t)).toFixed(1)} m/s`;
+  }
+}
+function fillerAllowed() {
+  return !isCompact() && state.phase === 'race' && state.sim && state.t >= 6 && !state.climax && state.winnerAt === null && !state.paused && !mute.ui;
+}
+function showFiller(now) {
+  const d = ensureTickerDom();
+  const k = tk.fillIdx++;
+  d.sub.textContent = fillerText(k);
+  d.sub.classList.remove('in', 'out');
+  d.sub.classList.add('fill');
+  void d.sub.offsetWidth;
+  d.sub.classList.add('in');
+  tk.fill = { k, shownAt: now, t: state.t, refreshAt: now + FILL_REFRESH_MS };
+  tk.lastFillT = state.t;
+  setTickerIdle(false);
+}
+/** Take the filler off: silently when a real sub line is about to reuse the element, with a fade otherwise. */
+function hideFiller(animate = true) {
+  if (!tk.fill) return;
+  tk.fill = null;
+  tk.subOffAt = Math.max(tk.subOffAt, performance.now());
+  if (!tk.els) return;
+  const el = tk.els.sub;
+  if (animate) {
+    el.classList.remove('in');
+    el.classList.add('out');
+  } else el.classList.remove('in', 'out', 'fill');
+}
+function pumpFiller(now) {
+  if (tk.fill) {
+    if (!fillerAllowed()) {
+      hideFiller();
+      return;
+    }
+    if (state.t - tk.fill.t >= FILL_EVERY || state.t < tk.fill.t) showFiller(now); // rotate (or a rewind): next fact
+    else if (now >= tk.fill.refreshAt) {
+      tk.fill.refreshAt = now + FILL_REFRESH_MS;
+      const txt = fillerText(tk.fill.k);
+      if (tk.els.sub.textContent !== txt) tk.els.sub.textContent = txt;
+    }
+    return;
+  }
+  if (!fillerAllowed() || tk.head || tk.sub || tk.tip || tickerQueue.length) return;
+  if (now - Math.max(tk.headOffAt, tk.subOffAt, tk.quietSince) < FILL_QUIET_MS) return;
+  if (state.t - tk.lastFillT < FILL_EVERY && state.t >= tk.lastFillT) return;
+  showFiller(now);
 }
 function pumpTicker() {
   const now = performance.now();
@@ -1891,18 +2184,22 @@ function pumpTicker() {
       showTickerLine('head', line, now);
     }
   } else if (H && now - H.shownAt > TICKER_LINGER[Math.min(3, H.pri)]) hideTickerLine('head');
+  if (tk.tip && now >= tk.tip.until) hideTip();
   // sub tier: chatter, in order (wide layouts only)
   const S = tk.sub;
   if (single) {
     if (S) hideTickerLine('sub');
-    setTickerIdle(!tk.head && now - tk.headOffAt >= TICKER_IDLE_MS);
+    if (tk.fill) hideFiller();
+    setTickerIdle(!tk.head && !tk.tip && now - Math.max(tk.headOffAt, tk.subOffAt) >= TICKER_IDLE_MS);
     return;
   }
-  setTickerIdle(false);
   const si = tickerQueue.findIndex((l) => l.pri <= 1);
   if (si >= 0) {
-    if (!S || now - S.shownAt >= TICKER_HOLD[1]) showTickerLine('sub', tickerQueue.splice(si, 1)[0], now);
+    const tipYoung = tk.tip && now - tk.tip.shownAt < TIP_HOLD; // the tip gets a chatter line's hold, then yields
+    if (!tipYoung && (!S || now - S.shownAt >= TICKER_HOLD[1])) showTickerLine('sub', tickerQueue.splice(si, 1)[0], now);
   } else if (S && now - S.shownAt > TICKER_LINGER[1]) hideTickerLine('sub');
+  pumpFiller(now);
+  setTickerIdle(!tk.head && !tk.sub && !tk.tip && !tk.fill && now - Math.max(tk.headOffAt, tk.subOffAt) >= TICKER_IDLE_WIDE_MS);
 }
 
 // callouts ----------------------------------------------------------------
@@ -1915,12 +2212,22 @@ function pumpTicker() {
 const CALLOUT_RANK = { pause: 9, go: 5, win: 4, pick: 4, photo: 4, revenge: 3, hotdog: 3, tail: 3, stretch: 2 };
 const RIBBON_DWELL = 900; // ms a ribbon is guaranteed before an EQUAL-rank newcomer may take the band (it waits, then hands off)
 const RIBBON_OUT_MS = 180; // exit animation of a ribbon that is being replaced (.wide.out)
-const cal = { wide: null, queued: [] };
+const RIBBON_COMPACT_MAX = 1500; // phones: a ribbon covers the live strip, so it never outstays this
+const cal = { wide: null, queued: [], winAt: -1e9 };
+
+/** Phones: while a ribbon sits on the HUD strip its chips, clock and pause step out (CSS body.ribbon-live); Skip stays. */
+let ribbonLiveTimer = 0;
+function setRibbonLive(on, ms) {
+  clearTimeout(ribbonLiveTimer);
+  document.body.classList.toggle('ribbon-live', !!on);
+  if (on && Number.isFinite(ms)) ribbonLiveTimer = setTimeout(() => document.body.classList.remove('ribbon-live'), Math.max(0, ms));
+}
 
 /** Take the current ribbon off air: with a short exit when something replaces it live, instantly otherwise. */
 function retireRibbon(cur, animate) {
   clearTimeout(cur.timer);
   clearTimeout(cur.handoff);
+  setRibbonLive(false);
   const el = cur.el;
   if (animate && el.isConnected && !scene.reduceMotion) {
     el.classList.add('out');
@@ -1975,7 +2282,10 @@ function callout(content, kind = 'big', opts = {}) {
     rank = 1;
     for (const k of kinds) if (CALLOUT_RANK[k] > rank) rank = CALLOUT_RANK[k];
   }
-  const ttl = opts.ttl ?? (wide ? 1400 : 850);
+  const pauseCard = kinds.includes('pause');
+  const overStrip = wide && !pauseCard && isCompact(); // phones: the ribbon takes the live strip's slot
+  let ttl = opts.ttl ?? (wide ? 1400 : 850);
+  if (overStrip) ttl = Math.min(ttl, RIBBON_COMPACT_MAX);
   const now = performance.now();
   let handoff = false; // replacing a ribbon that is still on air: it exits (.out) while the newcomer sweeps in 90 ms later
   if (wide) {
@@ -2022,6 +2332,8 @@ function callout(content, kind = 'big', opts = {}) {
   }
   const entry = { el, rank, until: persist ? Infinity : now + lag + ttl, timer: 0, handoff: 0, persist, shownAt: now + lag };
   cal.wide = entry;
+  if (kinds.includes('win')) cal.winAt = entry.shownAt;
+  if (overStrip) setRibbonLive(true, lag + ttl - RIBBON_OUT_MS); // the strip is back for the ribbon's exit
   if (!persist) {
     entry.timer = setTimeout(() => {
       el.remove();
@@ -2062,6 +2374,8 @@ function clearCallouts() {
   }
   cal.wide = null;
   cal.queued = [];
+  cal.winAt = -1e9;
+  setRibbonLive(false);
   els.callout.replaceChildren();
 }
 
@@ -2116,6 +2430,13 @@ function toast(msg, opts = {}) {
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => box.classList.remove('show', 'actionable'), opts.ms ?? (opts.action ? 5000 : 1800));
 }
+/** Screen change (results / back to setup): a plain toast about the old screen goes; one carrying an Undo stays. */
+toast.clear = () => {
+  const box = els.toast;
+  if (box.classList.contains('actionable')) return;
+  clearTimeout(toast.timer);
+  box.classList.remove('show');
+};
 
 // ---------------------------------------------------------------------------
 // Main loop + performance governor
@@ -2252,6 +2573,23 @@ function frame(now) {
   }
 }
 
+/**
+ * Park the countdown digit over open water: 58% of the way from the start line to the track's right edge (right of the
+ * start-list pills, left of the live-order panel), clamped so the glyph never leaves the track; centred when the start
+ * line is off screen. Reads the digit's own font size, so it runs right after callout() has put the element up.
+ */
+function placeCountdownDigit() {
+  const el = els.callout.querySelector('.big');
+  let x = '50%';
+  const sx0 = scene.sx(0);
+  const trackRight = window.innerWidth - (isCompact() ? 0 : scene.insets.right || 0);
+  if (el && sx0 > 0 && sx0 < trackRight - 100) {
+    const half = (isCompact() ? 0.68 : 0.85) * (parseFloat(getComputedStyle(el).fontSize) || 120); // the ring's radius (CSS: 1.36em / 1.7em across)
+    x = `${Math.round(clamp(sx0 + 0.58 * (trackRight - sx0), half + 4, trackRight - half - 4))}px`;
+  }
+  els.callout.style.setProperty('--count-x', x);
+}
+
 function stepCountdown() {
   const step = Math.floor(state.phaseTime / COUNT_STEP);
   if (step === state.countdownStep || step > 3) return;
@@ -2259,12 +2597,15 @@ function stepCountdown() {
   if (step < 3) {
     const digit = String(3 - step);
     callout(digit, `big d${digit}`, { ttl: 920 });
+    placeCountdownDigit();
+    scene.punch?.(0.02); // a beat you can feel (no-op under reduced motion)
     announce(digit, { now: true });
     audio.beep(false);
     scene.startLights = step + 1;
     return;
   }
   callout('GO!', 'big go', { ttl: 1000 });
+  placeCountdownDigit();
   announce(`Go! ${state.looks.length} ducks are racing`, { now: true });
   audio.beep(true);
   audio.horn();
@@ -2282,15 +2623,7 @@ function stepCountdown() {
   setPhase('race');
   perf.improved = false;
   say(commentator.go(), 2, { t: 0, kind: 'go' }); // each duck's launch splash comes from the scene at its own reaction time
-  // once per browser: how to find "my duck" (skipped if they already follow one)
-  if (!stored.tip && state.focus < 0) {
-    setTimeout(() => {
-      if (gen !== raceGen || state.phase !== 'race' || stored.tip || state.focus >= 0) return;
-      stored.tip = true;
-      saveStore();
-      toast(`Tip: ${coarseMQ.matches ? 'tap' : 'click'} your name (or your duck) to follow it`, { ms: 3800 });
-    }, 1500);
-  }
+  // (the once-per-browser "follow your duck" tip airs in the commentary bar once the launch has settled: see maybeShowTip)
 }
 
 function advanceRace(dt) {
@@ -2334,7 +2667,7 @@ function advanceRace(dt) {
       case 'clear':
         if (!state.preRolled && remaining < 35) {
           state.preRolled = true; // a gentle push-in toward the wall; the scene's hero zoom extends it on the touch
-          if (!scene.reduceMotion) scene.zoomTo(1.12, scene.sx(TRACK_LENGTH) - 60 * scene.ui, scene._zoomFloorY(), 2200);
+          if (!scene.reduceMotion) scene.zoomTo(Math.min(1.12, scene.zoomCap()), scene.sx(TRACK_LENGTH) - 60 * scene.ui, scene._zoomFloorY(), 2200);
         }
         break;
       default:
@@ -2416,7 +2749,8 @@ function advanceRace(dt) {
     if (lead > TELEGRAPH_LEAD) break;
     if (!state.telegraphed.has(idx)) {
       state.telegraphed.add(idx);
-      scene.telegraphHotdog?.(ev.duck, state.t, ev.t);
+      const culprit = state.culprits.get(idx);
+      scene.telegraphHotdog?.(ev.duck, state.t, ev.t, culprit !== undefined ? state.looks[culprit] : null); // the thrower wears the culprit's colours
       audio.uhoh();
     }
     if (lead > LAUNCH_LEAD) break;
@@ -2449,6 +2783,8 @@ function advanceRace(dt) {
     }
   }
 
+  maybeShowTip(); // once per browser, t 4–14 s, only into a quiet bar
+
   // crowd excitement follows the race (and leans in for a photo)
   audio.setCrowd(clamp(0.3 + (leadX / TRACK_LENGTH) * 0.5 + scene.cheer * 0.4 + (state.photoCalled && state.finished === 0 ? 0.15 : 0), 0, 1));
 
@@ -2466,11 +2802,9 @@ function airFollowUp(f) {
 
 const POLL_STEP = 0.25; // race-clock seconds between broadcast samples
 const RANK_SAMPLES = 13; // 12 intervals = 3 s of rank history
-// The run-in programme, decided once when the leader is RUNIN_AT units out, by the live gap to second (10 units = 1 m ≈ 0.4 s):
-const RUNIN_AT = 45;
-const GAP_PHOTO = 6; // closer than this (or a true photo finish): heavy slow-mo, PHOTO FINISH
-const GAP_CONTESTED = 15; // closer than this: a fight to the wall, mild slow-mo, "to the wall — A from B!"
-const GAP_CLEAR = 20; // wider than this 90 units out: call it ("nobody is catching X") and let the winner enjoy the run-in
+// The run-in programme is decided once, when the leader is RUNIN_AT units (4.5 m) out, by awards.js's classifyRunIn — in
+// TIME, not distance: 'photo' (heavy slow-mo, PHOTO FINISH) only for a finish that will really be tight, 'contested'
+// (mild slow-mo, "to the wall — A from B!") for a fight, 'clear' (a push-in, "nobody is catching X") for daylight.
 
 /**
  * Everything the commentary says about the *shape* of the race is decided here,
@@ -2509,10 +2843,8 @@ function samplePoll(tq) {
   const nm = (r) => names[r.i];
   const au = sfx();
 
-  // --- the run-in: classified once, 45 units out, by live margin ---
-  if (!state.runIn && done === 0 && live.length >= 2 && remaining < RUNIN_AT) {
-    state.runIn = sim.photoFinish || gap < GAP_PHOTO ? 'photo' : gap < GAP_CONTESTED ? 'contested' : 'clear';
-  }
+  // --- the run-in: classified once, 45 units out, by time (live gap in seconds + how tight the touch will really be) ---
+  if (!state.runIn && done === 0 && live.length >= 2 && remaining < RUNIN_AT) state.runIn = classifyRunIn(sim, tq);
   if (!state.photoCalled && done === 0 && state.runIn === 'photo') {
     state.photoCalled = true;
     callout('PHOTO FINISH!', 'wide photo');
@@ -2520,14 +2852,14 @@ function samplePoll(tq) {
     announce('Photo finish!');
     au.riser(3.2);
   }
-  if (!state.lineCalled && !state.photoCalled && !lastFirst && done === 0 && live.length >= 2 && remaining < 40 && gap < GAP_CONTESTED) {
-    state.lineCalled = true; // CONTESTED: still together at the wall
+  if (!state.lineCalled && !state.photoCalled && !lastFirst && done === 0 && live.length >= 2 && remaining < 40 && state.runIn === 'contested') {
+    state.lineCalled = true; // CONTESTED: still together at the wall (also a live picture that looks like a photo but won't be one)
     say(commentator.atTheLine(nm(live[0]), nm(live[1]), gap), 3, { duck: live[1].i, t: tq, kind: 'photo' });
     au.riser(2.4);
   }
   const closerFresh = state.closerT >= 0 && tq - state.closerT < 2.5; // "here comes X!" was only just said: don't contradict it yet
-  if (!state.clearCalled && !closerFresh && done === 0 && live.length >= 2 && remaining < 90 && gap > GAP_CLEAR) {
-    state.clearCalled = true; // CLEAR: call it early and let the winner enjoy the run-in
+  if (!state.clearCalled && !closerFresh && done === 0 && live.length >= 2 && remaining < 90 && nobodyCatching(sim, tq)) {
+    state.clearCalled = true; // CLEAR: call it early (daylight now AND at the line) and let the winner enjoy the run-in
     say(commentator.clearRun(nm(live[0]), metres(gap)), 2, { duck: live[0].i, t: tq, kind: 'clear' });
   }
 
@@ -2561,7 +2893,9 @@ function samplePoll(tq) {
     if (!state.tailPhotoCalled && d1 < 32 && b1.x - b0.x < 6) {
       if (!scene.tailPair) scene.tailPair = [b1.i, b0.i];
       state.tailPhotoCalled = true;
-      callout(lastFirst ? 'PHOTO FOR FIRST PICK!' : 'PHOTO FOR LAST!', lastFirst ? 'wide gold photo' : 'wide photo', { maxWait: 2500, polite: true, rank: lastFirst ? 4 : 3 });
+      // phones: straight after the winner's ribbon a second one would keep the live strip covered — the line alone carries it
+      const crowdsStrip = isCompact() && performance.now() - cal.winAt < 1200;
+      if (!crowdsStrip) callout(lastFirst ? 'PHOTO FOR FIRST PICK!' : 'PHOTO FOR LAST!', lastFirst ? 'wide gold photo' : 'wide photo', { maxWait: 2500, polite: true, rank: lastFirst ? 4 : 3 });
       say(commentator.tailPhoto([nm(b1), nm(b0)], state.rule), 3, { duck: b0.i, t: tq, kind: 'tail' });
     }
   }
@@ -2618,11 +2952,11 @@ function handleEvent(ev) {
     case 'burst':
       if (Math.random() < 0.7) au.quack(pitch, 0.35);
       au.splash(0.18);
-      if (chatterRelevant(ev.duck, standings)) chatter(commentator.forEvent(ev, standings, state.t), 1, meta);
+      if (chatterRelevant(ev.duck, standings)) chatter(commentator.forEvent(ev, standings), 1, meta);
       break;
     case 'stumble':
       au.splash(0.12);
-      if (chatterRelevant(ev.duck, standings)) chatter(commentator.forEvent(ev, standings, state.t), 1, meta);
+      if (chatterRelevant(ev.duck, standings)) chatter(commentator.forEvent(ev, standings), 1, meta);
       break;
     case 'hotdog': {
       if (!look) break;
@@ -2642,9 +2976,14 @@ function handleEvent(ev) {
       scene.punch?.(0.06, a?.x, a?.y);
       callout('HOT DOG!', 'wide hotdog', { ttl: 1200 });
       hushChatter(ev.t);
-      say(commentator.forEvent(ev, standings, state.t), 3, { ...meta, kind: 'hotdog' });
+      // whose section threw it? (a seeded pick among the other managers — the target is always whoever leads)
+      const culprit = state.culprits.get(state.sim.events.indexOf(ev));
+      const culpritName = culprit !== undefined ? state.raceNames[culprit] : '';
+      if (culprit !== undefined) state.hitBy.set(ev.duck, culprit);
+      say(commentator.hotdog(ev.duck, culpritName), 3, { ...meta, kind: 'hotdog' });
       const rankBefore = Math.max(0, standings.findIndex((r) => r.i === ev.duck));
-      announce(rankBefore === 0 ? `Hot dog hits ${name}, the leader` : `Hot dog hits ${name}`);
+      if (culpritName) announce(`Hot dog from the ${culpritName} section hits ${name}${rankBefore === 0 ? ', the leader' : ''}`);
+      else announce(rankBefore === 0 ? `Hot dog hits ${name}, the leader` : `Hot dog hits ${name}`);
       state.victims.add(ev.duck);
       state.lastHotdogT = ev.t; // the board holds still while the victim tumbles (the 'hit' flash tells the story)
       state.followUps.push({ t: ev.t + FOLLOWUP_DELAY, duck: ev.duck, rankBefore });
@@ -2656,6 +2995,14 @@ function handleEvent(ev) {
       state.calledLeader = ev.duck;
       au.whooshDing();
       au.cheer(0.22, 1.2);
+      if (!mute.sfx && !state.climax && ev.t - state.motifT >= 4) {
+        // the new leader's own jingle, just after the whoosh (not during the run-in: that belongs to the tension bed)
+        state.motifT = ev.t;
+        const gen = raceGen;
+        setTimeout(() => {
+          if (gen === raceGen && !state.paused) audio.motif(look.motif);
+        }, 120);
+      }
       flashRow(ev.duck, 'newlead', 900);
       const lm = { ...meta, kind: 'lead' };
       commentator.noteLead(ev.duck, ev.t);
@@ -2665,21 +3012,22 @@ function handleEvent(ev) {
         state.avenged.add(ev.duck);
         callout('REVENGE!', 'wide gold revenge');
         hushChatter(ev.t);
-        say(commentator.revenge(name), 3, lm);
+        const by = state.hitBy.get(ev.duck);
+        say(commentator.revenge(name, by !== undefined ? state.raceNames[by] : ''), 3, lm);
         au.cheer(0.4, 2);
       } else if (fu >= 0) {
         // the victim just lost the lead to this duck: one headline instead of a lead line plus an aftermath line
         state.followUps.splice(fu, 1);
         say(commentator.leadFromVictim(name, state.raceNames[ev.from]), pri, lm);
       } else {
-        say(commentator.forEvent(ev, standings, state.t), pri, lm);
+        say(commentator.forEvent(ev, standings), pri, lm);
       }
       if (state.t > 1) announce(`${name} takes the lead`);
       updateHud(true); // a called lead change is definitive: snap the board to it
       break;
     }
     case 'halfway': {
-      say(commentator.forEvent(ev, standings, state.t), 2, { duck: standings[0]?.i ?? ev.duck, t: ev.t, kind: 'halfway' });
+      say(commentator.forEvent(ev, standings), 2, { duck: standings[0]?.i ?? ev.duck, t: ev.t, kind: 'halfway' });
       const top = standings.slice(0, 3).map((r) => state.raceNames[r.i]);
       announce(`Halfway: ${top.join(', then ')}`);
       break;
@@ -2690,7 +3038,7 @@ function handleEvent(ev) {
       au.cheer(0.3, 2.5);
       au.startTension(); // drone + heartbeat until the winner touches the wall
       hushChatter(ev.t);
-      say(commentator.forEvent(ev, standings, state.t), 3, { duck: standings[0]?.i ?? ev.duck, t: ev.t, kind: 'stretch' });
+      say(commentator.forEvent(ev, standings), 3, { duck: standings[0]?.i ?? ev.duck, t: ev.t, kind: 'stretch' });
       break;
     case 'finish': {
       if (!look) break;
@@ -2701,7 +3049,7 @@ function handleEvent(ev) {
       const photo = state.sim.photoFinish;
       const lastFirst = state.rule === 'last-first';
       const fts = state.sim.finishTimes;
-      const lineOpts = { photo, margin: state.sim.margin, victim: state.victims.has(ev.duck), rule: state.rule, n };
+      const lineOpts = { photo, margin: state.sim.margin, victim: state.victims.has(ev.duck), rule: state.rule, n, photoCalled: state.photoCalled };
       if (place === 1) {
         state.winnerAt = ev.t;
         // a steal: the winner was not in front for the whole of the last second (read off the sim, so every replay agrees)
@@ -2779,13 +3127,17 @@ function draftOrder() {
   return state.rule === 'last-first' ? order.reverse() : order; // winner-choice picks slots in finish order
 }
 
-function resultFacts() {
+/** The result's facts as parts: [ducks, margin, lead changes] + the code (which must never wrap at its hyphen) + provenance. */
+function resultFactParts() {
   const sim = state.sim;
   const n = sim.count;
   const close = sim.photoFinish ? 'photo finish' : `won by ${sim.margin.toFixed(2)}s`;
-  return `${n} ducks · ${close} · ${sim.leadChanges} lead change${sim.leadChanges === 1 ? '' : 's'} · code ${seedToCode(state.seed)} (${SOURCE_LABEL[state.seedSource]})`;
+  return {
+    facts: `${n} ducks · ${close} · ${sim.leadChanges} lead change${sim.leadChanges === 1 ? '' : 's'}`,
+    code: `code ${seedToCode(state.seed)}`,
+    source: SOURCE_LABEL[state.seedSource],
+  };
 }
-
 /** How duck-with-`place` did, in words: "won the race, 36.87s" / "finished 8th, 39.51s" / "last, 12th, 39.90s". */
 function placeWords(place, n, ft) {
   const w = place === 1 ? 'won the race' : place === n ? `last, ${ordinal(n)}` : `finished ${ordinal(place)}`;
@@ -2809,6 +3161,7 @@ function showResults({ nav = 'push' } = {}) {
   if (state.paused) setPaused(false);
   clearCallouts();
   clearTicker();
+  toast.clear();
   hideConfirm();
   stopCeremony();
   setPhase('results');
@@ -2831,27 +3184,32 @@ function showResults({ nav = 'push' } = {}) {
   const rule = normRule(state.rule);
   const R = RULES[rule];
   const lastFirst = rule === 'last-first';
-  const wide = picks.length >= 7 && window.innerWidth >= 1000;
   const winnerT = sim.finishTimes[order[0]];
   const league = state.league;
-  els.results.classList.toggle('results--wide', wide);
   els.results.classList.toggle('rule-last', lastFirst);
   els.results.classList.toggle('from-share', state.sharedRun);
+  els.results.classList.toggle('results--short', picks.length <= 5); // a small field gets a content-height panel, not a slab of empty glass
   els.replay.textContent = state.sharedRun ? 'Watch again' : 'Watch replay';
   els.rulePill.textContent = R.pill;
   arrangeActions();
-  // last place picks first: hero card on top, the (bragging-rights) podium demoted below the board
-  if (lastFirst) els.board.after(els.podiumCap, els.podium);
-  else els.hero.after(els.podiumCap, els.podium);
 
   // header: league name (with an overline) or the rule-aware title
   els.resultsOverline.hidden = !league;
   els.resultsOverline.textContent = R.h2;
   els.resultsTitle.textContent = league || R.h2;
+  // the race story (awards.js: pure of the sim, so every replay of the link tells it the same way)
+  const AW = (state.awards = raceAwards(sim, state.raceNames, rule));
   els.resultsSub.replaceChildren();
+  const story = document.createElement('span');
+  story.className = 'story';
+  story.textContent = AW.headline;
   const b = document.createElement('b');
   b.textContent = R.sentence;
-  els.resultsSub.append(b, ` · ${resultFacts()}`);
+  const fp = resultFactParts();
+  const codeEl = document.createElement('span');
+  codeEl.className = 'nowrap'; // "3GQ-M2XD" never breaks at its hyphen
+  codeEl.textContent = fp.code;
+  els.resultsSub.append(story, ' ', b, ` · ${fp.facts} · `, codeEl, ` (${fp.source})`);
   document.title = league ? `${league} draft order — Duck Derby` : DEFAULT_TITLE;
 
   // last-place-first: the last finisher is the story — hero card above a demoted podium
@@ -2865,11 +3223,12 @@ function showResults({ nav = 'push' } = {}) {
     els.hero.querySelector('.hero-name').textContent = look.name;
     els.hero.querySelector('.hero-meta').textContent = `Finished ${ordinal(n)} of ${n} · ${sim.finishTimes[duck].toFixed(2)}s`;
     const cv = els.hero.querySelector('canvas');
-    requestAnimationFrame(() => renderPortrait(cv, look, { standing: true, t: 2.2, crown: true }));
+    requestAnimationFrame(() => renderPortrait(cv, look, { standing: true, t: 2.2, crown: true, mood: 'joy' }));
   }
 
-  // podium: 2nd, 1st, 3rd
+  // podium: 2nd, 1st, 3rd (two ducks: 2nd, 1st — centred, no phantom third slot); the medals hang on the ducks themselves
   els.podium.innerHTML = '';
+  els.podium.style.gridTemplateColumns = order.length >= 3 ? '' : `repeat(${order.length}, minmax(0, 230px))`;
   const podiumIdx = [order[1], order[0], order[2]].filter((v) => v !== undefined);
   const places = order.length >= 3 ? [2, 1, 3] : order.length === 2 ? [2, 1] : [1];
   podiumIdx.forEach((duck, k) => {
@@ -2877,27 +3236,31 @@ function showResults({ nav = 'push' } = {}) {
     const look = state.looks[duck];
     const card = document.createElement('div');
     card.className = `step-card place-${place}`;
-    card.innerHTML = `<canvas aria-hidden="true"></canvas><div class="plinth"><span class="medal m${place}" aria-hidden="true"></span><div class="pl-place">${ordinal(place)}</div><div class="pl-name"></div><div class="pl-time">${sim.finishTimes[duck].toFixed(2)}s</div></div>`;
+    card.innerHTML = `<canvas aria-hidden="true"></canvas><div class="plinth"><div class="pl-place">${ordinal(place)}</div><div class="pl-plaque"><span class="pl-name"></span><span class="pl-time">${sim.finishTimes[duck].toFixed(2)}s</span></div></div>`;
     card.querySelector('.pl-name').textContent = look.name;
     els.podium.appendChild(card);
     const cv = card.querySelector('canvas');
     cv._look = look;
     cv._place = place;
-    requestAnimationFrame(() => renderPortrait(cv, look, { standing: true, t: 1 + k, crown: place === 1 }));
+    cv._medal = PODIUM_MEDAL[place];
+    requestAnimationFrame(() => renderPortrait(cv, look, { standing: true, t: 1 + k, crown: place === 1, mood: place === 1 ? 'joy' : '', medal: cv._medal }));
   });
 
-  // draft board (one header per column; two columns on wide screens with 9+ picks)
+  // draft board (layoutBoard adds the second column + header on wide screens with 7+ picks, and again on resize)
   els.board.innerHTML = '';
-  const half = Math.ceil(n / 2);
-  els.board.style.gridTemplateRows = wide ? `repeat(${half + 1}, auto)` : '';
+  els.board.appendChild(boardHeadRow(R));
+  const staged = !scene.reduceMotion; // the ceremony will reveal the board: rows arrive sealed
   picks.forEach((duck, k) => {
-    if (k === 0 || (wide && k === half)) els.board.appendChild(boardHeadRow(R));
     const look = state.looks[duck];
     const place = order.indexOf(duck) + 1;
     const ft = sim.finishTimes[duck];
     const li = document.createElement('li');
+    li._duck = duck;
     if (k === 0) li.className = 'first-pick';
-    if (!scene.reduceMotion) li.style.animationDelay = `${k * 45}ms`;
+    if (staged) {
+      li.classList.add('sealed');
+      li.style.animationDelay = `${k * 45}ms`;
+    }
     li.style.borderLeft = `6px solid ${look.towel.bg}`;
     let tag = '';
     if (lastFirst) {
@@ -2915,10 +3278,28 @@ function showResults({ nav = 'push' } = {}) {
     laneEl.style.background = look.towel.bg;
     laneEl.style.color = look.towel.text;
     li.querySelector('.nm').textContent = look.name;
+    // awards: up to two deterministic superlatives beside the name (a narrow slot shows one, in its short form — CSS)
+    const awards = AW.byDuck.get(duck) || [];
+    if (awards.length) {
+      const box = document.createElement('span');
+      box.className = 'awards';
+      for (const a of awards) {
+        const t = document.createElement('span');
+        t.className = 'tag award';
+        t.title = a.detail;
+        t.innerHTML = '<span class="aw-full"></span><span class="aw-short"></span>';
+        t.firstChild.textContent = `${a.icon} ${a.label}`;
+        t.lastChild.textContent = `${a.icon} ${a.short}`;
+        box.appendChild(t);
+      }
+      li.querySelector('.who').appendChild(box);
+    }
     els.board.appendChild(li);
     renderPortrait(li.querySelector('canvas'), look, { w: 46, h: 40, t: k * 0.3 });
   });
-  els.results.querySelector('.panel-scroll').scrollTop = 0;
+  layoutBoard();
+  els.resultsScroll.scrollTop = 0;
+  requestAnimationFrame(syncResultsOverflow);
   const url = shareUrl();
   // the official result gets its own history entry: browser Back from wherever the user goes next reopens this board
   try {
@@ -2934,6 +3315,44 @@ function showResults({ nav = 'push' } = {}) {
   els.resultsTitle.focus({ preventScroll: true });
   runCeremony({ lastFirst, firstPickName: state.looks[picks[0]].name });
 }
+
+/**
+ * Board columns follow the viewport: two columns (each with its own header row) for 7+ picks on screens >= 1000 px,
+ * one otherwise. Runs on show and again whenever the layout changes; the pick rows keep whatever state they are in.
+ */
+function layoutBoard() {
+  if (state.phase !== 'results' || !state.sim) return;
+  const rows = [...els.board.children].filter((li) => !li.classList.contains('board-head'));
+  const n = rows.length;
+  const wide = n >= 7 && window.innerWidth >= 1000;
+  els.results.classList.toggle('results--wide', wide);
+  els.results.classList.toggle('results--dense', wide && (n >= 13 || window.innerHeight <= 740)); // a smaller podium gives the rows the height
+  const heads = els.board.querySelectorAll('.board-head');
+  const half = Math.ceil(n / 2);
+  els.board.style.gridTemplateRows = wide ? `repeat(${half + 1}, auto)` : '';
+  if (wide && heads.length < 2 && rows[half]) els.board.insertBefore(boardHeadRow(RULES[normRule(state.rule)]), rows[half]);
+  else if (!wide && heads.length >= 2) for (let k = 1; k < heads.length; k++) heads[k].remove();
+  // phones: a row is the name plus at most one more line — a name that already wraps keeps its award in the exports only
+  for (const li of rows) li.classList.remove('no-awards');
+  if (isCompact()) for (const li of rows) if (li.querySelector('.awards') && li.querySelector('.who').getBoundingClientRect().height > 44) li.classList.add('no-awards');
+  // last place picks first: the (bragging-rights) podium is a small shelf beside the hero card on wide screens, else demoted below the board
+  const shelf = els.podiumShelf;
+  const anchor = state.rule === 'last-first' && !wide ? els.board : els.hero;
+  if (shelf.previousElementSibling !== anchor) anchor.after(shelf);
+  syncResultsOverflow();
+}
+
+/** Scroll cue: while more of the board sits below the fold, the panel's bottom edge fades (CSS [data-overflow="more"]). */
+function syncResultsOverflow() {
+  const sc = els.resultsScroll;
+  const more = state.phase === 'results' && sc.scrollHeight - sc.scrollTop - sc.clientHeight > 12;
+  if ((sc.dataset.overflow === 'more') !== more) {
+    if (more) sc.dataset.overflow = 'more';
+    else delete sc.dataset.overflow;
+  }
+}
+els.resultsScroll.addEventListener('scroll', syncResultsOverflow, { passive: true });
+const PODIUM_MEDAL = { 1: 'gold', 2: 'silver', 3: 'bronze' };
 
 // ---------------------------------------------------------------------------
 // Results ceremony: plinths rise 3-2-1 (thunk, thunk, a 1.35 s drumroll, GOLD
@@ -2992,19 +3411,45 @@ function runCeremony({ lastFirst = false, firstPickName = '' } = {}) {
     startPodiumLoop();
   });
   later(2850, () => R.classList.add('shine'));
+  // the board: rows nobody can see right now (below the fold on a phone) open silently; the visible ones flip open
+  // bottom-up, last pick first, with a breath before the top three — #1 lands last with the cymbal
   const step = rows.length > 12 ? 110 : 150;
-  const ordered = rows.slice().reverse(); // last pick first, #1 lands last
-  ordered.forEach((li, k) => {
-    later(2950 + k * step, () => {
-      li.classList.add('in');
-      if (k === ordered.length - 1) {
-        li.classList.add('gold-sweep');
-        audio.cymbal();
-        if (lastFirst) flashResults(`${firstPickName} PICKS FIRST`);
-      } else audio.tick();
+  const top = rows[0];
+  later(2950, () => {
+    const box = els.resultsScroll.getBoundingClientRect();
+    const visible = [];
+    for (const li of rows.slice().reverse()) {
+      const r = li.getBoundingClientRect();
+      if (r.bottom <= box.top + 4 || r.top >= box.bottom - 4) unsealRow(li, false);
+      else visible.push(li);
+    }
+    let at = 0;
+    visible.forEach((li, k) => {
+      const left = visible.length - k; // rows still to open, counting this one
+      if (left === 3 && visible.length > 4) at += 450; // …and the top three
+      later(at, () => {
+        unsealRow(li, true);
+        const look = left <= 3 ? state.looks[li._duck] : null; // the top three land with their own jingle
+        if (li === top) {
+          li.classList.add('gold-sweep');
+          audio.cymbal();
+          if (look) setTimeout(() => state.phase === 'results' && audio.motif(look.motif, 0.2), 160);
+          if (lastFirst) flashResults(`${firstPickName} PICKS FIRST`);
+        } else if (look) audio.motif(look.motif, 0.12);
+        else audio.tick();
+      });
+      at += step;
     });
+    later(at + 450, () => finishCeremony(false));
   });
-  later(2950 + ordered.length * step + 450, () => finishCeremony(false));
+}
+
+/** Open a sealed board row: with the flip when the viewer can see it, silently otherwise. */
+function unsealRow(li, animate) {
+  li.classList.remove('sealed');
+  li.style.animationDelay = '';
+  li.classList.add('in');
+  if (animate) li.classList.add('flip');
 }
 
 /** End state: everything revealed, no timers or drumroll left behind. `instant` = skipped by the user. */
@@ -3016,12 +3461,14 @@ function finishCeremony(instant) {
     state.roll = null;
   }
   const R = els.results;
-  for (const el of R.querySelectorAll('.step-card, .draft-board li')) el.classList.add('in');
+  for (const el of R.querySelectorAll('.step-card')) el.classList.add('in');
+  for (const li of R.querySelectorAll('.draft-board li:not(.board-head)')) if (!li.classList.contains('in')) unsealRow(li, false);
   R.classList.add('revealed');
   if (instant) R.classList.add('shine');
   const revealBtn = $('#btn-reveal-all');
   if (revealBtn) revealBtn.hidden = true;
   if (state.phase === 'results' && !state.podiumRaf) startPodiumLoop();
+  syncResultsOverflow();
 }
 
 /** Leaving the results (new race / edit): kill timers, loops and confetti. */
@@ -3101,17 +3548,30 @@ function startPodiumLoop() {
           beakOpen: lively && sec % 3.1 < 0.25 ? 1 : 0,
           hopY: lively ? Math.abs(Math.sin(Math.PI * 1.2 * sec)) * 6 : 0,
           crown: true,
+          mood: sec % 5 < 3 ? 'joy' : '', // beaming, then a look around
+          medal: cv._medal,
         });
       } else if (do23) {
-        renderPortrait(cv, cv._look, { standing: true, t: sec * (lively ? 1 : 0.5) + cv._place });
+        renderPortrait(cv, cv._look, { standing: true, t: sec * (lively ? 1 : 0.5) + cv._place, medal: cv._medal });
       }
     }
   };
   state.podiumRaf = requestAnimationFrame(loop);
 }
 
-// DOM confetti over the results panel (its own canvas + rAF; removed when the last piece dies)
-const FX_COLS = ['#FF3CAC', '#2BD2FF', '#FFE066', '#7CFF6B', '#FF7A2F', '#B18AF0', '#FFFFFF'];
+// DOM confetti for the results: two cannons arc over the card (canvas above the panel for 1.2 s), then the canvas
+// drops BEHIND the glass so the drizzle shows through the backdrop blur and never speckles the headline. Paper in
+// the first pick's colours (scene._winPalette) mixed with the house palette, two-tone as it tumbles; its own rAF,
+// removed with the last piece. Where the panel has no blur to show through (phones, low-fx, old browsers) the
+// drizzle only falls beside the panel.
+const FX_FRONT_MS = 1200;
+function darker(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return hex;
+  const v = parseInt(m[1], 16);
+  const ch = (k) => Math.round(((v >> k) & 255) * 0.7);
+  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+}
 function launchDomConfetti() {
   if (scene.reduceMotion) return;
   const panel = els.results.getBoundingClientRect();
@@ -3123,17 +3583,24 @@ function launchDomConfetti() {
     document.body.appendChild(cv);
   }
   cv._kill = false;
+  const born = performance.now();
+  cv.style.zIndex = '26';
   const dpr = Math.min(1.5, window.devicePixelRatio || 1);
   const W = window.innerWidth;
   const H = window.innerHeight;
   cv.width = Math.round(W * dpr);
   cv.height = Math.round(H * dpr);
   const ctx = cv.getContext('2d');
-  const halve = scene.qualityTier >= 2 ? 0.5 : 1;
+  const halve = scene.qualityTier >= 2 ? 0.5 : scene.qualityTier === 1 ? 0.75 : 1;
+  const ui = scene.ui || 1;
+  const glass = !isCompact() && !document.body.classList.contains('lowfx') && !!window.CSS?.supports?.('backdrop-filter', 'blur(1px)');
+  const champ = scene._winPalette ? scene._winPalette(draftOrder()[0]) : CONFETTI_COLS;
   const pieces = cv._pieces || (cv._pieces = []);
   const spawn = (x, y, angDeg, spreadDeg, spMin, spMax) => {
     const a = ((angDeg + (Math.random() - 0.5) * 2 * spreadDeg) * Math.PI) / 180;
     const sp = spMin + Math.random() * (spMax - spMin);
+    const pal = Math.random() < 0.5 ? champ : CONFETTI_COLS;
+    const color = pal[(Math.random() * pal.length) | 0] || CONFETTI_COLS[0];
     pieces.push({
       x,
       y,
@@ -3142,13 +3609,16 @@ function launchDomConfetti() {
       rot: Math.random() * 6.28,
       vr: (Math.random() - 0.5) * 12,
       seed: Math.random() * 6.28,
-      streamer: Math.random() < 0.3,
-      color: FX_COLS[(Math.random() * FX_COLS.length) | 0],
+      streamer: Math.random() < 0.25,
+      w: (9 + Math.random() * 3) * ui,
+      h: (5 + Math.random() * 2) * ui,
+      color,
+      shade: darker(color),
       age: 0,
       life: 2.4 + Math.random(),
     });
   };
-  const nCannon = Math.round(70 * halve);
+  const nCannon = Math.round(110 * halve);
   for (let k = 0; k < nCannon; k++) {
     spawn(panel.left + 10, panel.top + 6, -65, 15, 380, 640);
     spawn(panel.right - 10, panel.top + 6, -115, 15, 380, 640);
@@ -3161,16 +3631,27 @@ function launchDomConfetti() {
     const dt = Math.min(0.05, (now - prev) / 1000);
     prev = now;
     if (cv._kill) pieces.length = 0;
+    if (cv.style.zIndex !== '19' && now - born > FX_FRONT_MS) cv.style.zIndex = '19'; // behind the .panel (z 20) from here on
     if (drizzleLeft > 0 && !cv._kill) {
       drizzleLeft -= dt;
       drizzleAcc += dt * 20 * halve;
       while (drizzleAcc >= 1) {
         drizzleAcc -= 1;
-        spawn(panel.left + Math.random() * panel.width, -10, 90, 20, 40, 120);
+        let x = panel.left + Math.random() * panel.width;
+        if (!glass) {
+          // nothing to show through: fall in the margins beside the panel instead (none on a full-width phone panel)
+          const leftW = Math.max(0, panel.left);
+          const rightW = Math.max(0, W - panel.right);
+          if (leftW + rightW < 24) continue;
+          const r = Math.random() * (leftW + rightW);
+          x = r < leftW ? r : panel.right + (r - leftW);
+        }
+        spawn(x, -10, 90, 20, 40, 120);
       }
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
+    ctx.lineCap = 'round';
     for (let k = pieces.length - 1; k >= 0; k--) {
       const q = pieces[k];
       q.age += dt;
@@ -3187,18 +3668,23 @@ function launchDomConfetti() {
       q.y += q.vy * dt;
       q.rot += q.vr * dt;
       const fx = q.x + Math.sin(q.age * 6 + q.seed) * 18;
-      const fade = Math.min(1, (q.life - q.age) * 2.5);
-      ctx.globalAlpha = fade;
-      ctx.fillStyle = q.color;
+      const flip = Math.cos(q.age * 7 + q.seed); // tumbling: edge-on at 0, the back face when negative
+      ctx.globalAlpha = Math.min(1, (q.life - q.age) * 2.5);
       ctx.save();
       ctx.translate(fx, q.y);
       ctx.rotate(q.rot);
       if (q.streamer) {
-        ctx.scale(1, 0.6 + 0.4 * Math.cos(q.age * 5 + q.seed));
-        ctx.fillRect(-1.25, -8, 2.5, 16);
+        const bend = Math.sin(q.age * 5 + q.seed) * 8 * ui;
+        ctx.strokeStyle = flip < 0 ? q.shade : q.color;
+        ctx.lineWidth = 3 * ui;
+        ctx.beginPath();
+        ctx.moveTo(0, -11 * ui);
+        ctx.quadraticCurveTo(bend, 0, 0, 11 * ui);
+        ctx.stroke();
       } else {
-        ctx.scale(0.25 + 0.75 * Math.abs(Math.cos(q.age * 7 + q.seed)), 1); // tumbling flip
-        ctx.fillRect(-3.5, -2, 7, 4);
+        ctx.fillStyle = flip < 0 ? q.shade : q.color;
+        ctx.scale(0.2 + 0.8 * Math.abs(flip), 1);
+        ctx.fillRect(-q.w / 2, -q.h / 2, q.w, q.h);
       }
       ctx.restore();
     }
@@ -3220,13 +3706,17 @@ function resultText({ withUrl = true } = {}) {
   const order = sim.order;
   const n = order.length;
   const choice = rule === 'winner-choice';
+  const AW = state.awards || raceAwards(sim, state.raceNames, rule);
   const lines = [
     `🦆 ${state.league || 'Duck Derby'} — ${R.h2} · ${new Date().toLocaleDateString()}`,
+    AW.headline,
     `${R.sentence}. Race finish in brackets.`,
     ...draftOrder().map((d, k) => {
-      const who = `${state.looks[d].name}  (${placeWords(order.indexOf(d) + 1, n, sim.finishTimes[d])})`;
+      const aw = (AW.byDuck.get(d) || [])[0];
+      const who = `${state.looks[d].name}  (${placeWords(order.indexOf(d) + 1, n, sim.finishTimes[d])})${aw ? ` — ${aw.icon} ${aw.label}` : ''}`;
       return choice ? `${ordinal(k + 1)} to choose — ${who}` : `Pick ${slotNo(k)} — ${who}`;
     }),
+    ...hotdogLines(sim, state.raceNames, AW.culprits),
   ];
   lines.push(`Race code ${seedToCode(state.seed)} (${SOURCE_LABEL[state.seedSource]}).${withUrl ? ' Verify: open the link on any device — it re-runs this exact race from the code.' : ''}`);
   if (withUrl) lines.push('', `Replay / verify: ${shareUrl()}`);
@@ -3251,6 +3741,9 @@ function arrangeActions() {
     els.actions.insertBefore(els.copy, strip);
     strip.insertBefore(els.replay, strip.firstChild);
   }
+  // landscape phones keep the chips on one line: a fade marks the (rare) overflow; toasts learn the footer's height
+  strip.classList.toggle('overflow', landscapeCompact() && strip.scrollWidth > strip.clientWidth + 2);
+  publishFooterH();
 }
 
 /** @param {{keepShared?: boolean}} [opts] keepShared: arriving on a shared link via browser Back — stay locked to it */
@@ -3260,6 +3753,7 @@ function backToSetup({ keepShared = false } = {}) {
   if (!keepShared) leaveSharedMode(true); // back to setup = a new race: never re-run the seed we just watched
   clearCallouts();
   clearTicker();
+  toast.clear();
   stopCeremony();
   clearTimeout(state.ambienceTimer);
   state.ambienceTimer = 0;
@@ -3320,7 +3814,8 @@ els.share.addEventListener('click', async () => {
   const url = shareUrl();
   if (typeof navigator.share === 'function') {
     try {
-      await navigator.share({ title: `${state.league || 'Duck Derby'} draft order`, text: resultText({ withUrl: false }), url });
+      const story = (state.awards || raceAwards(state.sim, state.raceNames, normRule(state.rule))).headline;
+      await navigator.share({ title: `${state.league || 'Duck Derby'} draft order`, text: `${story} ${RULES[normRule(state.rule)].sentence}.`, url });
       state.resultExported = true;
       return;
     } catch (err) {
@@ -3377,18 +3872,62 @@ function imageFileName() {
 }
 
 /** Shrink-to-fit single-line text. */
-function fitText(ctx, text, maxW, size, weight, family) {
+function fitText(ctx, text, maxW, size, weight, family, floor = 12) {
   let s = size;
   ctx.font = `${weight} ${s}px ${family}`;
-  while (s > 12 && ctx.measureText(text).width > maxW) {
+  while (s > floor && ctx.measureText(text).width > maxW) {
     s -= 2;
     ctx.font = `${weight} ${s}px ${family}`;
   }
   return s;
 }
 
+/** Shrink to `floor` px, then ellipsize by code points until it fits; leaves ctx.font set. Returns the text to draw. */
+function fitName(ctx, text, maxW, size, floor, weight, family) {
+  fitText(ctx, text, maxW, size, weight, family, floor);
+  if (ctx.measureText(text).width <= maxW) return text;
+  let cps = Array.from(text);
+  while (cps.length > 1) {
+    cps = cps.slice(0, -1);
+    const t = `${cps.join('').trimEnd()}…`;
+    if (ctx.measureText(t).width <= maxW) return t;
+  }
+  return '…';
+}
+
+/** Greedy word wrap into at most `maxLines` lines at the current font, shrinking from `size` to `floor` first; the last line ellipsizes. */
+function wrapLines(ctx, text, maxW, maxLines, size, floor, weight, family) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  const layout = () => {
+    const lines = [];
+    let cur = '';
+    for (const w of words) {
+      const t = cur ? `${cur} ${w}` : w;
+      if (cur && ctx.measureText(t).width > maxW) {
+        lines.push(cur);
+        cur = w;
+      } else cur = t;
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  };
+  let s = size;
+  ctx.font = `${weight} ${s}px ${family}`;
+  let lines = layout();
+  while (lines.length > maxLines && s > floor) {
+    s -= 2;
+    ctx.font = `${weight} ${s}px ${family}`;
+    lines = layout();
+  }
+  if (lines.length > maxLines) {
+    lines = lines.slice(0, maxLines);
+    lines[maxLines - 1] = fitName(ctx, `${lines[maxLines - 1]} …`, maxW, s, s, weight, family);
+  }
+  return { lines, size: s };
+}
+
 /** Render the shareable result card. @returns {Promise<Blob>} */
-function renderResultImage() {
+async function renderResultImage() {
   const picks = draftOrder();
   const sim = state.sim;
   const order = sim.order;
@@ -3396,11 +3935,24 @@ function renderResultImage() {
   const R = RULES[rule];
   const lastFirst = rule === 'last-first';
   const league = state.league;
+  const AW = state.awards || raceAwards(sim, state.raceNames, rule);
   const DISPLAY = 'Bungee, ui-rounded, "Arial Rounded MT Bold", system-ui, sans-serif';
   const UI = 'Nunito, ui-rounded, system-ui, sans-serif';
+  // the self-hosted display face may still be in flight (font-display: block): give it a moment so the PNG uses it
+  if (document.fonts?.load) {
+    try {
+      await Promise.race([Promise.all([document.fonts.load(`40px ${DISPLAY}`), document.fonts.load(`800 22px ${UI}`)]), new Promise((r) => setTimeout(r, 700))]);
+    } catch {
+      /* renders with the fallback stack */
+    }
+  }
   const W = 1080;
   const rowH = 74;
-  const top = 300;
+  const textW = W - 60 - 300; // header text leaves room for the hero portrait on the right
+  const probe = document.createElement('canvas').getContext('2d');
+  const story = wrapLines(probe, AW.headline, textW, 2, 22, 16, 800, UI); // the one-line race story, wrapped to two
+  const storyH = story.lines.length * (story.size + 6) + 10;
+  const top = 300 + storyH;
   const H = top + 30 + picks.length * rowH + 70;
   const c = document.createElement('canvas');
   c.width = W;
@@ -3422,8 +3974,7 @@ function renderResultImage() {
     ctx.fillRect(x + 14, 0, 14, 14);
     ctx.fillRect(x, 14, 14, 14);
   }
-  // header text (leaves room for the hero portrait on the right)
-  const textW = W - 60 - 300;
+  // header text
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   ctx.fillStyle = '#fff';
@@ -3438,16 +3989,20 @@ function renderResultImage() {
   const facts = `${new Date().toLocaleDateString()} · ${sim.count} ducks · ${sim.photoFinish ? 'photo finish' : `won by ${sim.margin.toFixed(2)}s`} · code ${seedToCode(state.seed)} (${SOURCE_LABEL[state.seedSource]})`;
   fitText(ctx, facts, textW, 22, 800, UI);
   ctx.fillText(facts, 62, 172);
+  // the race story
+  ctx.fillStyle = '#fff';
+  ctx.font = `800 ${story.size}px ${UI}`;
+  story.lines.forEach((ln, k) => ctx.fillText(ln, 62, 206 + k * (story.size + 6)));
   // rule pill
   ctx.font = `900 20px ${UI}`;
   const pill = R.pill;
   const pw = ctx.measureText(pill).width + 32;
   ctx.fillStyle = lastFirst ? '#FFD23F' : 'rgba(255,255,255,0.18)';
-  roundRect(ctx, 60, 210, pw, 38, 19);
+  roundRectPath(ctx, 60, 210 + storyH, pw, 38, 19);
   ctx.fill();
   ctx.fillStyle = lastFirst ? '#3b2400' : '#fff';
   ctx.textBaseline = 'middle';
-  ctx.fillText(pill, 76, 230);
+  ctx.fillText(pill, 76, 230 + storyH);
   // hero portrait top-right: the first PICK (not necessarily the race winner)
   const heroLook = state.looks[picks[0]];
   const hg = ctx.createRadialGradient(W - 170, 150, 10, W - 170, 150, 130);
@@ -3475,10 +4030,10 @@ function renderResultImage() {
     const y = top + 24 + k * rowH;
     const look = state.looks[duck];
     ctx.fillStyle = k % 2 ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.16)';
-    roundRect(ctx, 50, y, W - 100, rowH - 10, 18);
+    roundRectPath(ctx, 50, y, W - 100, rowH - 10, 18);
     ctx.fill();
     ctx.fillStyle = look.towel.bg;
-    roundRect(ctx, 50, y, 10, rowH - 10, 5);
+    roundRectPath(ctx, 50, y, 10, rowH - 10, 5);
     ctx.fill();
     ctx.fillStyle = '#FFD23F';
     ctx.textAlign = 'center';
@@ -3488,15 +4043,30 @@ function renderResultImage() {
     ctx.fillText(pickTxt, 100, y + rowH / 2 - 4);
     ctx.textAlign = 'left';
     drawDuck(ctx, look, { x: 190, y: y + rowH / 2 + 6, scale: 0.62, t: k, effort: 0.2 });
-    ctx.fillStyle = '#fff';
-    fitText(ctx, look.name, W - 250 - 300, 30, 900, UI);
-    ctx.fillText(look.name, 250, y + rowH / 2 - 4);
+    // the finish column (time, and the first award under it) is measured first; the name shrinks (and, past 16 px,
+    // ellipsizes) to stop 28 px short of whichever is wider
     const place = order.indexOf(duck) + 1;
     const ft = sim.finishTimes[duck];
+    const meta = `${ordinal(place)} · ${ft.toFixed(2)}s${place > 1 ? `  (+${(ft - winnerT).toFixed(2)})` : ''}`;
+    const aw = (AW.byDuck.get(duck) || [])[0];
+    const awText = aw ? `${aw.icon} ${aw.label}` : '';
+    ctx.font = `800 16px ${UI}`;
+    const awW = aw ? ctx.measureText(awText).width : 0;
+    ctx.font = `800 22px ${UI}`;
+    const metaW = ctx.measureText(meta).width;
+    const nameMax = W - 80 - Math.max(metaW, awW) - 28 - 250;
+    ctx.fillStyle = '#fff';
+    const name = fitName(ctx, look.name, nameMax, 30, 16, 900, UI);
+    ctx.fillText(name, 250, y + rowH / 2 - 4);
     ctx.fillStyle = 'rgba(255,255,255,0.78)';
     ctx.font = `800 22px ${UI}`;
     ctx.textAlign = 'right';
-    ctx.fillText(`${ordinal(place)} · ${ft.toFixed(2)}s${place > 1 ? `  (+${(ft - winnerT).toFixed(2)})` : ''}`, W - 80, y + rowH / 2 - 4);
+    ctx.fillText(meta, W - 80, y + rowH / 2 - (aw ? 14 : 4));
+    if (aw) {
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.font = `800 16px ${UI}`;
+      ctx.fillText(awText, W - 80, y + rowH / 2 + 11);
+    }
     ctx.textAlign = 'left';
   });
   ctx.fillStyle = 'rgba(255,255,255,0.6)';
@@ -3545,20 +4115,6 @@ async function saveImage() {
   toast('Image saved');
 }
 
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
@@ -3569,7 +4125,7 @@ function cancelAutoplay() {
   autoplayTimer = 0;
 }
 
-readShareParams();
+readShareParams({ boot: true });
 syncOptionInputs();
 renderShareBanner();
 measureSafeAreas();
@@ -3584,6 +4140,12 @@ window.addEventListener('resize', () => {
       measureSafeAreas();
       scene.resize();
       updateInsets();
+      // before the gun the ducks sit on the start line: reframe them for the new size (a rotation mid-countdown used to
+      // leave the camera where the old viewport had it)
+      if (state.phase === 'intro' || state.phase === 'countdown') {
+        scene.snapCamera(0);
+        if (state.phase === 'intro' && state.sim && scene.beginIntro) scene.beginIntro();
+      }
     });
   }
   // rebuild the live-order rows once the resize settles (row height depends on it)
@@ -3591,14 +4153,21 @@ window.addEventListener('resize', () => {
   resizeTimer = setTimeout(() => {
     if (state.sim && !els.hud.hidden) buildStandings();
     else updateInsets();
-    if (state.phase === 'results') arrangeActions();
+    if (state.phase === 'results') {
+      layoutBoard();
+      arrangeActions();
+    }
+    fitTitleCard();
   }, 120);
 });
 const onCompactChange = () => {
   updateInsets();
   if (state.sim && !els.hud.hidden) buildStandings();
   else syncHudChrome();
-  if (state.phase === 'results') arrangeActions();
+  if (state.phase === 'results') {
+    layoutBoard();
+    arrangeActions();
+  }
 };
 // browser Back / Forward: a result URL reopens its board, a shared link its locked setup, a bare URL the plain setup
 window.addEventListener('popstate', (e) => {

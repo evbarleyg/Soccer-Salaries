@@ -50,8 +50,11 @@ const KETCHUP = '#D7263D';
  *   crown    draw a small floating crown above the headgear
  *   noStroke skip silhouette outlines and the roundel numeral (cheap passes)
  *   leadGlow 0..1 golden contact ripple for the race leader
- *   wingLift static wing raise in radians (start-line "revving" pose), added under any flap
+ *   wingLift static wing raise in radians (start-line "revving" pose), added under any flap; > 0.5 raises both wings (victory V)
  *   simpleClip clip the hull with a straight waterline instead of the wavy path (low-fx tier)
+ *   mood     '' | 'grit' | 'smug' | 'shock' | 'joy' | 'gloom' — brows / lids / eye shape (dizzy always wins)
+ *   gaze     {dx, dy} each -1..1: where the pupil sits in the eye (0,0 = a touch forward)
+ *   medal    '' | 'gold' | 'silver' | 'bronze' — standing pose only: lane-colour ribbon V and a coin over the roundel
  */
 export function drawDuck(ctx, look, o = {}) {
   const {
@@ -61,7 +64,6 @@ export function drawDuck(ctx, look, o = {}) {
     t = 0,
     effort = 0.5,
     flap = 0,
-    beakOpen = 0,
     tilt = 0,
     standing = false,
     alpha = 1,
@@ -77,7 +79,12 @@ export function drawDuck(ctx, look, o = {}) {
     leadGlow = 0,
     wingLift = 0,
     simpleClip = false,
+    mood = '',
+    gaze = null,
+    medal = '',
   } = o;
+  let { beakOpen = 0 } = o;
+  if (mood === 'joy') beakOpen = Math.max(beakOpen, 0.5);
   const racing = pad !== undefined && pad !== null;
   const pal = look.palette;
   const pc = paletteCache(ctx, pal);
@@ -122,7 +129,10 @@ export function drawDuck(ctx, look, o = {}) {
   }
 
   const flapHz = 7 * (look.flapRate || 1);
-  const flapAngle = (flap > 0.01 ? -flap * (0.55 + 0.45 * Math.sin(t * flapHz * TAU)) * 1.05 : Math.sin(t * 2 + (look.bobPhase || 0)) * 0.04) - wingLift;
+  // positive = the wing swings UP (clockwise for a right-facing duck): flaps beat upward from rest, wingLift holds it raised
+  const flapAngle = (flap > 0.01 ? flap * (0.55 + 0.45 * Math.sin(t * flapHz * TAU)) * 1.05 : Math.sin(t * 2 + (look.bobPhase || 0)) * 0.04) + wingLift;
+  const vee = wingLift > 0.5; // victory V: a bigger near wing and the far wing raised behind the body
+  const wingK = vee ? 1 + 0.3 * Math.min(1, (wingLift - 0.5) / 0.4) : 1;
 
   // --- tail feathers ---
   ctx.save();
@@ -140,6 +150,23 @@ export function drawDuck(ctx, look, o = {}) {
     ctx.stroke();
   }
   ctx.restore();
+
+  // --- far wing (only when raised: both wings up frame the head) ---
+  if (vee) {
+    ctx.save();
+    ctx.translate(-4, -6);
+    ctx.rotate(flapAngle * 1.12);
+    ctx.scale(wingK, wingK);
+    wingPath(ctx);
+    ctx.fillStyle = pal.wingShade;
+    ctx.fill();
+    if (!noStroke) {
+      ctx.lineWidth = 1.4 / wingK;
+      ctx.strokeStyle = pc.wingStroke;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   // --- body ---
   bodyPath(ctx);
@@ -167,6 +194,7 @@ export function drawDuck(ctx, look, o = {}) {
   ctx.save();
   ctx.translate(4.5, -4.5);
   ctx.rotate(flapAngle);
+  if (vee) ctx.scale(wingK, wingK);
   wingPath(ctx);
   ctx.fillStyle = 'rgba(0,0,0,0.14)';
   ctx.fill();
@@ -176,6 +204,15 @@ export function drawDuck(ctx, look, o = {}) {
     bodyPath(ctx);
     ctx.lineWidth = lw(1.6) + 2.2;
     ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.stroke();
+  }
+  const rim = !noStroke && !standing && s >= 0.5; // warm top rim + cool water bounce: separates dark plumage from the water
+  if (rim) {
+    // one inner band along the silhouette (we are clipped to the body; the outline covers the outer half): a vertical
+    // gradient makes it warm light along the top, clear down the flank, sky-blue bounce just above the waterline
+    bodyPath(ctx);
+    ctx.lineWidth = 2 * lw(1.4) + lw(1.6);
+    ctx.strokeStyle = pc.rim;
     ctx.stroke();
   }
   ctx.restore();
@@ -193,6 +230,7 @@ export function drawDuck(ctx, look, o = {}) {
   ctx.save();
   ctx.translate(3, -7);
   ctx.rotate(flapAngle);
+  if (vee) ctx.scale(wingK, wingK);
   wingPath(ctx);
   ctx.fillStyle = pc.wing;
   ctx.fill();
@@ -211,6 +249,8 @@ export function drawDuck(ctx, look, o = {}) {
   ctx.lineWidth = 1.2;
   ctx.stroke();
   ctx.restore();
+
+  if (medal && standing) drawMedal(ctx, look, medal, outline);
 
   // --- head ---
   let pump;
@@ -242,7 +282,7 @@ export function drawDuck(ctx, look, o = {}) {
   ctx.fillStyle = pc.head;
   ctx.fill();
   ctx.restore();
-  if (sauce > 0.05 || pal.outline) {
+  if (sauce > 0.05 || pal.outline || rim) {
     ctx.save();
     ctx.clip();
     if (sauce > 0.05) sauceSplats(ctx, look, sauce, 'head', hx, hy);
@@ -252,6 +292,15 @@ export function drawDuck(ctx, look, o = {}) {
       ctx.lineWidth = lw(1.6) + 2.2;
       ctx.strokeStyle = 'rgba(255,255,255,0.18)';
       ctx.stroke();
+    }
+    if (rim) {
+      ctx.translate(hx, hy);
+      ctx.beginPath();
+      ctx.arc(0, 0, hr, (200 * Math.PI) / 180, (340 * Math.PI) / 180);
+      ctx.lineWidth = 2 * lw(1.4) + lw(1.6);
+      ctx.strokeStyle = pc.rimHead;
+      ctx.stroke();
+      ctx.translate(-hx, -hy);
     }
     ctx.restore();
   }
@@ -263,21 +312,36 @@ export function drawDuck(ctx, look, o = {}) {
     ctx.stroke();
   }
 
-  // cheeks
-  if (look.cheeks) {
-    ctx.fillStyle = 'rgba(255,105,140,0.35)';
+  // cheeks (a joyful duck blushes whether or not it usually has cheeks)
+  if (look.cheeks || mood === 'joy') {
+    ctx.fillStyle = mood === 'joy' ? 'rgba(255,105,140,0.45)' : 'rgba(255,105,140,0.35)';
     ctx.beginPath();
-    ctx.ellipse(hx + 5, hy + 5.5, 3.2, 2, 0, 0, TAU);
+    ctx.ellipse(hx + 5, hy + 5.5, mood === 'joy' ? 3.6 : 3.2, mood === 'joy' ? 2.3 : 2, 0, 0, TAU);
     ctx.fill();
   }
 
   // --- beak ---
   drawBeak(ctx, pal, hx, hy, beakOpen, outline, noStroke ? 0 : lw(1.1));
 
-  // --- eye ---
+  // --- eye (+ brow / lid / tear by mood; hats over the eye keep the plain eye under them) ---
   const blinkPhase = (t + (look.blinkOffset || 0)) % 4.2;
   const blink = blinkPhase < 0.11 ? 1 : 0;
-  drawEye(ctx, pal, hx + 5, hy - 3, blink, dizzy, t);
+  const covered = look.hat === 'shades' || look.hat === 'pirate';
+  drawEye(ctx, pal, hx + 5, hy - 3, blink, dizzy, t, covered ? '' : mood, gaze, outline, s);
+  if (mood === 'shock' && dizzy <= 0.3 && s >= 0.6) {
+    // three sweat ticks flying off the back of the head
+    ctx.strokeStyle = 'rgba(120,200,255,0.9)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    for (let k = 0; k < 3; k++) {
+      const a = Math.PI * (0.86 + 0.13 * k);
+      const c = Math.cos(a);
+      const sn = Math.sin(a);
+      ctx.moveTo(hx + c * (hr + 2.5), hy + sn * (hr + 2.5));
+      ctx.lineTo(hx + c * (hr + 6.5), hy + sn * (hr + 6.5));
+    }
+    ctx.stroke();
+  }
 
   // hats in front
   drawHat(ctx, look, t, hx, hy, hr, 'front');
@@ -330,6 +394,20 @@ function paletteCache(ctx, pal) {
   beak.addColorStop(0, lighten(pal.beak));
   beak.addColorStop(1, pal.beak);
   c.beak = beak;
+  // rim light band: warm along the top (y -18..-4), nothing on the flank, cool water bounce at y 2..8, nothing below
+  const rim = ctx.createLinearGradient(0, -18, 0, 10);
+  rim.addColorStop(0, 'rgba(255,248,225,0.55)');
+  rim.addColorStop(0.4, 'rgba(255,248,225,0.45)');
+  rim.addColorStop(0.6, 'rgba(255,248,225,0)');
+  rim.addColorStop(0.68, 'rgba(150,210,255,0)');
+  rim.addColorStop(0.75, 'rgba(150,210,255,0.17)');
+  rim.addColorStop(0.93, 'rgba(150,210,255,0.17)');
+  rim.addColorStop(1, 'rgba(150,210,255,0)');
+  c.rim = rim;
+  const rimHead = ctx.createLinearGradient(0, -13, 0, 0); // about the head centre (drawn translated)
+  rimHead.addColorStop(0, 'rgba(255,248,225,0.55)');
+  rimHead.addColorStop(1, 'rgba(255,248,225,0.1)');
+  c.rimHead = rimHead;
   try {
     Object.defineProperty(pal, '_c', { value: c, enumerable: false, configurable: true });
   } catch {
@@ -581,7 +659,48 @@ function drawBeak(ctx, pal, hx, hy, open, outline, lineW = 1.1) {
 }
 
 
-function drawEye(ctx, pal, ex, ey, blink, dizzy, t) {
+const MEDAL_COLS = { gold: ['#FFE68A', '#D99A00'], silver: ['#F1F3F6', '#8E96A3'], bronze: ['#F0B27A', '#9A5A24'] };
+
+/** Podium medal: a ribbon V in the lane colour from the neck to a coin over the chest roundel. */
+function drawMedal(ctx, look, medal, outline) {
+  const cols = MEDAL_COLS[medal];
+  if (!cols) return;
+  const cx = 13;
+  const cy = 1;
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = look.towel.bg;
+  ctx.lineWidth = 3.2;
+  ctx.beginPath();
+  ctx.moveTo(6, -14);
+  ctx.lineTo(cx, cy - 3);
+  ctx.lineTo(21, -12.5);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 0.7;
+  ctx.stroke();
+  const g = ctx.createLinearGradient(0, cy - 5, 0, cy + 5);
+  g.addColorStop(0, cols[0]);
+  g.addColorStop(1, cols[1]);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 5, 0, TAU);
+  ctx.fill();
+  ctx.lineWidth = 0.9;
+  ctx.strokeStyle = outline;
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.beginPath();
+  ctx.ellipse(cx - 1.8, cy - 2, 1.6, 0.9, -0.5, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * The eye: a big sclera with a gazing pupil and two highlights; `mood` adds a brow (grit), a lid (smug, gloom),
+ * a wide-eyed stare (shock) or a closed happy arc (joy). Dizzy and blink win over everything.
+ */
+function drawEye(ctx, pal, ex, ey, blink, dizzy, t, mood = '', gaze = null, outline = '#222', s = 1) {
   if (dizzy > 0.3) {
     // spiral-ish dizzy eye
     ctx.strokeStyle = pal.eye;
@@ -597,27 +716,103 @@ function drawEye(ctx, pal, ex, ey, blink, dizzy, t) {
     ctx.stroke();
     return;
   }
-  if (blink) {
+  if (blink || mood === 'joy') {
     ctx.strokeStyle = pal.eye;
-    ctx.lineWidth = 1.6;
+    ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(ex - 3, ey + 0.5);
-    ctx.quadraticCurveTo(ex, ey + 2.5, ex + 3, ey + 0.5);
+    if (mood === 'joy') {
+      // closed happy eye: an inverted U
+      ctx.lineWidth = 2.2;
+      ctx.moveTo(ex - 3.3, ey + 1.2);
+      ctx.quadraticCurveTo(ex + 0.2, ey - 4.6, ex + 3.7, ey + 1.2);
+    } else {
+      ctx.lineWidth = 1.6;
+      ctx.moveTo(ex - 3.6, ey + 0.5);
+      ctx.quadraticCurveTo(ex, ey + 2.8, ex + 3.6, ey + 0.5);
+    }
     ctx.stroke();
     return;
   }
+  const shock = mood === 'shock';
+  const rx = shock ? 4.6 * 1.25 : 4.6;
+  const ry = shock ? 5.4 * 1.25 : 5.4;
+  let dx = gaze ? +gaze.dx || 0 : 0;
+  let dy = gaze ? +gaze.dy || 0 : 0;
+  if (mood === 'grit') dx = Math.max(dx, 0.8);
+  else if (mood === 'smug') dx = -1.2;
+  else if (mood === 'gloom') dy = 0.8;
+  const prx = shock ? 3.0 * 0.55 : 3.0;
+  const pry = shock ? 3.5 * 0.55 : 3.5;
+  const px = shock ? ex : Math.max(ex - (rx - prx), Math.min(ex + (rx - prx), ex + 0.8 + 1.3 * dx));
+  const py = shock ? ey : Math.max(ey - (ry - pry), Math.min(ey + (ry - pry), ey + 0.2 + 0.6 * dy));
   ctx.fillStyle = '#fff';
   ctx.beginPath();
-  ctx.ellipse(ex, ey, 3.6, 4, 0, 0, TAU);
+  ctx.ellipse(ex, ey, rx, ry, 0, 0, TAU);
   ctx.fill();
   ctx.fillStyle = pal.eye;
   ctx.beginPath();
-  ctx.ellipse(ex + 0.8, ey + 0.2, 2.4, 2.9, 0, 0, TAU);
+  ctx.ellipse(px, py, prx, pry, 0, 0, TAU);
   ctx.fill();
   ctx.fillStyle = '#fff';
   ctx.beginPath();
-  ctx.arc(ex + 1.6, ey - 1.1, 1, 0, TAU);
+  ctx.arc(ex + 1.7, ey - 1.3, 1.3, 0, TAU);
+  ctx.moveTo(ex - 0.9 + 0.55, ey + 1.4);
+  ctx.arc(ex - 0.9, ey + 1.4, 0.55, 0, TAU);
   ctx.fill();
+  if (mood === 'smug' || mood === 'gloom' || mood === 'grit') {
+    // upper lid in the head colour over the top of the sclera, with a lid/brow line along its edge:
+    // smug = level at 40%, gloom = half shut and drooping toward the back, grit = a slanted scowl toward the beak
+    const back = mood === 'smug' ? ey - ry + 0.8 * ry : mood === 'gloom' ? ey + 1.2 : ey - ry - 0.6;
+    const front = mood === 'smug' ? ey - ry + 0.8 * ry - 0.6 : mood === 'gloom' ? ey - 1.4 : ey - ry + 0.75 * ry;
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(ex, ey, rx + 0.35, ry + 0.35, 0, 0, TAU);
+    ctx.clip();
+    ctx.fillStyle = pal.head || pal.body;
+    ctx.beginPath();
+    ctx.moveTo(ex - rx - 2, ey - ry - 2);
+    ctx.lineTo(ex + rx + 2, ey - ry - 2);
+    ctx.lineTo(ex + rx + 2, front);
+    ctx.lineTo(ex - rx - 2, back);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = mood === 'grit' ? 1.9 : 1.3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(ex - rx - 1, back);
+    ctx.lineTo(ex + rx + 1, front);
+    ctx.stroke();
+    ctx.restore();
+    if (mood === 'grit') {
+      // the brow itself rides just above the lid line, past the clip so it reads at race size
+      ctx.strokeStyle = outline;
+      ctx.lineWidth = 1.9;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(ex - rx + 0.4, back - 0.9);
+      ctx.lineTo(ex + rx - 0.2, front - 1.3);
+      ctx.stroke();
+    } else if (mood === 'gloom' && s >= 0.6) {
+      // a tear wells and falls every ~1.5 s
+      const ph = (t * 0.67) % 1;
+      if (ph < 0.5) {
+        const ga = ctx.globalAlpha;
+        ctx.globalAlpha = ga * (1 - ph * 1.6);
+        ctx.fillStyle = '#7FC8FF';
+        const ty = ey + ry + 0.5 + ph * 7;
+        ctx.beginPath();
+        ctx.moveTo(ex + 1, ty - 2.8);
+        ctx.quadraticCurveTo(ex + 2.9, ty + 0.2, ex + 1, ty + 1.7);
+        ctx.quadraticCurveTo(ex - 0.9, ty + 0.2, ex + 1, ty - 2.8);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(40,110,170,0.6)';
+        ctx.lineWidth = 0.6;
+        ctx.stroke();
+        ctx.globalAlpha = ga;
+      }
+    }
+  }
 }
 
 function drawLegs(ctx, pal, t) {
@@ -671,7 +866,7 @@ const HAT_DRAWERS = {
     ctx.fillStyle = '#17171f';
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 1.2;
-    roundRect(ctx, -9.5, -hr - 19, 19, 19, 2);
+    roundRectPath(ctx, -9.5, -hr - 19, 19, 19, 2);
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = '#c2213d';
@@ -858,7 +1053,7 @@ const HAT_DRAWERS = {
     ctx.stroke();
     ctx.fillStyle = '#111';
     ctx.beginPath();
-    ctx.ellipse(5.2, -2.8, 3.9, 3.5, 0.3, 0, TAU);
+    ctx.ellipse(5, -3, 5.3, 6, 0.3, 0, TAU);
     ctx.fill();
   },
 
@@ -869,15 +1064,15 @@ const HAT_DRAWERS = {
     ctx.lineWidth = 1.1;
     ctx.beginPath();
     ctx.moveTo(-8, -4.5);
-    ctx.lineTo(2, -5.5);
+    ctx.lineTo(0.8, -5.8);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(1.5, -6);
-    ctx.quadraticCurveTo(6, -8, 11, -6);
-    ctx.quadraticCurveTo(11.5, 1, 6.5, 1.8);
-    ctx.quadraticCurveTo(1.5, 1.5, 1.5, -6);
+    ctx.moveTo(0.2, -6.8);
+    ctx.quadraticCurveTo(6, -9.6, 11.6, -6.8);
+    ctx.quadraticCurveTo(12.3, 1.7, 6.4, 3);
+    ctx.quadraticCurveTo(0.1, 2.7, 0.2, -6.8);
     ctx.closePath();
-    const g = ctx.createLinearGradient(0, -8, 0, 2);
+    const g = ctx.createLinearGradient(0, -9, 0, 3);
     g.addColorStop(0, '#0f1626');
     g.addColorStop(1, '#4a5a78');
     ctx.fillStyle = g;
@@ -1025,7 +1220,7 @@ const HAT_DRAWERS = {
     ctx.quadraticCurveTo(-2, -6, 2, -6);
     ctx.stroke();
     // mask
-    roundRect(ctx, 0.5, -9, 11.5, 10, 3.5);
+    roundRectPath(ctx, -0.3, -9.6, 12.4, 12.4, 3.8);
     ctx.fillStyle = 'rgba(140, 230, 255, 0.45)';
     ctx.fill();
     ctx.strokeStyle = '#17BEBB';
@@ -1056,7 +1251,7 @@ const HAT_DRAWERS = {
     ctx.rect(-9, baseY - 9, 18, 9);
     ctx.fill();
     // band
-    roundRect(ctx, -9.5, baseY - 6, 19, 6, 1.5);
+    roundRectPath(ctx, -9.5, baseY - 6, 19, 6, 1.5);
     ctx.fill();
     ctx.stroke();
     ctx.strokeStyle = '#DDE2E8';
@@ -1273,7 +1468,9 @@ export const HAT_IDS = Object.keys(HAT_DRAWERS);
 // helpers
 // ---------------------------------------------------------------------------
 
-function roundRect(ctx, x, y, w, h, r) {
+/** Rounded-rectangle path (radius clamped to the box); the caller fills / strokes / clips. Shared with scene.js and main.js. */
+export function roundRectPath(ctx, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.lineTo(x + w - r, y);
@@ -1301,7 +1498,8 @@ function star(ctx, cx, cy, r) {
   ctx.fill();
 }
 
-function hexToRgb(hex) {
+/** '#RRGGBB' / '#RGB' -> [r, g, b] (0-255). Shared with scene.js. */
+export function hexToRgb(hex) {
   const h = hex.replace('#', '');
   const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -1329,7 +1527,8 @@ export function lighten(hex, k = 0.35) {
  * @param {HTMLCanvasElement} canvas
  * @param {object} look
  * @param {{standing?: boolean, t?: number, w?: number, h?: number, size?: number, flap?: number, beakOpen?: number,
- *   tilt?: number, crown?: boolean, hopY?: number, effort?: number, dizzy?: number}} [opts]
+ *   tilt?: number, crown?: boolean, hopY?: number, effort?: number, dizzy?: number, mood?: string, gaze?: {dx:number,dy:number},
+ *   medal?: string, wingLift?: number}} [opts]
  */
 export function renderPortrait(canvas, look, { standing = false, t = 0, w, h, size, hopY = 0, effort, ...pose } = {}) {
   const dpr = Math.min(3, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
@@ -1346,7 +1545,7 @@ export function renderPortrait(canvas, look, { standing = false, t = 0, w, h, si
   ctx.clearRect(0, 0, cssW, cssH);
   let scale = (cssW / 96) * (standing ? 0.95 : 1.05);
   let baseY = cssH * (standing ? 0.6 : 0.66);
-  const { flap = 0, beakOpen = 0, tilt = 0, crown = false, dizzy = 0 } = pose;
+  const { flap = 0, beakOpen = 0, tilt = 0, crown = false, dizzy = 0, mood = '', gaze = null, medal = '', wingLift = 0 } = pose;
   if (standing && crown) {
     // the floating crown sits above the headgear: shrink/lower the pose so a tall hat + crown
     // still fits the canvas (otherwise the champion's crown is clipped off the top)
@@ -1368,5 +1567,9 @@ export function renderPortrait(canvas, look, { standing = false, t = 0, w, h, si
     tilt,
     crown,
     dizzy,
+    mood,
+    gaze,
+    medal,
+    wingLift,
   });
 }

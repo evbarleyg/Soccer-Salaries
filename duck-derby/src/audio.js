@@ -22,6 +22,14 @@ const FANFARE = [
   [1046.5, 0.98, 0.7],
 ];
 
+/** C-major pentatonic, C5..E6: any three of these make a pleasant jingle. */
+const MOTIF_SCALE = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5, 1174.66, 1318.51];
+/** A duck's three-note motif from 9 bits (three 3-bit scale indices) — pure, so a name keeps its jingle across seasons. */
+export function motifNotes(bits) {
+  const b = bits | 0;
+  return [MOTIF_SCALE[b & 7], MOTIF_SCALE[(b >> 3) & 7], MOTIF_SCALE[(b >> 6) & 7]];
+}
+
 export class DuckAudio {
   constructor() {
     this.ctx = null;
@@ -866,12 +874,13 @@ export class DuckAudio {
   // fanfares, stings, sad trombone
   // ---------------------------------------------------------------------------
 
-  _brass(notes, t) {
+  _brass(notes, t, level = 1) {
     for (const [f, dt, dur] of notes) {
-      for (const [type, vol, det] of [
+      for (const [type, v, det] of [
         ['triangle', 0.22, 1],
         ['square', 0.05, 1.005],
       ]) {
+        const vol = v * level;
         const { o, g } = this._osc(type, f * det, t + dt, dur + 0.1, vol);
         g.gain.setValueAtTime(0.0001, t + dt);
         g.gain.exponentialRampToValueAtTime(vol, t + dt + 0.02);
@@ -880,6 +889,13 @@ export class DuckAudio {
         o.frequency.value = f * det;
       }
     }
+  }
+
+  /** A duck's own three-note jingle (see motifNotes): new leaders and the podium reveals. */
+  motif(bits, vol = 0.16) {
+    if (!this._canPlay()) return;
+    const [a, b, c] = motifNotes(bits);
+    this._brass([[a, 0, 0.09], [b, 0.11, 0.09], [c, 0.22, 0.16]], this.now, vol / 0.22);
   }
 
   /** Full six-note fanfare (results ceremony). */

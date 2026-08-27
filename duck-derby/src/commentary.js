@@ -156,8 +156,17 @@ export class Commentator {
     ]);
   }
 
-  hotdog(i) {
+  /** @param {number} i victim  @param {string} [c] the "culprit" manager whose section of the crowd threw it (seeded, for laughs) */
+  hotdog(i, c = '') {
     const name = this.n(i);
+    if (c) {
+      return this.bag('hotdog-c', [
+        `${c}'s cousin in Row G launches lunch at ${name}!`,
+        `That frank had ${c}'s fingerprints all over it — ${name} is down!`,
+        `${c} denies everything. ${name} wears the mustard.`,
+        `Thrown from the ${c} family section — direct hit on ${name}!`,
+      ]);
+    }
     return this.bag('hotdog', [
       `INCOMING! A hot dog flattens ${name}!`,
       `${name} takes a frankfurter to the face!`,
@@ -193,13 +202,10 @@ export class Commentator {
     return this.bag('lead-victim', [`${a} inherits the lead — ${v} is still wearing the mustard!`, `${v} bonked, ${a} pounces: new leader!`, `Hot dog down, ${a} up front!`]);
   }
 
-  revenge(name) {
-    return this.bag('revenge', [
-      `Covered in mustard and back in front — ${name}!`,
-      `REVENGE! ${name} retakes the lead!`,
-      `${name} answers the hot dog the only way: from the front.`,
-      `You cannot keep ${name} down. Or clean.`,
-    ]);
+  revenge(name, c = '') {
+    const lines = [`Covered in mustard and back in front — ${name}!`, `REVENGE! ${name} retakes the lead!`, `${name} answers the hot dog the only way: from the front.`, `You cannot keep ${name} down. Or clean.`];
+    if (c) return this.bag('revenge-c', [...lines, `REVENGE on the ${c} section — ${name} retakes the lead!`]);
+    return this.bag('revenge', lines);
   }
 
   halfway(standings) {
@@ -287,15 +293,20 @@ export class Commentator {
   /**
    * @param {number} i duck
    * @param {number} place 1-based finishing position
-   * @param {boolean|{photo?: boolean, margin?: number, victim?: boolean, rule?: string, n?: number}} [opts]
+   * @param {boolean|{photo?: boolean, margin?: number, victim?: boolean, rule?: string, n?: number, steal?: boolean, lastMargin?: number, photoCalled?: boolean}} [opts]
+   *   photoCalled: the PHOTO FINISH beat aired — if the margin then says otherwise, the line acknowledges the late break
    */
   finishLine(i, place, opts = {}) {
     if (typeof opts === 'boolean') opts = { photo: opts };
-    const { photo = false, margin = null, victim = false, rule = this.rule, n = this.names.length, steal = false, lastMargin = null } = opts;
+    const { photo = false, margin = null, victim = false, rule = this.rule, n = this.names.length, steal = false, lastMargin = null, photoCalled = false } = opts;
     const name = this.n(i);
     if (place === 1) {
       let line;
-      if (steal) {
+      if (photoCalled && !photo && margin !== null && Number.isFinite(margin) && margin >= 0.35) {
+        // we called a photo and then somebody found half a length: own it
+        const m = margin.toFixed(2);
+        line = this.bag('win-latebreak', [`Looked like a photo — then ${name} found half a length. ${m}s.`, `${name} breaks them late! Clear by ${m}s in the end.`, `Not so close after all: ${name} kicks away to win by ${m}s.`]);
+      } else if (steal) {
         // the winner was not the long-time leader: it was taken on the run-in
         line = this.bag('win-steal', [`${name} STEALS IT ON THE LINE!`, `From nowhere — ${name}!`, `${name} mugs them at the wall!`]);
         if (photo) line += ' Check the photo!';
@@ -353,8 +364,7 @@ export class Commentator {
   }
 
   /** Event → line. main.js decides whether a chatter line is relevant enough to air. */
-  forEvent(ev, standings, t) {
-    void t;
+  forEvent(ev, standings) {
     switch (ev.type) {
       case 'lead':
         return this.lead(ev.duck, ev.from);
@@ -568,7 +578,6 @@ export class Commentator {
         return { text: this.bag('led10', [`${this.n(a.i)} has led for 10 seconds straight.`, `Ten unbroken seconds in front for ${this.n(a.i)}.`]), pri: 1, duck: a.i };
       }
     } else if (this.longLead.duck !== a.i) this.longLead = { duck: a.i, said10: false, said20: false };
-    void timeLed;
 
     // dead air: a fact about the shape of the race
     if (sinceSpoken >= 3.5 && chatterOK && ready('fill')) {
