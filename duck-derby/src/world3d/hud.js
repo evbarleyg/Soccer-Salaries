@@ -420,6 +420,20 @@ export class Hud {
     this.el.flyCap.classList.add('show');
   }
 
+  /** The held item leaves the slot with a little fling. */
+  itemUsed() {
+    const c = this.el.itemCanvas;
+    const ghost = document.createElement('canvas');
+    ghost.width = c.width;
+    ghost.height = c.height;
+    ghost.className = 'ghost';
+    ghost.style.width = c.clientWidth + 'px';
+    ghost.style.height = c.clientHeight + 'px';
+    ghost.getContext('2d').drawImage(c, 0, 0);
+    this.el.item.appendChild(ghost);
+    setTimeout(() => ghost.remove(), 340);
+  }
+
   splashLens() {
     const d = this.el.drops;
     d.classList.remove('show');

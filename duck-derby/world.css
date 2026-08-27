@@ -128,6 +128,8 @@ button.big { font-size: 1.25rem; padding: 0.85rem 1.6rem; font-style: italic; te
 #hud-item.empty canvas { border-style: dashed; border-color: rgba(255,255,255,0.3); }
 #hud-item.rolling canvas { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,210,63,0.35), 0 6px 20px rgba(0,0,0,0.3); }
 #hud-item.got canvas { animation: itempop 0.45s cubic-bezier(0.2, 1.8, 0.4, 1); }
+#hud-item .ghost { position: absolute; left: 50%; top: 0; transform: translateX(-50%); pointer-events: none; animation: itemfly 0.32s ease-in forwards; }
+@keyframes itemfly { from { opacity: 1; transform: translateX(-50%) scale(1); } to { opacity: 0; transform: translate(60%, -30%) scale(1.6); } }
 @keyframes itempop { 0% { transform: scale(0.7); } 100% { transform: scale(1); } }
 #item-label { font-size: 0.66rem; font-weight: 900; letter-spacing: 0.1em; margin-top: 4px; color: #fff; text-shadow: 0 2px 0 rgba(0,0,0,0.6); }
 #hud-top { position: absolute; top: calc(10px + var(--safe-t)); left: 50%; transform: translateX(-50%); text-align: center; width: min(560px, 52vw); }
@@ -287,6 +289,8 @@ body.phase-finish #hud-item { display: none; }
 /* ------------------------------------------------------------------ responsive */
 @media (max-width: 760px) {
   .setup-grid { grid-template-columns: 1fr; }
+  .opts-col { order: -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; }
+  .opts-col .checks { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; display: grid; }
   #roster { grid-template-columns: 1fr; }
   .panel-inner { border-radius: 18px; }
   #hud-top { width: 94vw; top: auto; bottom: calc(150px + var(--safe-b)); }

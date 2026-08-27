@@ -633,6 +633,7 @@ function handleEvent(ev) {
       else if (nearCam(i, 25)) audio.tick();
       break;
     case 'use':
+      if (isT) hud.itemUsed();
       if (ev.item === 'bread' || ev.item === 'triple') { if (isT) { audio.whoosh(0.35); rig.kick(0.15); hud.callout('BOOST!', ITEMS.bread.color); } else if (nearCam(i, 30)) audio.whoosh(0.12); }
       else if (ev.item === 'hornet') { audio.buzz(1.0, isT || ev.target === state.target ? 0.16 : 0.07); if (ev.target === state.target) hud.popup('HORNET INCOMING!', ITEMS.hornet.color); }
       else if (ev.item === 'seagull') { audio.screech(); if (state.duckStates[state.target] && state.duckStates[state.target].rank === 0) hud.callout('SEAGULL INCOMING!', ITEMS.seagull.color); else hud.popup('SEAGULL STRIKE!', ITEMS.seagull.color); }

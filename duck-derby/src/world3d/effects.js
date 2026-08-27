@@ -304,6 +304,7 @@ export class Effects {
       m.visible = false;
       // re-link animated parts after clone
       if (kind === 'hornet' || kind === 'seagull') m.userData.wings = m.children.filter((c) => (kind === 'hornet' ? c.geometry && c.geometry.type === 'CircleGeometry' : c.isGroup));
+      if (kind === 'hornet') for (const c of m.children) if (c.material && c.material.blending === THREE.AdditiveBlending) c.material = c.material.clone();
       if (kind === 'thrower') m.userData.arm = m.children.find((c) => c.isGroup);
       this.root.add(m);
       arr.push(m);
@@ -358,9 +359,12 @@ export class Effects {
         const s = lerp(p.path[k * 2], p.path[k2 * 2], clamp(f, 0, 1));
         const lat = lerp(p.path[k * 2 + 1], p.path[k2 * 2 + 1], clamp(f, 0, 1));
         const age = t - p.t0;
+        const mineP = ctx.target === p.owner;
         if (p.type === 'hornet') {
           const m = this._get('hornet', used.hornet++);
           m.visible = true;
+          const glowMesh = m.children[m.children.length - 1];
+          if (glowMesh && glowMesh.material && glowMesh.material.blending === THREE.AdditiveBlending) glowMesh.material.opacity = mineP ? 0.42 : 0.18;
           this.track.toWorld(s, lat, 1.1 + Math.sin(age * 9) * 0.25, m.position);
           const ahead = this.track.toWorld(s + 1, lat, 1.1, this._v);
           m.lookAt(ahead);
