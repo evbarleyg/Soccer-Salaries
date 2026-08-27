@@ -67,3 +67,14 @@ handicaps off, identical duck stats, items on catch-up tables as now, best-of-3.
    use the phase-2 brains) — proves handling and course collisions.
 2. Two phones + a TV in one room over the chosen transport; lobby with room code/QR.
 3. 8–16 players, host migration, reconnect, spectate-on-TV, replays.
+
+
+## Shipped preview: Tilt Trial (single device)
+
+`world.html` now has a **Tilt Trial** button (beta): a live, locally simulated run down the same course where
+you steer your own duck by tilting the phone (or ← → / A D, or touching the left/right half of the screen),
+hitting boost arrows and dodging floating logs against seven AI ducks. It uses `src/world3d/trial.js` (live sim,
+same duck-state shape as the playback race, so the renderer/cameras/HUD are shared) and `src/world3d/input.js`
+(keyboard/touch/tilt → one steer value). It is a skill mode and never feeds the draft order; it is the
+single-player half of the Grand Prix plan above — the networking layer (lobby relay + input broadcast +
+lockstep/rollback) is the remaining work.

@@ -6,6 +6,8 @@ import { assignLooks, SAMPLE_NAMES, MIN_DUCKS, MAX_DUCKS, TOWELS } from '../duck
 import { randomSeed, seedToCode, codeToSeed, clamp, lerp, smoothstep } from '../rng.js';
 import { ordinal } from '../commentary.js';
 import { getCourse } from './course.js';
+import { createTrial } from './trial.js';
+import { SteerInput } from './input.js';
 import { createRace, positionAt, lateralAt, speedAt, standingsAt, heldAt, activeWindows, timeAt, ENGINE_VERSION } from './race.js';
 import { parseParams, buildQuery, resolveCam, draftOrder } from './params.js';
 import { detectQuality, createRenderer, makeSky, makeLights, PAL } from './gfx.js';
@@ -268,6 +270,7 @@ function initSetupUi() {
   els.optFly.addEventListener('change', () => (state.fly = els.optFly.checked));
   els.optSound.addEventListener('change', () => { state.sound = els.optSound.checked; audio.setEnabled(state.sound); hud.setMuted(!state.sound); });
   els.start.addEventListener('click', () => { if (!state.shared) state.go = null; startRace({}); });
+  $('#btn-trial').addEventListener('click', async () => { state.go = null; if (Q.mobile) await steerInput.enableTilt(); startRace({ trial: true }); });
   // results
   $('#btn-replay').addEventListener('click', () => replay());
   $('#btn-newrace').addEventListener('click', () => { if (!confirm('Start a NEW race with a new seed? (A shared link will no longer match this result.)')) return; state.seed = randomSeed(); state.shared = false; state.go = null; startRace({ names: state.raceNames }); });
@@ -371,7 +374,7 @@ function clearDucks() {
   state.ducks = [];
 }
 
-function startRace({ fromUrl = false, names = null } = {}) {
+function startRace({ fromUrl = false, names = null, trial = false } = {}) {
   if (state.sound) audio.unlock();
   audio.setEnabled(state.sound);
   const raw = names || state.names;
@@ -380,7 +383,17 @@ function startRace({ fromUrl = false, names = null } = {}) {
   if (!names) state.names = raw.slice();
   if (state.seed == null) state.seed = randomSeed();
   state.raceNames = raceNames;
-  state.race = createRace({ count: raceNames.length, seed: state.seed, hazards: state.hazards, items: state.items });
+  const camIdx0 = state.camChoice === 'leader' ? -1 : resolveCam(state.camChoice, raceNames);
+  if (trial) {
+    // Tilt Trial (phase-3 preview): a live sim where you steer your own duck; never used for the draft order
+    state.trial = createTrial({ names: raceNames, playerIndex: Math.max(0, camIdx0), seed: state.seed });
+    state.race = state.trial.race;
+  } else {
+    state.trial = null;
+    state.race = createRace({ count: raceNames.length, seed: state.seed, hazards: state.hazards, items: state.items });
+  }
+  document.body.classList.toggle('trial', !!state.trial);
+  buildTrialProps();
   state.looks = assignLooks(raceNames, state.salt || 0);
   commentator = new WorldCommentator(raceNames, state.seed);
   rig.setSeed(state.seed);
@@ -409,14 +422,15 @@ function startRace({ fromUrl = false, names = null } = {}) {
   state.youMarker.visible = false;
   state.youKey = null;
   // target
-  const camIdx = state.camChoice === 'leader' ? -1 : resolveCam(state.camChoice, raceNames);
+  const camIdx = state.trial ? state.trial.playerIndex : camIdx0;
   state.follow = camIdx >= 0 ? 'fixed' : 'leader';
   state.target = camIdx >= 0 ? camIdx : 0;
   if (state.view === 'free') { state.view = 'chase'; state.wantFree = true; }
   hud.setRoster(state.looks);
   hud.clearTransient();
-  for (const b of scenery.itemBoxes) b.visible = state.items;
-  fx.planHotdogs(state.race, scenery.throwerSpots, (i, t, out) => track.toWorld(positionAt(state.race, i, t), lateralAt(state.race, i, t), 0.6, out), (i, t) => positionAt(state.race, i, t));
+  for (const b of scenery.itemBoxes) b.visible = state.items && !state.trial;
+  if (!state.trial) fx.planHotdogs(state.race, scenery.throwerSpots, (i, t, out) => track.toWorld(positionAt(state.race, i, t), lateralAt(state.race, i, t), 0.6, out), (i, t) => positionAt(state.race, i, t));
+  else fx.planHotdogs({ events: [] }, [], () => null, () => 0);
   resetPlayback();
   saveStore();
   if (!fromUrl || !params.autostart) history.replaceState(null, '', '?' + shareQuery(true));
@@ -429,7 +443,11 @@ function startRace({ fromUrl = false, names = null } = {}) {
   audio.startMusic();
   audio.setMusicIntensity(0.25);
   const PRE = 5600; // grid + countdown before the synchronised start
-  if (params.t != null && fromUrl) {
+  if (state.trial) {
+    state.go = null;
+    hud.say(Q.mobile ? 'Tilt to steer (or touch left / right) · hit the arrows, dodge the logs' : 'Steer with ← → (or A / D) · hit the arrows, dodge the logs', state.realTime, 5, 3);
+    setPhase('grid');
+  } else if (params.t != null && fromUrl) {
     setPhase('race');
     jump(params.t);
   } else if (state.go && Date.now() > state.go - PRE) {
@@ -480,6 +498,7 @@ function resetPlayback() {
 
 function buildTimeline() {
   const race = state.race;
+  if (state.trial) { state.timeline = []; state.lastFinishT = 1e9; return; }
   const cues = [];
   for (const e of race.events) {
     if (e.type === 'hotdog') cues.push({ t: e.t - 0.72, type: 'cue-hotdog', duck: e.duck });
@@ -520,6 +539,7 @@ function buildTimeline() {
 function replay() {
   els.results.hidden = true;
   state.go = null;
+  if (state.trial) { startRace({ names: state.raceNames, trial: true }); return; }
   hud.clearTransient();
   resetPlayback();
   hud.show(true);
@@ -527,7 +547,7 @@ function replay() {
 }
 
 function setBodyClass(phase, view = state.view) {
-  const keep = ['joining', 'letterboxed', 'guest-in'].filter((c) => document.body.classList.contains(c)).join(' ');
+  const keep = ['joining', 'letterboxed', 'guest-in', 'trial'].filter((c) => document.body.classList.contains(c)).join(' ');
   document.body.className = `phase-${phase} view-${view} ${keep}`.trim();
 }
 
@@ -682,6 +702,7 @@ function computeDuckStates(t) {
   const race = state.race;
   if (!race) return;
   const n = race.count;
+  if (state.trial) { computeTrialStates(); return; }
   state.standings = standingsAt(race, t);
   const ranks = new Array(n);
   state.standings.forEach((r, k) => (ranks[r.i] = k));
@@ -720,6 +741,91 @@ function computeDuckStates(t) {
       ds.podiumSpot = scenery.podium.spots[k];
     }
   } else for (const ds of state.duckStates) ds.podiumSpot = null;
+}
+
+/** Live mode: duck states come straight from the trial sim (same shape as the playback states). */
+function computeTrialStates() {
+  const trial = state.trial;
+  const n = trial.race.count;
+  state.standings = trial.standings.length ? trial.standings : trial.ducks.map((d) => ({ i: d.i, s: d.s }));
+  state.leader = trial.leader;
+  if (!state.duckStates.length || state.duckStates.length !== n) state.duckStates = new Array(n).fill(0).map(() => ({ pos: new THREE.Vector3(), win: {} }));
+  for (let i = 0; i < n; i++) {
+    const src = trial.ducks[i].state;
+    const ds = state.duckStates[i];
+    ds.i = i;
+    ds.t = src.t || 0;
+    ds.s = src.s ?? trial.ducks[i].s;
+    ds.lat = src.lat ?? trial.ducks[i].lat;
+    ds.v = src.v || 0;
+    ds.v0 = trial.race.v0;
+    ds.hop = course.hopAt(ds.s);
+    track.toWorld(ds.s, ds.lat, ds.hop, ds.pos);
+    ds.airborne = ds.hop > 0.02;
+    ds.rank = src.rank ?? i;
+    ds.finished = !!src.finished;
+    ds.held = null;
+    ds.section = course.sectionIdAt(ds.s);
+    const w = ds.win;
+    const sw = src.win || {};
+    w.boost = sw.boost || null; w.spin = sw.spin || null; w.stumble = sw.stumble || null;
+    w.burst = w.shield = w.star = w.mud = w.wobble = null;
+    w.splash = src.splashT && ds.t >= src.splashT && ds.t < src.splashT + 0.3 ? { t0: src.splashT } : null;
+    ds.boosting = !!w.boost;
+    ds.star = false;
+    ds.spinning = !!w.spin;
+    ds.podiumSpot = null;
+  }
+  if (state.podium) {
+    const order = trial.race.order;
+    for (let k = 0; k < Math.min(3, order.length); k++) state.duckStates[order[k]].podiumSpot = scenery.podium.spots[k];
+  }
+}
+
+// Tilt Trial props: boost arrows and floating logs (built per trial, removed with the ducks)
+const trialProps = new THREE.Group();
+trialProps.name = 'trial-props';
+function buildTrialProps() {
+  while (trialProps.children.length) { const c = trialProps.children.pop(); c.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
+  if (!state.trial) return;
+  if (!trialProps.parent) scene.add(trialProps);
+  const padGeo = new THREE.RingGeometry(0.9, 1.6, 24, 1);
+  padGeo.rotateX(-Math.PI / 2);
+  const padMat = new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.85, depthWrite: false, fog: true });
+  const arrowGeo = new THREE.ConeGeometry(0.55, 1.3, 3);
+  arrowGeo.rotateX(Math.PI / 2);
+  const arrowMat = new THREE.MeshBasicMaterial({ color: 0xff8a3c });
+  const pads = new THREE.InstancedMesh(padGeo, padMat, state.trial.pads.length);
+  const arrows = new THREE.InstancedMesh(arrowGeo, arrowMat, state.trial.pads.length);
+  const mtx = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const up = new THREE.Vector3(0, 1, 0);
+  state.trial.pads.forEach((p, k) => {
+    const f = track.frame(p.s);
+    const pos = track.toWorld(p.s, p.lat, 0.12);
+    q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(f.flat.x, 0, f.flat.z).normalize());
+    mtx.compose(pos, q, new THREE.Vector3(1, 1, 1));
+    pads.setMatrixAt(k, mtx);
+    pos.y += 0.35;
+    mtx.compose(pos, q, new THREE.Vector3(1, 1, 1));
+    arrows.setMatrixAt(k, mtx);
+  });
+  pads.renderOrder = 12;
+  trialProps.add(pads, arrows);
+  const logGeo = new THREE.CylinderGeometry(0.28, 0.32, 1, 10);
+  logGeo.rotateZ(Math.PI / 2);
+  const logMat = new THREE.MeshLambertMaterial({ color: 0x7a4e2c });
+  const logs = new THREE.InstancedMesh(logGeo, logMat, state.trial.logs.length);
+  state.trial.logs.forEach((o, k) => {
+    const f = track.frame(o.s);
+    const pos = track.toWorld(o.s, o.lat, 0.12);
+    const yaw = Math.atan2(f.left.x, f.left.z) + o.yaw;
+    q.setFromAxisAngle(up, yaw - Math.PI / 2);
+    mtx.compose(pos, q, new THREE.Vector3(o.len, 1, 1));
+    logs.setMatrixAt(k, mtx);
+  });
+  trialProps.add(logs);
+  trialProps.userData.pads = pads;
 }
 
 function frameCtx(dt) {
@@ -865,7 +971,7 @@ function handleEvent(ev) {
         if (state.phase === 'race' && !state.jumping) {
           state.freezeUntil = state.realTime + 0.6;
           state.letterboxed = true;
-          letterbox(true, race.photoFinish ? `PHOTO FINISH · ${name} by ${race.margin.toFixed(2)} s` : race.close ? `${name} BY A BEAK · ${race.margin.toFixed(2)} s` : `${name} WINS · by ${race.margin.toFixed(2)} s`);
+          letterbox(true, state.trial ? `${name} WINS THE TRIAL · ${fmtTime(ev.t)}` : race.photoFinish ? `PHOTO FINISH · ${name} by ${race.margin.toFixed(2)} s` : race.close ? `${name} BY A BEAK · ${race.margin.toFixed(2)} s` : `${name} WINS · by ${race.margin.toFixed(2)} s`);
         }
         const arch = track.toWorld(L, 0, 6);
         fx.confetti(arch, 1.5);
@@ -874,7 +980,8 @@ function handleEvent(ev) {
         state.fireworks = true;
         state.excite = 1;
       }
-      if (isT && state.follow === 'fixed') {
+      if (isT && state.trial) { showFinishCard(place, null, fmtTime(ev.t)); haptic(200); }
+      else if (isT && state.follow === 'fixed') {
         const pick = draftOrder(race.order, state.rule).indexOf(i) + 1;
         showFinishCard(place, pick);
         haptic(200);
@@ -916,12 +1023,12 @@ function lowerThird(kicker, title, sub) {
   void el.offsetWidth;
   el.hidden = false;
 }
-function showFinishCard(place, pick) {
+function showFinishCard(place, pick, timeText = null) {
   const card = els.finishCard;
   const lk = state.looks[state.target];
   card.style.setProperty('--me', lk.towel.bg);
   card.querySelector('.fc-place').textContent = place === 1 ? `${state.raceNames[state.target]} WON!` : `${state.raceNames[state.target]} · ${ordinal(place).toUpperCase()}`;
-  card.querySelector('.fc-pick').textContent = `→ DRAFT PICK #${pick}`;
+  card.querySelector('.fc-pick').textContent = pick ? `→ DRAFT PICK #${pick}` : `TILT TRIAL · ${timeText || ''}`;
   card.hidden = false;
 }
 function haptic(pattern) {
@@ -932,13 +1039,18 @@ function haptic(pattern) {
 function showResults() {
   const race = state.race;
   const order = race.order;
-  const picks = draftOrder(order, state.rule);
+  const trial = !!state.trial;
+  const picks = trial ? order.slice() : draftOrder(order, state.rule);
   const winner = state.raceNames[order[0]];
-  $('#res-rule').textContent = state.rule === 'l' ? 'Last place picks first' : 'Winner picks first';
+  $('#res-title').textContent = trial ? 'Tilt Trial' : 'Draft order';
+  $('#res-rule').textContent = trial ? 'Skill mode · not a draft race' : state.rule === 'l' ? 'Last place picks first' : 'Winner picks first';
   $('#res-seed').textContent = 'seed ' + seedToCode(state.seed);
   const minePlace = state.follow === 'fixed' ? order.indexOf(state.target) + 1 : 0;
   const minePick = minePlace ? picks.indexOf(state.target) + 1 : 0;
-  els.resSub.textContent = (minePlace ? `You: pick ${minePick} (${ordinal(minePlace)}) · ` : '') + `${winner} ${race.photoFinish ? 'won a photo finish' : `won by ${race.margin.toFixed(2)} s`} · ${race.leadChanges} lead change${race.leadChanges === 1 ? '' : 's'}`;
+  if (trial) {
+    const me = state.trial.ducks[state.trial.playerIndex];
+    els.resSub.textContent = `You finished ${ordinal(minePlace)} in ${fmtTime(race.finishTimes[state.target])} · ${me.padsHit} boost arrows · ${me.logsHit} logs hit`;
+  } else els.resSub.textContent = (minePlace ? `You: pick ${minePick} (${ordinal(minePlace)}) · ` : '') + `${winner} ${race.photoFinish ? 'won a photo finish' : `won by ${race.margin.toFixed(2)} s`} · ${race.leadChanges} lead change${race.leadChanges === 1 ? '' : 's'}`;
   els.resBoard.innerHTML = '';
   const mine = state.follow === 'fixed' ? state.target : -1;
   let myRow = null;
@@ -951,7 +1063,7 @@ function showResults() {
     li.className = (place === 1 ? 'first ' : '') + (i === mine ? 'me' : '');
     li.style.setProperty('--me', lk.towel.bg);
     li.title = `${lk.palette.name} · ${lk.hatName}`;
-    li.innerHTML = `<span class="pick">Pick <b>${k + 1}</b></span><span class="num" style="background:${lk.towel.bg};color:${lk.towel.text}">${lk.number}</span><span class="nm">${escapeHtml(state.raceNames[i])}${i === mine ? '<span class="you">YOU</span>' : ''}</span><span class="res">${ordinal(place)} · ${fmtTime(tt)}</span>`;
+    li.innerHTML = `<span class="pick">${trial ? ordinal(k + 1) : `Pick <b>${k + 1}</b>`}</span><span class="num" style="background:${lk.towel.bg};color:${lk.towel.text}">${lk.number}</span><span class="nm">${escapeHtml(state.raceNames[i])}${i === mine ? '<span class="you">YOU</span>' : ''}</span><span class="res">${trial ? fmtTime(tt) : `${ordinal(place)} · ${fmtTime(tt)}`}</span>`;
     li.addEventListener('click', () => {
       // tap a row: ride with that duck next time, and expand its race log ("what happened to MY duck")
       setTarget(i, true);
@@ -971,7 +1083,7 @@ function showResults() {
   });
   $('#btn-newrace').hidden = state.shared;
   // race notes: the stories worth retelling
-  const notes = raceHighlights(race);
+  const notes = state.trial ? [] : raceHighlights(race);
   $('#res-notes').innerHTML = notes.map((n) => `<li><b>${n.title}</b> ${escapeHtml(n.text)}</li>`).join('');
   $('#res-story').hidden = !notes.length;
   $('#res-story').open = window.innerHeight > 700 && window.innerWidth > 500; // collapsed on phones: the pick list gets the room
@@ -1241,6 +1353,18 @@ function advance(raw) {
   renderer.render(scene, camera);
 }
 
+const steerInput = new SteerInput(window);
+function stepTrial(dt) {
+  const steer = state.phase === 'race' ? steerInput.update(dt) : steerInput.update(dt) * 0;
+  state.trial.step(dt, steer);
+  state.t = state.trial.t;
+  for (const ev of state.trial.drain()) {
+    if (ev.type === 'splashdown') { const src = state.trial.ducks[ev.duck].state; src.splashT = ev.t; }
+    handleEvent(ev);
+  }
+  if (state.trial.done && state.lastFinishT > 1e8) state.lastFinishT = Math.max(...state.trial.race.finishTimes);
+}
+
 function step(dt) {
   const race = state.race;
   // ---- phase logic
@@ -1297,6 +1421,13 @@ function step(dt) {
       break;
     }
     case 'race': {
+      if (state.trial) {
+        // live: the player steers, the sim advances in real time, events are drained into the same handlers
+        stepTrial(dt);
+        const me = state.trial.ducks[state.trial.playerIndex];
+        if (state.trial.done || (me.finishTime !== null && state.trial.t > me.finishTime + 2.5) || (state.firstFinishT !== null && state.t > state.firstFinishT + 16)) setPhase('finish');
+        break;
+      }
       // shaped slow-motion into the line, then a freeze-frame "photo" when the winner crosses
       const lead = state.duckStates[state.leader];
       let rate = 1;
@@ -1325,6 +1456,18 @@ function step(dt) {
       break;
     }
     case 'finish': {
+      if (state.trial) {
+        // live mode has nothing to replay: a short orbit while stragglers finish, then the podium
+        stepTrial(dt);
+        if (state.phaseTime > 3.5 && (state.trial.done || state.phaseTime > 12)) {
+          while (!state.trial.done) stepTrial(0.25); // settle the last finishers off-screen
+          state.podium = true;
+          lowerThird(null);
+          setPhase('results');
+          rig.setMode(state.view === 'free' ? 'free' : 'podium');
+        }
+        break;
+      }
       // winner orbit (3 s) -> instant replay of the line in slow motion (3.6 s) -> podium + results
       const ORBIT = 3.2;
       const REPLAY = 3.6;
@@ -1359,6 +1502,7 @@ function step(dt) {
     default:
       break;
   }
+  if (state.trial && trialProps.userData.pads) trialProps.userData.pads.material.opacity = 0.65 + Math.sin(state.realTime * 6) * 0.2;
 
   if (race) {
     computeDuckStates(state.t);
@@ -1727,7 +1871,7 @@ canvas.addEventListener('pointerup', (e) => {
 
 // --------------------------------------------------------------------------- capture / debug hooks
 function jump(t) {
-  if (!state.race) return;
+  if (!state.race || state.trial) return; // live trials can't seek
   els.results.hidden = true;
   state.podium = false;
   const lastT = state.lastFinishT;

@@ -139,6 +139,13 @@ hits are evenly spread across ducks.
   half-rate / idle-stop rendering on menus.
 - No shadow maps (blob shadows), no post-processing; fog hides the far field.
 
+## Tilt Trial (phase-3 preview)
+
+`trial.js` is a live simulation with the same duck-state shape as the playback race (so ducks, cameras, HUD and
+effects are reused unchanged); `input.js` merges keyboard, touch halves and device tilt into one steer value.
+Boost arrows and logs are laid out from the seed; AI ducks wander, line up arrows and dodge logs by a skill
+parameter. Results show finish order and your arrows/logs tally; nothing about it touches the draft race.
+
 ## Known gaps / next steps
 
 - Chase cam avoids walls by living in track space rather than by raycasting.

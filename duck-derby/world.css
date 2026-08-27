@@ -426,3 +426,7 @@ body.guest-in #lobby .lobby-left { display: none; }
 #res-story:not([open]) > summary::after { content: ' ▸'; }
 #res-story #res-notes { margin: 0; }
 #hud-pos.pre { visibility: hidden; }
+#btn-trial { border: 1px solid var(--line); background: rgba(255,255,255,0.08); color: #fff; border-radius: 12px; padding: 0.55rem 0.9rem; font: 800 0.95rem var(--num); }
+#btn-trial small { display: block; font: 700 0.62rem var(--font); color: var(--muted); letter-spacing: 0.04em; }
+body.trial #hud-item, body.trial #hud-leader { display: none; }
+body.trial #hud-name::after { content: ' · TILT TRIAL'; color: var(--gold); }
