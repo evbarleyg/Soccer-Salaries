@@ -4,6 +4,7 @@
 // Local space: +Z forward, +Y up, +X = the duck's left. Waterline at y ≈ 0.
 import * as THREE from 'three';
 import { buildHat } from './hats3d.js';
+import { mergeMeshes } from './builders.js';
 
 const bodyGeo = new THREE.SphereGeometry(1, 22, 16);
 const headGeo = new THREE.SphereGeometry(1, 20, 14);
@@ -207,10 +208,29 @@ export function buildDuck(look) {
   group.add(shadow);
   shadow.position.y = 0.06;
 
+  // ---- collapse into a handful of draw calls (body statics, head, hat, each wing, roundels)
+  const statics = [body, chest, towel];
+  pivot.children.filter((o) => o.isMesh && (o.material === mats.accent || o.material === mats.ring)).forEach((o) => statics.push(o));
+  const bodyMerged = mergeMeshes(pivot, statics);
+  const roundels = pivot.children.filter((o) => o.isMesh && o.material === roundelMat);
+  mergeMeshes(pivot, roundels);
+  const headStatics = head.children.filter((o) => o.isMesh && !o.material.transparent);
+  const headMerged = mergeMeshes(head, headStatics, { roughness: 0.45 });
+  const hatMeshes = [];
+  hat.traverse((o) => {
+    if (!o.isMesh || o.material.transparent) return;
+    let p = o.parent;
+    while (p && p !== hat) { if (p === hat.userData.spin) return; p = p.parent; }
+    hatMeshes.push(o);
+  });
+  const hatMerged = mergeMeshes(hat, hatMeshes, { roughness: 0.6 });
+  const wingMerged = wings.map((w) => mergeMeshes(w, w.children.filter((o) => o.isMesh))).flat();
+  const glowMats = [...bodyMerged, ...headMerged, ...wingMerged].map((m) => m.material);
+
   group.traverse((o) => {
     if (o.isMesh) o.frustumCulled = true;
   });
-  return { group, pivot, body, head, wings, feet, hat, shadow, tail, mats, look };
+  return { group, pivot, body: bodyMerged[0] || body, head, wings, feet, hat, shadow, tail, mats, glowMats, look };
 }
 
 /** Small canvas name tag sprite shown above a duck. */

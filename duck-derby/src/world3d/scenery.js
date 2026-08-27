@@ -917,7 +917,7 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
     g.add(postM);
     // stone arch bridge over the rapids with spectators
     {
-      const s = 905;
+      const s = 764;
       const half = halfAt(s);
       const parts = [];
       const a = P(s, half + 6, 4.2);
@@ -1084,12 +1084,12 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
       const lamp = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 2.4, 16), basic(0xfff3b0, { fog: false }));
       lamp.position.set(base.x, topY + 1.6, base.z);
       g.add(lamp);
-      const beamMat = basic(0xfff1c4, { transparent: true, opacity: 0.13, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+      const beamMat = basic(0xfff1c4, { transparent: true, opacity: 0.07, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
       const beam = new THREE.Group();
       for (const side of [-1, 1]) {
-        const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 5.5, 42, 16, 1, true), beamMat);
+        const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 3.2, 30, 16, 1, true), beamMat);
         cone.rotation.z = side * Math.PI / 2;
-        cone.position.x = side * 21;
+        cone.position.x = side * 15;
         beam.add(cone);
       }
       beam.position.set(base.x, topY + 1.6, base.z);

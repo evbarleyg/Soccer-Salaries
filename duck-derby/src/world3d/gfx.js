@@ -121,14 +121,23 @@ export function makeSky() {
   return mesh;
 }
 
-export function makeLights(scene) {
+export function makeLights(scene, camera) {
   const hemi = new THREE.HemisphereLight(PAL.ambientSky, PAL.ambientGround, 1.15);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(PAL.sun, 2.1);
   sun.position.copy(PAL.sunDir).multiplyScalar(300);
   scene.add(sun);
   scene.add(sun.target);
-  return { hemi, sun };
+  // soft camera-aligned fill so faces are never lost in shadow (grid line-up, podium)
+  const fill = new THREE.DirectionalLight(0xfff4e0, 0.55);
+  if (camera) {
+    camera.add(fill);
+    fill.position.set(0.5, 0.6, 1);
+    fill.target.position.set(0, 0, -4);
+    camera.add(fill.target);
+    scene.add(camera);
+  }
+  return { hemi, sun, fill };
 }
 
 /** Cheap deterministic value-noise helpers shared by procedural builders. */

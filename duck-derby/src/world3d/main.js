@@ -77,7 +77,7 @@ scene.fog = new THREE.Fog(PAL.fog, 140, 560);
 const camera = new THREE.PerspectiveCamera(62, 1, 0.3, 1800);
 const sky = makeSky();
 scene.add(sky);
-const lights = makeLights(scene);
+const lights = makeLights(scene, camera);
 const rig = new CameraRig(camera, track, canvas);
 const hud = new Hud(course);
 const audio = new WorldAudio();
@@ -656,7 +656,10 @@ async function copyText(text, btn, done) {
 
 // --------------------------------------------------------------------------- grid name boards (bigger tags during line-up)
 function showGridNames(on) {
-  for (const d of state.ducks) d.tag.scale.set(on ? 2.2 : 2.6, on ? 0.55 : 0.65, 1);
+  state.ducks.forEach((d, i) => {
+    d.tag.scale.set(on ? 1.9 : 2.6, on ? 0.48 : 0.65, 1);
+    d.tag.position.y = on ? (i % 2 ? 2.75 : 2.05) : 2.25; // stagger so neighbours don't overlap on the line
+  });
 }
 
 // --------------------------------------------------------------------------- main loop
@@ -785,7 +788,7 @@ function step(dt) {
       d.tag.visible = showTags && !(state.view === 'chase' && i === state.target && state.phase === 'race' && rig.mode === 'chase');
       const k = clamp(dist * 0.075, 0.45, 3.0); // roughly constant on-screen size
       if (state.phase !== 'grid') d.tag.scale.set(2.2 * k, 0.55 * k, 1);
-      d.tag.position.y = 1.9 + k * 0.35;
+      if (state.phase !== 'grid') d.tag.position.y = 1.9 + k * 0.35;
       d.tag.material.opacity = clamp(1.2 - dist / 70, 0.25, 1);
       const held = ds.held;
       d.item.userData.setItem(held ? held.item : null, held ? held.charges : 1);
@@ -804,6 +807,7 @@ function step(dt) {
   inTunnel = lerp(inTunnel, inside, Math.min(1, dt * (inside ? 6 : 3)));
   lights.hemi.intensity = lerp(1.15, 0.32, inTunnel);
   lights.sun.intensity = lerp(2.1, 0.12, inTunnel);
+  lights.fill.intensity = lerp(0.55, 0.25, inTunnel);
   scene.fog.color.copy(fogBase).lerp(fogDark, inTunnel * 0.85);
   scene.fog.near = lerp(140, 20, inTunnel);
   scene.fog.far = lerp(560, 160, inTunnel);

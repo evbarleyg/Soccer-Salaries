@@ -139,3 +139,43 @@ export function sceneryRng(seed = 20240607) {
   };
   return { next, range: (lo, hi) => lo + (hi - lo) * next(), int: (lo, hi) => Math.floor(lo + (hi - lo + 1) * next()), pick: (arr) => arr[Math.floor(next() * arr.length)], chance: (p) => next() < p };
 }
+
+/**
+ * Merge already-built meshes into as few draw calls as possible, baked into
+ * `parent`'s space and bucketed by material class (plain / metallic / textured).
+ * Source materials' colours become vertex colours. The originals are removed
+ * from the hierarchy. Returns the merged meshes (added to `parent`).
+ */
+export function mergeMeshes(parent, meshes, { roughness = 0.55 } = {}) {
+  parent.updateWorldMatrix(true, true);
+  const inv = new THREE.Matrix4().copy(parent.matrixWorld).invert();
+  const buckets = new Map();
+  const rel = new THREE.Matrix4();
+  for (const m of meshes) {
+    if (!m || !m.isMesh) continue;
+    const src = m.material;
+    let g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+    for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
+    if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+    if (!g.attributes.normal) g.computeVertexNormals();
+    rel.multiplyMatrices(inv, m.matrixWorld);
+    g.applyMatrix4(rel);
+    colorize(g, src.color || 0xffffff);
+    const metal = (src.metalness || 0) > 0.3;
+    const key = (metal ? 'm' : 'p') + (src.map ? ':' + src.map.uuid : '');
+    if (!buckets.has(key)) buckets.set(key, { geos: [], metal, map: src.map || null });
+    buckets.get(key).geos.push(g);
+    m.removeFromParent();
+  }
+  const out = [];
+  for (const bkt of buckets.values()) {
+    const merged = mergeGeometries(bkt.geos, false);
+    merged.computeBoundingSphere();
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: bkt.metal ? 0.32 : roughness, metalness: bkt.metal ? 0.55 : 0, map: bkt.map, transparent: !!bkt.map });
+    if (bkt.metal) { mat.emissive = new THREE.Color(0x2a1c00); mat.emissiveIntensity = 0.25; }
+    const mesh = new THREE.Mesh(merged, mat);
+    parent.add(mesh);
+    out.push(mesh);
+  }
+  return out;
+}

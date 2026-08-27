@@ -34,7 +34,7 @@ export class DuckAnimator {
     this.lastSpin = null;
     this._v = new THREE.Vector3();
     this._back = new THREE.Vector3();
-    this.emissiveMats = [duck.mats.body, duck.mats.head, duck.mats.wing, duck.mats.light];
+    this.emissiveMats = duck.glowMats && duck.glowMats.length ? duck.glowMats : [duck.mats.body, duck.mats.head, duck.mats.wing, duck.mats.light];
   }
 
   ensureStars() {

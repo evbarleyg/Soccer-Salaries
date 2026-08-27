@@ -90,7 +90,8 @@ export function makeWaterMaterial() {
         float shallowMix = 1.0 - smoothstep(0.0, 5.0, edge);
         vec3 col = mix(deep, shallow, 0.18 + 0.5 * shallowMix + 0.22 * n);
         // toon caustic streaks
-        float streak = (smoothstep(0.64, 0.7, n) * 0.13 + smoothstep(0.8, 0.83, n1) * 0.1) * (0.55 + chop * 0.9);
+        float graze = clamp(viewDir.y * 2.6, 0.15, 1.0); // fade the pattern at grazing angles where it would smear into stripes
+        float streak = (smoothstep(0.64, 0.7, n) * 0.13 + smoothstep(0.8, 0.83, n1) * 0.1) * (0.55 + chop * 0.9) * graze;
         col += vec3(streak);
         // foam: edges, rapids, weir face
         float foamNoise = vnoise(vec2(vSL.x * 0.9 - flow * 1.8, vSL.y * 2.3)) * 0.6 + vnoise(vec2(vSL.x * 2.2 - flow * 3.1, vSL.y * 5.0)) * 0.4;
@@ -104,8 +105,8 @@ export function makeWaterMaterial() {
         float fres = pow(1.0 - max(dot(nrm, viewDir), 0.0), 5.0);
         col = mix(col, skyCol, fres * 0.28);
         vec3 h = normalize(viewDir + normalize(sunDir));
-        float spec = pow(max(dot(nrm, h), 0.0), 90.0);
-        col += sunCol * spec * 0.9;
+        float spec = pow(max(dot(nrm, h), 0.0), 110.0) * (0.5 + 0.5 * n2);
+        col += sunCol * spec * 0.5;
         col *= 1.0 - darkness * 0.72;
         gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>
