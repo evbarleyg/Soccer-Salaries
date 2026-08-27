@@ -14,6 +14,9 @@ open http://localhost:8080/duck-derby/world.html
 cd duck-derby && npm run ci           # node --check + node:test (2D + 3D suites)
 node tools/shots3d.mjs                # Playwright captures of every section → shots/world/
 node tools/analyze3d.mjs 12 300       # Monte Carlo fairness/drama/item report
+node tools/strip3d.mjs                # 4-frame filmstrips around key moments (hot dog, hit, Drop, lead, finish)
+node tools/motion3d.mjs               # dense 9–12 frame motion strips via the deterministic __duckWorld.tick(dt) hook
+node tools/flow3d.mjs                 # end-to-end phase flow check (grid → race → results → replay/TV/menu)
 ```
 
 URL parameters mirror the 2D app: `names=a~b~c`, `seed=XXXX-XXXX`, `rule=w|l`,
@@ -65,6 +68,9 @@ src/world3d/
 test/world3d.*.test.js   course, engine, items, params, Monte Carlo fairness
 tools/shots3d.mjs        Playwright capture script (desktop + mobile)
 tools/analyze3d.mjs      fairness/drama/item Monte Carlo report
+tools/strip3d.mjs        filmstrips around key moments
+tools/motion3d.mjs       dense motion strips (real frame stepping)
+tools/flow3d.mjs         end-to-end phase flow check
 ```
 
 The race is simulated up-front from `(names.length, seed)`; playback samples
@@ -123,8 +129,9 @@ hits are evenly spread across ducks.
   frustum culling, crowd/trees/houses/bunting are instanced per course section
   and whole sections are hidden when the camera is far from them, item boxes and
   mist are single instanced meshes, volumetric fakes render single-pass.
-- Typical desktop frame at 1280×720: canyon chase cam ≈ 220 draw calls / 320k
-  triangles, rapids ≈ 160 / 180k, grid line-up (12 ducks) ≈ 170 / 185k.
+- Typical desktop frame at 1280×720 (12 ducks): grid line-up ≈ 170 draw calls /
+  185k triangles, canyon chase ≈ 220 / 315k, TV canyon ≈ 165 / 225k, rapids
+  chase ≈ 80 / 140k, podium ≈ 70 / 115k.
 - Quality tiers (`detectQuality`, GPU-name aware so 8-core budget phones with
   weak Adreno/Mali/PowerVR parts land on low): pixel-ratio cap 2 / 1.5 / 1.25,
   MSAA only where pixels are big, cheaper water shader on mid/low,
