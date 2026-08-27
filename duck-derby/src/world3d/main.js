@@ -417,13 +417,17 @@ function setPhase(phase) {
     $('#finish-card').hidden = true;
     letterbox(false);
     state.fireworks = false;
+    lowerThird(null);
     audio.setCrowd(0.1);
     audio.setMusicIntensity(0.15);
     els.results.hidden = true;
     rig.setMode('menu');
     renderRoster();
   }
+  $('#title-card').classList.toggle('show', phase === 'flythrough');
   if (phase === 'flythrough') {
+    $('#title-card .tc-sub').textContent = `${state.raceNames.length} ducks · ${Math.round(L)} m · seed ${seedToCode(state.seed)}`;
+    setTimeout(() => $('#title-card').classList.remove('show'), 3200);
     FLY_T = stored.flySeen ? 6.5 : 12;
     if (!stored.flySeen) { stored.flySeen = true; try { localStorage.setItem(STORE_KEY, JSON.stringify({ ...loadStore(), flySeen: true })); } catch { /* ignore */ } }
     rig.setMode('flythrough');
@@ -441,8 +445,13 @@ function setPhase(phase) {
   }
   if (phase === 'countdown') { state.countStep = -1; applyView(false); }
   if (phase === 'race') { showGridNames(false); if (state.wantFree) { state.wantFree = false; state.prevView = state.view; state.view = 'free'; } applyView(false); }
-  if (phase === 'finish') { rig.setMode('orbit'); }
-  if (phase === 'results') showResults();
+  if (phase === 'finish') {
+    rig.setMode(state.view === 'free' ? 'free' : 'orbit');
+    state.replay = null;
+    const w = state.race.order[0];
+    lowerThird('Winner', state.raceNames[w], `${fmtTime(state.race.finishTimes[w])} · ${state.race.photoFinish ? 'photo finish' : 'by ' + state.race.margin.toFixed(2) + ' s'} · picks ${state.rule === 'l' ? 'last' : 'first'}`);
+  }
+  if (phase === 'results') { lowerThird(null); showResults(); }
 }
 
 function skipIntro() {
@@ -739,6 +748,16 @@ function letterbox(on, caption = '') {
   lb.classList.toggle('on', on);
   if (caption) $('#lb-caption').textContent = caption;
 }
+function lowerThird(kicker, title, sub) {
+  const el = $('#lower-third');
+  if (!kicker) { el.hidden = true; return; }
+  el.querySelector('.lt-kicker').textContent = kicker;
+  el.querySelector('.lt-title').textContent = title;
+  el.querySelector('.lt-sub').textContent = sub || '';
+  el.hidden = true;
+  void el.offsetWidth;
+  el.hidden = false;
+}
 function showFinishCard(place, pick) {
   const card = $('#finish-card');
   const lk = state.looks[state.target];
@@ -938,10 +957,34 @@ function step(dt) {
       }
       break;
     }
-    case 'finish':
-      state.t += dt;
-      if (state.phaseTime > 5.5) { state.podium = true; setPhase('results'); rig.setMode(state.view === 'free' ? 'free' : 'podium'); }
+    case 'finish': {
+      // winner orbit (3 s) -> instant replay of the line in slow motion (3.6 s) -> podium + results
+      const ORBIT = 3.2;
+      const REPLAY = 3.6;
+      if (state.phaseTime < ORBIT || Q.reducedMotion) {
+        state.t += dt;
+        if (Q.reducedMotion && state.phaseTime > 5) { state.podium = true; setPhase('results'); rig.setMode(state.view === 'free' ? 'free' : 'podium'); }
+      } else if (!state.replay) {
+        state.replay = { t0: state.firstFinishT - 1.6 };
+        state.t = state.replay.t0;
+        for (const d of state.ducks) d.anim.prevLat = null;
+        if (state.view !== 'free') rig.setMode('finish');
+        rig.cut();
+        letterbox(true, 'INSTANT REPLAY');
+        audio.cameraFlash();
+      } else if (state.phaseTime < ORBIT + REPLAY) {
+        state.t += dt * 0.42;
+      } else {
+        letterbox(false);
+        state.replay = null;
+        state.t = Math.max(...race.finishTimes) + 2;
+        state.podium = true;
+        lowerThird(null);
+        setPhase('results');
+        rig.setMode(state.view === 'free' ? 'free' : 'podium');
+      }
       break;
+    }
     case 'results':
       state.t += dt;
       break;
@@ -1072,6 +1115,9 @@ function step(dt) {
   if (state.fireworks) {
     const burst = fx.fireworksTick(dt, scenery.fireworkBarges, true);
     if (burst) audio.boom();
+  }
+  if (state.phase === 'results' && state.podium && Math.floor(state.phaseTime / 2.2) !== Math.floor((state.phaseTime - dt) / 2.2)) {
+    fx.confetti(tmpV.copy(scenery.podium.spots[0]).setY(scenery.podium.spots[0].y + 2.5), 0.5);
   }
   if (audio.crowdGain && state.phase === 'race') audio.setCrowd(0.3 + 0.6 * (state.excite || 0));
   audio.setMusicIntensity(state.phase === 'race' ? 0.45 + 0.55 * smoothstep(0.3, 1, state.excite || 0) : state.phase === 'countdown' ? 0.35 : state.phase === 'finish' ? 0.7 : state.phase === 'results' ? 0.4 : 0.22);
@@ -1245,6 +1291,8 @@ function jump(t) {
   state.freezeUntil = 0;
   state.letterboxed = false;
   state.dropCalled = t > 15;
+  state.replay = null;
+  lowerThird(null);
   letterbox(false);
   $('#finish-card').hidden = true;
   state.jumping = true;

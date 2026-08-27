@@ -260,6 +260,17 @@ body.phase-finish #hud-item { display: none; }
 .res-actions details.more summary::-webkit-details-marker { display: none; }
 .res-actions .more-menu { position: absolute; bottom: calc(100% + 6px); left: 0; display: grid; gap: 4px; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 12px; padding: 6px; min-width: 190px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); z-index: 3; }
 .res-actions .more-menu > * { text-align: left; white-space: nowrap; }
+/* broadcast lower-third (winner orbit, instant replay) + intro title card */
+#lower-third { position: fixed; left: calc(18px + var(--safe-l)); bottom: calc(70px + var(--safe-b)); z-index: 12; pointer-events: none; font-family: var(--num); animation: ltin 0.45s cubic-bezier(0.2, 0.9, 0.3, 1); }
+#lower-third .lt-kicker { display: inline-block; background: var(--gold); color: var(--ink); font-weight: 900; font-size: 0.72rem; letter-spacing: 0.14em; padding: 3px 10px; border-radius: 6px 6px 0 0; text-transform: uppercase; }
+#lower-third .lt-title { background: rgba(13,24,38,0.88); color: #fff; font-weight: 900; font-style: italic; font-size: clamp(1.3rem, 4vw, 2.1rem); padding: 4px 16px 2px; border-left: 4px solid var(--gold); min-width: 220px; }
+#lower-third .lt-sub { background: rgba(13,24,38,0.72); color: var(--muted); font-weight: 700; font-size: 0.85rem; padding: 3px 16px 5px; border-left: 4px solid var(--gold); border-radius: 0 0 8px 0; }
+@keyframes ltin { from { opacity: 0; transform: translateX(-30px); } to { opacity: 1; transform: none; } }
+#title-card { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; z-index: 12; opacity: 0; transition: opacity 0.8s; }
+#title-card.show { opacity: 1; }
+#title-card .logo span { font-size: clamp(1rem, 3vw, 1.6rem); }
+#title-card .logo b { font-size: clamp(3.2rem, 12vw, 7rem); text-shadow: 0 6px 0 #0b1522, 0 0 60px rgba(102,214,255,0.45); }
+#title-card .tc-sub { margin-top: 0.4rem; font: 800 clamp(0.8rem, 2.4vw, 1.1rem) var(--num); letter-spacing: 0.3em; color: var(--gold); text-transform: uppercase; text-shadow: 0 2px 0 rgba(0,0,0,0.5); }
 /* personal finish card + letterbox for the photo-finish freeze */
 #finish-card { position: fixed; left: 50%; bottom: calc(64px + var(--safe-b)); transform: translateX(-50%); z-index: 12; background: rgba(13,24,38,0.86); border: 2px solid var(--me, var(--gold)); border-radius: 16px; padding: 8px 18px 10px; text-align: center; font-family: var(--num); box-shadow: 0 12px 30px rgba(0,0,0,0.35); animation: cardin 0.28s cubic-bezier(0.2, 1.4, 0.4, 1); pointer-events: none; }
 #finish-card .fc-place { font-weight: 900; font-style: italic; font-size: 1.6rem; color: #fff; line-height: 1.1; }
