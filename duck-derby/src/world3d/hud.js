@@ -145,7 +145,15 @@ export class Hud {
     const L = this.course.length;
     const d = ducks[target];
     if (d) {
-      const rank = d.rank;
+      // rank readout with hysteresis: a new position must hold 0.35 s (or be decisive) before it is shown
+      const raw = d.rank;
+      if (raw !== this.pendRank) { this.pendRank = raw; this.pendSince = realTime; }
+      let rank = this.lastRank >= 0 && this.lastTarget === target ? this.lastRank : raw;
+      if (raw !== rank) {
+        const other = standings[rank] ? ducks[standings[rank].i] : null;
+        const decisive = !other || Math.abs(other.s - d.s) > 1.0 || d.finished;
+        if (realTime - this.pendSince > 0.35 || decisive || ctx.phase !== 'race') rank = raw;
+      }
       if (rank !== this.lastRank) {
         const prev = this.lastRank;
         this.el.posNum.textContent = rank + 1;
@@ -177,9 +185,9 @@ export class Hud {
       else if (rank === 0) {
         const second = standings[1] ? ducks[standings[1].i] : null;
         gapTxt = second ? `leading by ${(d.s - second.s).toFixed(1)} m` : 'leader';
-      } else gapTxt = `+${Math.max(0, leadD.s - d.s).toFixed(1)} m · ${ctx.names[leader]} leads`;
-      setText(this.el.gap, gapTxt);
-      setText(this.el.name, (ctx.follow === 'leader' ? '★ ' : '') + ctx.names[target] + ' ▾');
+      } else gapTxt = `+${Math.max(0, leadD.s - d.s).toFixed(1)} m<span class="lead-name"> · ${esc(ctx.names[leader])} leads</span>`;
+      if (this._gapHtml !== gapTxt) { this._gapHtml = gapTxt; this.el.gap.innerHTML = gapTxt; }
+      setText(this.el.name, (ctx.follow === 'leader' ? '★ ' : '') + ctx.names[target]);
       const lk = looks[target];
       if (this.el.swatch.dataset.k !== String(target)) {
         this.el.swatch.dataset.k = String(target);
@@ -228,8 +236,10 @@ export class Hud {
       this.lastMini = realTime;
       if (this.el.minimap.offsetParent !== null) this.drawMinimap(ducks, target, leader, ctx.camPos);
     }
-    if (realTime - (this.lastLadder || 0) > 0.2) {
+    const ladderKey = `${leader}|${this.lastRank}|${target}`;
+    if (realTime - (this.lastLadder || 0) > 0.2 || ladderKey !== this._ladderKey) {
       this.lastLadder = realTime;
+      this._ladderKey = ladderKey;
       this._ladder(ctx);
     }
   }
@@ -242,7 +252,7 @@ export class Hud {
     const myRank = ducks[target] ? ducks[target].rank : 0;
     const compact = window.innerWidth <= 760;
     let rows;
-    if (view === 'tv' && !compact) rows = standings.slice(0, Math.min(8, n)).map((r, k) => k);
+    if (view === 'tv' && !compact) rows = standings.slice(0, window.innerWidth >= 1100 ? n : Math.min(8, n)).map((r, k) => k);
     else if (compact) {
       const set = new Set([0, myRank - 1, myRank, myRank + 1, n - 1].filter((k) => k >= 0 && k < n));
       rows = [...set].sort((a, b) => a - b);
@@ -301,6 +311,10 @@ export class Hud {
           void this.el.item.offsetWidth;
           this.el.item.classList.add('got');
           this.el.itemLabel.textContent = ITEMS[held.item].short + (held.item === 'triple' ? ` ×${held.charges}` : '');
+          this.el.item.dataset.blurb = ITEMS[held.item].blurb + ' · auto';
+          this.el.item.classList.add('blurb');
+          clearTimeout(this._blurbT);
+          this._blurbT = setTimeout(() => this.el.item.classList.remove('blurb'), 2200);
         }
       }
     }
@@ -460,7 +474,17 @@ export class Hud {
     this.itemState.rollUntil = 0;
     this.itemState.shown = null;
     this.el.item.classList.toggle('empty', !held);
-    this.el.item.classList.remove('rolling');
+    this.el.item.classList.remove('rolling', 'arming');
+    if (!held) { this._drawItem(null); this.el.itemLabel.textContent = 'NO ITEM'; }
+  }
+
+  /** Arming ring before my item fires (the race is precomputed, so we know), drain ring for a shield. */
+  itemTimers(armIn, shieldLeft) {
+    const el = this.el.item;
+    const arming = armIn !== null && armIn < 0.8 && armIn >= 0;
+    if (arming !== !!this._arming) { this._arming = arming; el.classList.toggle('arming', arming); if (arming) this.el.itemLabel.textContent = 'FIRING…'; }
+    if (shieldLeft !== null) el.style.setProperty('--drain', `${Math.round((1 - shieldLeft / 8) * 360)}deg`);
+    el.classList.toggle('draining', shieldLeft !== null);
   }
 
   setCamLabel(view) { this.el.camBtn.textContent = view.toUpperCase(); }

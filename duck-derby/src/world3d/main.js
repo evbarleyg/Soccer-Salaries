@@ -185,12 +185,12 @@ function renderJoin() {
     grid.appendChild(b);
   });
   $('#join-tv').onclick = () => { state.camChoice = 'leader'; state.view = 'tv'; startRace({}); };
-  $('#join-host').onclick = () => { $('#join').hidden = true; $('#setup-form').hidden = false; };
+  $('#join-host').onclick = () => { $('#join').hidden = true; $('#setup-form').hidden = false; document.body.classList.remove('joining'); };
   $('#join-sub').textContent = `${names.length} ducks · seed ${seedToCode(state.seed)} · ${state.rule === 'l' ? 'last place picks first' : 'winner picks first'}${state.items ? ' · items on' : ''}`;
 }
 
 function initSetupUi() {
-  if (state.shared) { $('#join').hidden = false; $('#setup-form').hidden = true; renderJoin(); }
+  if (state.shared) { $('#join').hidden = false; $('#setup-form').hidden = true; document.body.classList.add('joining'); renderJoin(); }
   els.optRule.value = state.rule;
   els.optView.value = state.view === 'tv' ? 'tv' : 'chase';
   els.optItems.checked = state.items;
@@ -415,10 +415,15 @@ function replay() {
   setPhase('grid');
 }
 
+function setBodyClass(phase, view = state.view) {
+  const joining = document.body.classList.contains('joining');
+  document.body.className = `phase-${phase} view-${view}` + (joining ? ' joining' : '');
+}
+
 function setPhase(phase) {
   state.phase = phase;
   state.phaseTime = 0;
-  document.body.className = `phase-${phase} view-${state.view}`;
+  setBodyClass(phase);
   els.setup.hidden = phase !== 'menu';
   if (phase === 'menu') {
     hud.show(false);
@@ -468,7 +473,7 @@ function skipIntro() {
 }
 
 function applyView(snap) {
-  document.body.className = `phase-${state.phase} view-${state.view}`;
+  setBodyClass(state.phase);
   if (state.phase === 'menu' || state.phase === 'flythrough' || state.phase === 'grid' || state.phase === 'results') return;
   if (state.phase === 'finish') { rig.setMode(state.view === 'free' ? 'free' : 'orbit'); return; }
   rig.setMode(state.view === 'tv' ? 'tv' : state.view === 'free' ? 'free' : 'chase');
@@ -490,7 +495,7 @@ function toggleFree() {
 const tilt = { on: false, base: null, yaw: 0, pitch: 0 };
 async function toggleTilt() {
   const btn = $('#btn-tilt');
-  if (tilt.on) { tilt.on = false; btn.classList.remove('on'); rig.userYaw = 0; rig.userPitch = 0; return; }
+  if (tilt.on) { tilt.on = false; rig.externalLook = false; btn.classList.remove('on'); rig.userYaw = 0; rig.userPitch = 0; return; }
   try {
     const DOE = window.DeviceOrientationEvent;
     if (DOE && typeof DOE.requestPermission === 'function') {
@@ -500,6 +505,7 @@ async function toggleTilt() {
   } catch { /* older browsers: just try */ }
   tilt.on = true;
   tilt.base = null;
+  rig.externalLook = true;
   btn.classList.add('on');
   hud.toast('Tilt to look around', state.realTime, 1.5);
 }
@@ -590,6 +596,7 @@ function computeDuckStates(t, dt) {
     for (let k = 0; k < sp.length; k++) if (t >= sp[k] && t < sp[k] + 0.3) w.splash = { t0: sp[k] };
     ds.boosting = !!(w.boost || w.burst);
     ds.star = !!w.star;
+    ds.spinning = !!(w.spin && t < w.spin.t1);
   }
   // podium override: top three stand on the barge
   if (state.podium) {
@@ -771,7 +778,7 @@ function showFinishCard(place, pick) {
   const card = $('#finish-card');
   const lk = state.looks[state.target];
   card.style.setProperty('--me', lk.towel.bg);
-  card.querySelector('.fc-place').textContent = place === 1 ? 'YOU WON!' : `YOU FINISHED ${ordinal(place).toUpperCase()}`;
+  card.querySelector('.fc-place').textContent = place === 1 ? `${state.raceNames[state.target]} WON!` : `${state.raceNames[state.target]} · ${ordinal(place).toUpperCase()}`;
   card.querySelector('.fc-pick').textContent = `→ DRAFT PICK #${pick}`;
   card.hidden = false;
 }
@@ -788,7 +795,9 @@ function showResults() {
   els.resTitle.textContent = 'Draft order';
   $('#res-rule').textContent = state.rule === 'l' ? 'Last place picks first' : 'Winner picks first';
   $('#res-seed').textContent = 'seed ' + seedToCode(state.seed);
-  els.resSub.textContent = `${winner} ${race.photoFinish ? 'won a photo finish' : `won by ${race.margin.toFixed(2)} s`} · ${race.count} ducks · ${race.leadChanges} lead change${race.leadChanges === 1 ? '' : 's'}`;
+  const minePlace = state.follow === 'fixed' ? order.indexOf(state.target) + 1 : 0;
+  const minePick = minePlace ? picks.indexOf(state.target) + 1 : 0;
+  els.resSub.textContent = (minePlace ? `You: Pick ${minePick} · ${state.raceNames[state.target]} · ${ordinal(minePlace)}.  ` : '') + `${winner} ${race.photoFinish ? 'won a photo finish' : `won by ${race.margin.toFixed(2)} s`} · ${race.count} ducks · ${race.leadChanges} lead change${race.leadChanges === 1 ? '' : 's'}`;
   els.resBoard.innerHTML = '';
   const mine = state.follow === 'fixed' ? state.target : -1;
   let myRow = null;
@@ -1034,6 +1043,15 @@ function step(dt) {
         }
       }
       hud.incoming(warn, wd);
+      // my next item use (known ahead: the race is precomputed) and shield time left
+      let armIn = null;
+      if (me.held && me.held.item !== 'shield') {
+        for (let k = state.cursor; k < state.timeline.length && state.timeline[k].t < state.t + 0.85; k++) {
+          const ev = state.timeline[k];
+          if (ev.type === 'use' && ev.duck === state.target) { armIn = ev.t - state.t; break; }
+        }
+      }
+      hud.itemTimers(armIn, me.win.shield ? Math.max(0, me.win.shield.t1 - state.t) : null);
     } else hud.incoming(null);
     // timeline
     while (state.cursor < state.timeline.length && state.timeline[state.cursor].t <= state.t) {
@@ -1291,7 +1309,19 @@ canvas.addEventListener('pointerup', (e) => {
     const dd = Math.hypot(sx - e.clientX, sy - e.clientY);
     if (dd < bestD) { bestD = dd; best = i; }
   });
-  if (best >= 0) { setTarget(best, true); if (state.view !== 'chase') { state.view = 'chase'; } applyView(false); hud.toast(state.raceNames[best], state.realTime, 1); }
+  if (best >= 0 && best !== state.target) {
+    // riding an explicitly chosen duck: a stray tap must not silently change who "YOU" are
+    if (state.follow === 'fixed' && !(state.tapConfirm && state.tapConfirm.i === best && state.realTime - state.tapConfirm.at < 2.5)) {
+      state.tapConfirm = { i: best, at: state.realTime };
+      hud.toast(`Ride with ${state.raceNames[best]}? Tap again`, state.realTime, 2.2);
+      return;
+    }
+    state.tapConfirm = null;
+    setTarget(best, true);
+    if (state.view !== 'chase') { state.view = 'chase'; }
+    applyView(false);
+    hud.toast(state.raceNames[best], state.realTime, 1);
+  }
 });
 
 // --------------------------------------------------------------------------- capture / debug hooks
@@ -1346,7 +1376,7 @@ window.__duckWorld = {
   start: (opts = {}) => { Object.assign(state, opts); startRace({}); },
   skip: skipIntro,
   results: () => { if (!state.race) return; jump(Math.max(...state.race.finishTimes) + 1); state.podium = true; setPhase('results'); rig.setMode('podium'); rig.cut(); rig.update(0.5, frameCtx(0.5)); },
-  freeCam: (x, y, z, lx, ly, lz) => { state.prevView = state.view === 'free' ? state.prevView : state.view; state.view = 'free'; rig.setMode('free'); document.body.className = `phase-${state.phase} view-free`; rig.pos.set(x, y, z); rig.look.set(lx, ly, lz); const d = rig.look.clone().sub(rig.pos).normalize(); rig.free.yaw = Math.atan2(d.x, d.z); rig.free.pitch = Math.asin(clamp(d.y, -0.99, 0.99)); rig.free.vel.set(0, 0, 0); },
+  freeCam: (x, y, z, lx, ly, lz) => { state.prevView = state.view === 'free' ? state.prevView : state.view; state.view = 'free'; rig.setMode('free'); setBodyClass(state.phase, 'free'); rig.pos.set(x, y, z); rig.look.set(lx, ly, lz); const d = rig.look.clone().sub(rig.pos).normalize(); rig.free.yaw = Math.atan2(d.x, d.z); rig.free.pitch = Math.asin(clamp(d.y, -0.99, 0.99)); rig.free.vel.set(0, 0, 0); },
   eventsOf: (type) => (state.race ? state.race.events.filter((e) => e.type === type) : []),
 };
 

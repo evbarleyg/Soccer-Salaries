@@ -117,7 +117,7 @@ export class CameraRig {
         if (pinchD > 0) {
           const k = pinchD / d;
           if (this.mode === 'free') this.free.touchMove = (d - pinchD) * 0.08;
-          else this.userZoom = clamp(this.userZoom * k, 0.6, 1.8);
+          else { this.userZoom = clamp(this.userZoom * k, 0.6, 1.8); this.lastInputAt = this.nowReal || 0; }
         }
         pinchD = d;
         return;
@@ -132,6 +132,7 @@ export class CameraRig {
       } else {
         this.userYaw = clamp(this.userYaw - dx * 0.005, -1.3, 1.3);
         this.userPitch = clamp(this.userPitch - dy * 0.004, -0.35, 0.6);
+        this.lastInputAt = this.nowReal || 0;
       }
     });
     const end = (e) => {
@@ -146,7 +147,7 @@ export class CameraRig {
       if (this.mode === 'free') {
         const fwd = this._v1.set(Math.sin(this.free.yaw) * Math.cos(this.free.pitch), Math.sin(this.free.pitch), Math.cos(this.free.yaw) * Math.cos(this.free.pitch));
         this.pos.addScaledVector(fwd, -e.deltaY * 0.05);
-      } else this.userZoom = clamp(this.userZoom * (1 + e.deltaY * 0.001), 0.6, 1.8);
+      } else { this.userZoom = clamp(this.userZoom * (1 + e.deltaY * 0.001), 0.6, 1.8); this.lastInputAt = this.nowReal || 0; }
       e.preventDefault();
     }, { passive: false });
     el.addEventListener('dblclick', () => {
@@ -172,8 +173,8 @@ export class CameraRig {
     const half = track.course.widthAt(sBack) / 2 - 1.0;
     track.toWorld(sBack, clamp(latOff, -half, half), height + Math.min(1.6, d.hop * 0.4), outPos);
     track.toWorld(d.s + (portrait ? 11 : 9), d.lat * 0.85, (portrait ? 0.8 : 0.9), outLook);
-    if (d.airborne && d.pos) {
-      // over the weir: look at the duck itself (a little ahead of it) rather than the water far below
+    if ((d.airborne || d.spinning) && d.pos) {
+      // over the weir (or while spinning out): look at the duck itself rather than the water ahead
       const f = track.frame(d.s);
       tmpLook.copy(d.pos).addScaledVector(f.flat, 5);
       tmpLook.y = d.pos.y - 0.2;
@@ -189,6 +190,7 @@ export class CameraRig {
    */
   update(dt, ctx) {
     const cam = this.camera;
+    this.nowReal = ctx.realTime;
     this.portrait = cam.aspect < 0.8;
     const baseFov = this.portrait ? 70 : 62;
     let wantFov = baseFov;
@@ -257,13 +259,14 @@ export class CameraRig {
         let close = 0;
         for (const o of ctx.ducks) if (o !== d && Math.abs(o.s - d.s) < 6 && Math.abs(o.lat - d.lat) < 5) close++;
         this.packZoom = lerp(this.packZoom || 0, close >= 3 ? 1 : 0, Math.min(1, dt * 1.5));
-        wantFov += this.packZoom * (this.portrait ? 9 : 5);
+        wantFov += this.packZoom * 5;
+        if (d.spinning) wantFov += 4;
         if (d.boosting) wantFov += 9;
         if (d.star) wantFov += 5;
         if (d.airborne) wantFov += 7;
         wantFov += clamp((d.v / (ctx.race ? ctx.race.v0 : 23) - 1) * 10, -3, 6);
         const f = track.frame(d.s);
-        const bankRoll = clamp(-f.bank * 0.35, -0.1, 0.1); // cap at ~6 degrees
+        const bankRoll = this.externalLook ? 0 : clamp(-f.bank * 0.35, -0.1, 0.1); // cap at ~6 degrees
         wantUp = this._v3.copy(f.up).applyAxisAngle(f.flat, bankRoll).normalize();
         stiffness = inTunnel ? 9 : d.airborne ? 3.8 : 6.5;
         break;
@@ -326,8 +329,27 @@ export class CameraRig {
       this.fovExtra *= Math.exp(-dt * (ctx.phase === 'countdown' ? 0.15 : 3.5));
       if (Math.abs(this.fovExtra) < 0.05) this.fovExtra = 0;
     }
+    if (this.portrait) wantFov = Math.min(wantFov, baseFov + 12);
+    // drag-to-look and pinch recentre themselves a moment after the last touch
+    if (!this.externalLook && this.lastInputAt !== undefined && ctx.realTime - this.lastInputAt > 2.2) {
+      const r = 1 - Math.exp(-dt * 2.2);
+      this.userYaw *= 1 - r;
+      this.userPitch *= 1 - r;
+      if (ctx.realTime - this.lastInputAt > 6) this.userZoom += (1 - this.userZoom) * r;
+    }
     const k = this.snapNext ? 1 : 1 - Math.exp(-stiffness * dt);
     this.pos.lerp(desiredPos, k);
+    if (this.mode === 'chase') {
+      // never let the spring carry the camera into the duck (hits kill its speed suddenly)
+      const d = ctx.ducks[ctx.target];
+      if (d && d.pos) {
+        const dx = this.pos.x - d.pos.x;
+        const dz = this.pos.z - d.pos.z;
+        const dist = Math.hypot(dx, dz);
+        const minD = 3.6;
+        if (dist < minD && dist > 1e-3) { this.pos.x = d.pos.x + (dx / dist) * minD; this.pos.z = d.pos.z + (dz / dist) * minD; }
+      }
+    }
     this.look.lerp(desiredLook, this.snapNext ? 1 : 1 - Math.exp(-(stiffness + 2) * dt));
     this.up.lerp(wantUp, this.snapNext ? 1 : 1 - Math.exp(-3 * dt)).normalize();
     this.snapNext = false;
