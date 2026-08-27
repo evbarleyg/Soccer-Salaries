@@ -416,3 +416,9 @@ body.guest-in #lobby .lobby-left { display: none; }
 #res-board.dense li .log li { min-height: 0; padding: 0 2px; font-size: inherit; }
 #toast.sticky { pointer-events: auto; }
 #toast.sticky button { margin-left: 6px; border: 0; border-radius: 8px; padding: 3px 10px; font: 800 0.85rem var(--num); background: var(--gold); color: var(--ink); }
+#res-story { flex: none; margin: 0 0 8px; }
+#res-story > summary { cursor: pointer; list-style: none; font: 900 0.7rem var(--num); letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold); padding: 2px 0 4px; }
+#res-story > summary::-webkit-details-marker { display: none; }
+#res-story > summary::after { content: ' ▾'; opacity: 0.8; }
+#res-story:not([open]) > summary::after { content: ' ▸'; }
+#res-story #res-notes { margin: 0; }

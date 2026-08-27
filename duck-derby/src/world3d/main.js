@@ -972,6 +972,8 @@ function showResults() {
   // race notes: the stories worth retelling
   const notes = raceHighlights(race);
   $('#res-notes').innerHTML = notes.map((n) => `<li><b>${n.title}</b> ${escapeHtml(n.text)}</li>`).join('');
+  $('#res-story').hidden = !notes.length;
+  $('#res-story').open = window.innerHeight > 700 && window.innerWidth > 500; // collapsed on phones: the pick list gets the room
   els.results.hidden = false;
   els.finishCard.hidden = true;
   els.resBoard.classList.toggle('dense', picks.length > 8);
@@ -1026,7 +1028,7 @@ function raceHighlights(race) {
   const lateHit = race.events.filter((e) => e.type === 'hit' && e.rank === 0).pop();
   if (lateHit) out.push({ title: 'Ouch', text: `${names[lateHit.duck]} was leading when the ${lateHit.item === 'hotdog' ? 'hot dog' : ITEMS[lateHit.item]?.name.toLowerCase() || lateHit.item} landed (${fmtTime(lateHit.t)}).` });
   if (n >= 2) out.push({ title: 'Spread', text: `${(race.finishTimes[race.order[n - 1]] - race.finishTimes[race.order[0]]).toFixed(1)} s from first to last · ${race.leadChanges} lead changes.` });
-  return out.slice(0, Q.mobile || window.innerWidth < 500 ? 2 : 4);
+  return out.slice(0, 4);
 }
 
 function shareQuery(withCam = false) {
