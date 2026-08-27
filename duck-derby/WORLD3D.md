@@ -144,7 +144,8 @@ hits are evenly spread across ducks.
 `trial.js` is a live simulation with the same duck-state shape as the playback race (so ducks, cameras, HUD and
 effects are reused unchanged); `input.js` merges keyboard, touch halves and device tilt into one steer value.
 Boost arrows and logs are laid out from the seed; AI ducks wander, line up arrows and dodge logs by a skill
-parameter. Results show finish order and your arrows/logs tally; nothing about it touches the draft race.
+parameter. Results show finish order and your arrows/logs tally; the layout is the shared "course of the day"
+(daily seed) and your best run is replayed as a translucent ghost; nothing about it touches the draft race.
 
 ## Known gaps / next steps
 

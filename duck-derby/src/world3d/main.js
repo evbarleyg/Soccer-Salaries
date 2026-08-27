@@ -424,7 +424,7 @@ function startRace({ fromUrl = false, names = null, trial = false } = {}) {
     scene.add(state.youMarker);
   }
   // ghost of your best run on today's trial course (translucent copy of your duck)
-  if (state.ghostDuck) { scene.remove(state.ghostDuck.group); state.ghostDuck = null; }
+  if (state.ghostDuck) { scene.remove(state.ghostDuck.group); state.ghostDuck.group.traverse((o) => { if (o.material) o.material.dispose(); if (o.geometry && !(state.ghostDuck.shared && state.ghostDuck.shared.has(o.geometry))) o.geometry.dispose(); }); state.ghostDuck = null; }
   if (state.trial && state.ghost) {
     const gd = buildDuck(state.looks[state.trial.playerIndex]);
     gd.group.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.32; o.material.depthWrite = false; } });
