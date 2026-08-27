@@ -625,7 +625,7 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
         const pos = P(s, side * half, 0);
         buoys.add(pos, 0, 1, (Math.round(s / 7) + (side > 0 ? 1 : 0)) % 2 ? PAL.buoyRed : PAL.buoyWhite);
         buoyBands.add(pos, 0, 1);
-        buoyList.push({ s, lat: side * half });
+        buoyList.push({ s, lat: side * half, base: pos.clone() });
       }
     }
     const buoyMesh = dyn(buoys.build('buoys'));
@@ -642,7 +642,7 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
         for (let i = 0; i < buoyList.length; i++) {
           const b = buoyList[i];
           const ph = ctx.realTime * 2.4 + b.s * 0.35 + b.lat;
-          P(b.s, b.lat, Math.sin(ph) * 0.09 - 0.04, pos);
+          pos.copy(b.base).y += Math.sin(ph) * 0.09 - 0.04; // base position precomputed at build (no spline eval per frame)
           e.set(Math.sin(ph * 0.8) * 0.12, 0, Math.cos(ph * 0.7 + i) * 0.12);
           q.setFromEuler(e);
           m.compose(pos, q, sc);
