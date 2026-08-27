@@ -82,7 +82,7 @@ try {
 }
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(PAL.fog, 180, 680);
-const camera = new THREE.PerspectiveCamera(62, 1, 0.3, 1800);
+const camera = new THREE.PerspectiveCamera(62, 1, 0.3, 800);
 const sky = makeSky();
 scene.add(sky);
 const lights = makeLights(scene, camera);
@@ -98,9 +98,12 @@ const clock = new THREE.Clock();
 const fogBase = new THREE.Color(PAL.fog);
 const fogDark = new THREE.Color(0x1a1410);
 
+const viewport = { w: 1, h: 1 };
 function resize() {
   const w = window.innerWidth;
   const h = window.innerHeight;
+  viewport.w = w;
+  viewport.h = h;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
@@ -132,7 +135,7 @@ async function boot() {
     rig.terrainHeight = terrain.heightAt;
   });
   await bootStep(40, 'Filling the river…', () => {
-    waterMat = makeWaterMaterial({ low: Q.tier === 'low' });
+    waterMat = makeWaterMaterial({ low: Q.tier !== 'high' });
     fallMat = makeFallMaterial();
     scene.add(buildRiver(course, waterMat));
     const b = terrain.bounds;
@@ -143,14 +146,26 @@ async function boot() {
     scene.add(scenery.root);
     rig.podiumSpot = { pos: scenery.podium.camPos, look: scenery.podium.camLook };
   });
-  await bootStep(85, 'Inflating ducks…', () => {
+  await bootStep(85, 'Inflating ducks…', async () => {
     fx = new Effects(scene, track, Q);
     resize();
-    // warm up shaders with a first render
+    // warm up shaders (world + a throwaway duck, its shield/stars and one of each projectile) so nothing compiles at GO
     rig.setMode('menu');
     rig.update(0.016, frameCtx(0.016));
-    renderer.compile(scene, camera);
+    const warm = new THREE.Group();
+    const sample = buildDuck(assignLooks(['Warm-up Duck'])[0]);
+    warm.add(sample.group);
+    const an = new DuckAnimator(sample, track, 0);
+    an.ensureShield();
+    an.ensureStars();
+    sample.group.traverse((o) => { o.frustumCulled = false; });
+    warm.position.copy(camera.position).add(new THREE.Vector3(0, -3, -8).applyQuaternion(camera.quaternion));
+    scene.add(warm);
+    if (fx.warmup) fx.warmup();
+    if (renderer.compileAsync && renderer.extensions.has('KHR_parallel_shader_compile')) await renderer.compileAsync(scene, camera); else renderer.compile(scene, camera);
     renderer.render(scene, camera);
+    scene.remove(warm);
+    sample.group.traverse((o) => { if (o.isMesh && o.geometry && !(sample.shared && sample.shared.has(o.geometry))) o.geometry.dispose(); });
   });
   await bootStep(100, 'Ready!', null);
   $('#boot').classList.add('out');
@@ -869,37 +884,69 @@ function showGridNames(on) {
 
 // --------------------------------------------------------------------------- main loop
 let inTunnel = 0;
-// Adaptive resolution: if the device can't hold ~50 fps, trade sharpness for smoothness (and give it back later).
-const perf = { acc: 0, frames: 0, scale: 1, min: 0.6, lastChange: 0 };
+// Adaptive quality: watch a robust frame-time percentile (ignoring hitches and hidden-tab gaps), detect a
+// 30 Hz vsync cap, shed features first (decals/crowd density) and pixels second, and give quality back slowly.
+const perf = { samples: [], scale: 1, min: 0.6, level: 0, lastChange: 0, bad: 0, good: 0, cap: 1 / 60 };
 function adaptQuality(rawDt) {
-  perf.acc += rawDt;
-  perf.frames++;
-  if (perf.acc < 2) return;
-  const avg = perf.acc / perf.frames;
-  perf.acc = 0;
-  perf.frames = 0;
-  if (document.hidden || state.realTime - perf.lastChange < 4) return;
+  if (rawDt > 0.1) return; // hitch / tab switch: not a steady-state signal
+  perf.samples.push(rawDt);
+  if (perf.samples.length < 60) return;
+  const s = perf.samples.slice().sort((a, b) => a - b);
+  perf.samples.length = 0;
+  const p50 = s[30];
+  const p90 = s[54];
+  if (document.hidden || state.realTime - perf.lastChange < 2.5) return;
+  // a device pinned at ~33 ms (30 Hz cap / low-power mode) is not helped by fewer pixels
+  const capped30 = Math.abs(p50 - 1 / 30) < 0.002 && p90 < 0.036;
+  const target = capped30 ? 1 / 30 : perf.cap;
+  if (p90 > target * 1.28) { perf.bad++; perf.good = 0; } else if (p90 < target * 1.08) { perf.good++; perf.bad = 0; } else { perf.bad = 0; perf.good = 0; }
+  if (perf.bad >= 2 && perf.level < 4) setPerfLevel(perf.level + 1);
+  else if (perf.good >= 6 && perf.level > 0) setPerfLevel(perf.level - 1);
+}
+function setPerfLevel(level) {
+  perf.level = level;
+  perf.lastChange = state.realTime;
+  perf.bad = perf.good = 0;
+  // level 1: cheap cuts (decals on other ducks, particle budget); 2: crowd/scenery density; 3-4: resolution
+  state.lod = level;
+  if (fx) fx.budget = level >= 1 ? 0.5 : 1;
+  if (scenery && scenery.setDensity) scenery.setDensity(level >= 2 ? 0.5 : 1);
   const base = Math.min(window.devicePixelRatio || 1, Q.maxDpr);
-  let s = perf.scale;
-  if (avg > 1 / 45 && s > perf.min) s = Math.max(perf.min, s - 0.15);
-  else if (avg < 1 / 57 && s < 1) s = Math.min(1, s + 0.1);
-  if (s !== perf.scale) {
-    perf.scale = s;
-    perf.lastChange = state.realTime;
-    renderer.setPixelRatio(base * s);
+  const scale = level >= 4 ? 0.65 : level >= 3 ? 0.8 : 1;
+  if (scale !== perf.scale) {
+    perf.scale = scale;
+    renderer.setPixelRatio(base * scale);
     resize();
   }
 }
+document.addEventListener('visibilitychange', () => {
+  perf.samples.length = 0;
+  perf.lastChange = state.realTime;
+  clock.getDelta();
+  if (document.hidden) audio.suspend && audio.suspend();
+  else audio.resume && audio.resume();
+});
+
+let idleFrames = 0;
+let lastInputReal = 0;
+['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => window.addEventListener(ev, () => { lastInputReal = performance.now(); }, { passive: true }));
 
 function loop() {
   requestAnimationFrame(loop);
+  // menus and the results screen don't need 60 fps: halve the rate, and stop redrawing after 20 s without input
+  const calm = state.phase === 'menu' || state.phase === 'results';
+  if (calm) {
+    idleFrames++;
+    if (idleFrames % 2 === 1) return;
+    if (performance.now() - lastInputReal > 20000 && !urlFlags.has('noadapt')) { clock.getDelta(); return; }
+  }
   const raw = clock.getDelta();
   const dt = Math.min(raw, 0.05);
   state.realTime += dt;
   state.phaseTime += dt;
   step(dt);
   renderer.render(scene, camera);
-  if (state.phase !== 'menu' && !urlFlags.has('noadapt')) adaptQuality(raw);
+  if (!calm && !urlFlags.has('noadapt')) adaptQuality(raw);
 }
 
 function step(dt) {
@@ -1091,6 +1138,10 @@ function step(dt) {
       // ducks right on top of the camera would fill the screen: hide them (Mario Kart-style ghosting, cheap version)
       d.duck.group.visible = !(rig.mode === 'chase' && i !== state.target && dist < 3.2 && state.phase === 'race');
       ctx.isTarget = i === state.target;
+      if (d.duck.lod && d.duck.lod.far) {
+        const showDecals = dist < 45 && !(state.lod >= 1 && !ctx.isTarget);
+        for (const o of d.duck.lod.far) o.visible = showDecals;
+      }
       d.anim.update(dt, ds, ctx);
       if (state.goBurst && state.realTime - state.goBurst < 0.6 && fx) fx.spray(tmpV.copy(d.duck.group.position).setY(d.duck.group.position.y + 0.15), tmpV2.copy(d.anim.frame.flat).negate(), 1.4);
       // name tag + held item sprite (visibility decided by the declutter pass below)
@@ -1141,13 +1192,15 @@ function step(dt) {
   scenery.update(dt, ctx);
   fx.updateRace(dt, ctx);
   if (state.fireworks) {
+    const lastT = state.race ? Math.max(...state.race.finishTimes) : 0;
+    if (state.t > lastT + 14) state.fireworks = false;
     const burst = fx.fireworksTick(dt, scenery.fireworkBarges, true);
     if (burst) audio.boom();
   }
   if (state.phase === 'results' && state.podium && Math.floor(state.phaseTime / 2.2) !== Math.floor((state.phaseTime - dt) / 2.2)) {
     fx.confetti(tmpV.copy(scenery.podium.spots[0]).setY(scenery.podium.spots[0].y + 2.5), 0.5);
   }
-  if (audio.crowdGain && state.phase === 'race') audio.setCrowd(0.3 + 0.6 * (state.excite || 0));
+  if (audio.crowdGain && state.phase === 'race') { const cl = Math.round((0.3 + 0.6 * (state.excite || 0)) * 20) / 20; if (cl !== state._crowdL) { state._crowdL = cl; audio.setCrowd(cl); } }
   audio.setMusicIntensity(state.phase === 'race' ? 0.45 + 0.55 * smoothstep(0.3, 1, state.excite || 0) : state.phase === 'countdown' ? 0.35 : state.phase === 'finish' ? 0.7 : state.phase === 'results' ? 0.4 : 0.22);
   audio.setRate(state.phase === 'race' ? state.rate : 1);
   audio.pumpMusic();
@@ -1159,6 +1212,7 @@ function step(dt) {
 // Name-tag declutter: priority order, greedy screen-space placement, capped count.
 const tagV = new THREE.Vector3();
 const placedRects = [];
+const hudRects = { at: 0, list: [] };
 function declutterTags() {
   const n = state.ducks.length;
   if (state.phase === 'grid' || state.phase === 'countdown') {
@@ -1189,15 +1243,20 @@ function declutterTags() {
   }
   order.sort((a, b) => pri(a) - pri(b));
   placedRects.length = 0;
-  const W = renderer.domElement.clientWidth;
-  const H = renderer.domElement.clientHeight;
+  const W = viewport.w;
+  const H = viewport.h;
   // keep tags out from under the HUD panels
-  for (const id of ['hud-ladder', 'minimap', 'hud-tl', 'hud-item']) {
-    const el = document.getElementById(id);
-    if (!el || el.offsetParent === null) continue;
-    const r = el.getBoundingClientRect();
-    if (r.width > 0) placedRects.push({ x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width + 12, h: r.height + 12, hud: true });
+  if (!hudRects.at || state.realTime - hudRects.at > 1) {
+    hudRects.at = state.realTime;
+    hudRects.list.length = 0;
+    for (const id of ['hud-ladder', 'minimap', 'hud-tl', 'hud-item']) {
+      const el = document.getElementById(id);
+      if (!el || el.offsetParent === null) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width > 0) hudRects.list.push({ x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width + 12, h: r.height + 12, hud: true });
+    }
   }
+  for (const r of hudRects.list) placedRects.push(r);
   const th = 0.036 * H; // approx on-screen tag height in px (constant by construction)
   let shown = 0;
   for (const i of order) {
@@ -1246,7 +1305,7 @@ function updateYouMarker() {
   mk.material.opacity = chase ? 0.92 : 1;
   // screen anchor for personal callouts
   tagV.copy(d.duck.group.position).setY(d.duck.group.position.y + 1.2).project(camera);
-  if (tagV.z < 1) hud.setAnchor((tagV.x * 0.5 + 0.5) * renderer.domElement.clientWidth, (-tagV.y * 0.5 + 0.5) * renderer.domElement.clientHeight);
+  if (tagV.z < 1) hud.setAnchor((tagV.x * 0.5 + 0.5) * viewport.w, (-tagV.y * 0.5 + 0.5) * viewport.h);
 }
 
 const sepTmp = new THREE.Vector3();

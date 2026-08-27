@@ -22,6 +22,7 @@ export class Effects {
     this._initProjectiles();
     this.rand = mulberry(9001);
     this.fireT = 0;
+    this.budget = 1;
     this._v = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
     this._v3 = new THREE.Vector3();
@@ -40,6 +41,8 @@ export class Effects {
     this.pGrav = new Float32Array(n);
     this.pDrag = new Float32Array(n);
     this.cursor = 0;
+    this.emitLo = n;
+    this.emitHi = -1;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(this.pPos, 3).setUsage(THREE.DynamicDrawUsage));
     geo.setAttribute('color', new THREE.BufferAttribute(this.pCol, 4).setUsage(THREE.DynamicDrawUsage));
@@ -86,15 +89,21 @@ export class Effects {
     this.pDrag[i] = drag;
     this.live++;
     this.dirty = true;
+    if (i < this.emitLo) this.emitLo = i;
+    if (i > this.emitHi) this.emitHi = i;
   }
 
   _updateParticles(dt) {
     const n = this.N;
     if (this.live <= 0 && !this.dirty) return; // nothing alive: skip the CPU pass and GPU uploads
     let live = 0;
+    let lo = n;
+    let hi = -1;
     for (let i = 0; i < n; i++) {
       if (this.pLife[i] <= 0) continue;
       live++;
+      if (i < lo) lo = i;
+      if (i > hi) hi = i;
       this.pLife[i] -= dt;
       if (this.pLife[i] <= 0) { this.pCol[i * 4 + 3] = 0; this.pPos[i * 3 + 1] = -999; continue; }
       const k = Math.exp(-this.pDrag[i] * dt);
@@ -106,16 +115,34 @@ export class Effects {
     this.live = live;
     this.dirty = false;
     const g = this.points.geometry;
-    g.attributes.position.needsUpdate = true;
-    g.attributes.color.needsUpdate = true;
-    g.attributes.size.needsUpdate = true;
+    // upload only the slice of the pool that holds live (or just-emitted/died) particles
+    lo = Math.min(lo, this.emitLo);
+    hi = Math.max(hi, this.emitHi);
+    this.emitLo = n;
+    this.emitHi = -1;
+    if (hi < lo) { lo = 0; hi = n - 1; }
+    const setRange = (attr, comps) => {
+      if (attr.clearUpdateRanges) attr.clearUpdateRanges();
+      if (attr.addUpdateRange) attr.addUpdateRange(lo * comps, (hi - lo + 1) * comps);
+      else attr.updateRange = { offset: lo * comps, count: (hi - lo + 1) * comps };
+      attr.needsUpdate = true;
+    };
+    setRange(g.attributes.position, 3);
+    setRange(g.attributes.color, 4);
+    setRange(g.attributes.size, 1);
   }
 
   rnd(a = 0, b = 1) { return a + (b - a) * this.rand(); }
 
+  /** Create one of each pooled projectile so their programs compile during boot (hidden again next frame). */
+  warmup() {
+    for (const kind of Object.keys(this.pool)) { const m = this._get(kind, 0); m.visible = true; m.traverse((o) => { o.frustumCulled = false; }); }
+    this.emit(this._v.set(0, -50, 0), this._v2.set(0, 0, 0), 0xffffff, 0.1, 0.2);
+  }
+
   splash(pos, strength = 1) {
     // a crown: most droplets in a ring moving outward + up, a few stragglers
-    const n = Math.round(40 * strength * this.quality.particles);
+    const n = Math.round(40 * strength * this.quality.particles * this.budget);
     for (let k = 0; k < n; k++) {
       const a = this.rnd(0, Math.PI * 2);
       const ring = k % 10 < 7;
@@ -128,7 +155,7 @@ export class Effects {
 
   /** Rooster-tail spray behind a fast duck. dir = unit backward vector. */
   spray(pos, back, amount = 1, color = PAL.waterFoam) {
-    const n = Math.max(1, Math.round(8 * amount * this.quality.particles));
+    const n = Math.max(1, Math.round(8 * amount * this.quality.particles * this.budget));
     for (let k = 0; k < n; k++) {
       this._v.copy(back).multiplyScalar(this.rnd(2, 6)).add(this._v2.set(this.rnd(-1.2, 1.2), this.rnd(1.5, 4), this.rnd(-1.2, 1.2)));
       this.emit(pos, this._v, k % 7 ? color : PAL.waterShallow, this.rnd(0.05, 0.12), this.rnd(0.25, 0.45), 1.4, 1.2, 0.85);
@@ -145,7 +172,7 @@ export class Effects {
   }
 
   mustard(pos) {
-    const n = Math.round(60 * this.quality.particles);
+    const n = Math.round(60 * this.quality.particles * this.budget);
     for (let k = 0; k < n; k++) {
       const a = this.rnd(0, Math.PI * 2);
       const up = this.rnd(2, 8);
@@ -165,7 +192,7 @@ export class Effects {
   }
 
   confetti(pos, amount = 1) {
-    const n = Math.round(120 * amount * this.quality.particles);
+    const n = Math.round(120 * amount * this.quality.particles * this.budget);
     for (let k = 0; k < n; k++) {
       const a = this.rnd(0, Math.PI * 2);
       const sp = this.rnd(2, 9);
@@ -185,7 +212,7 @@ export class Effects {
       this.emit(this._v3, this._v.set(0, 2, 0), 0xfff1c4, 0.2, 0.25 + k * 0.03, 0, 0.5, 0.8);
     }
     const col = [0xff5f6d, 0xffd23f, 0x47e0ff, 0xb06bff, 0x7dff8a, 0xffffff][Math.floor(this.rnd(0, 6))];
-    const n = Math.round(90 * this.quality.particles);
+    const n = Math.round(90 * this.quality.particles * this.budget);
     for (let k = 0; k < n; k++) {
       // uniform sphere
       const u = this.rnd(-1, 1);
@@ -212,7 +239,7 @@ export class Effects {
       band.scale.set(1, 1, 0.8);
       hornet.add(band);
     }
-    const wingMat = new THREE.MeshBasicMaterial({ color: 0xe8faff, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false });
+    const wingMat = new THREE.MeshBasicMaterial({ color: 0xe8faff, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false, forceSinglePass: true });
     hornet.userData.wings = [];
     for (const side of [-1, 1]) {
       const w = new THREE.Mesh(new THREE.CircleGeometry(0.45, 10), wingMat);

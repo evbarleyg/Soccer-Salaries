@@ -63,7 +63,7 @@ export class WorldAudio extends DuckAudio {
     const now = this.ctx.currentTime;
     m.intensity += (m.target - m.intensity) * 0.05;
     const level = (0.05 + 0.22 * m.intensity) * m.duck;
-    this.musicGain.gain.setTargetAtTime(level, now, 0.2);
+    if (this._changed('music', level, 0.004)) this.musicGain.gain.setTargetAtTime(level, now, 0.2);
     const spb = 60 / 124 / 4; // 16th notes
     const BASS = [45, 45, 0, 45, 48, 48, 0, 48, 43, 43, 0, 43, 40, 40, 0, 52]; // midi, 0 = rest (A, C, G, E)
     const ARP = [69, 72, 76, 81, 72, 76, 81, 84, 67, 71, 74, 79, 64, 67, 71, 76];
@@ -136,12 +136,25 @@ export class WorldAudio extends DuckAudio {
   /** Slow-motion feel: low-pass everything tonal while rate < 1. */
   setRate(rate) {
     if (!this.toneBus) return;
+    if (!this._changed('rate', rate, 0.02)) return;
     const f = rate < 0.95 ? 700 + 5000 * rate * rate : 20000;
     this.toneBus.frequency.setTargetAtTime(f, this.now, 0.08);
   }
 
+  suspend() { if (this.ctx && this.ctx.state === 'running') this.ctx.suspend(); }
+  resume() { if (this.ctx && this.ctx.state === 'suspended' && this.enabled) this.ctx.resume(); }
+
+  /** Only forward a parameter change to the audio thread when it actually moved. */
+  _changed(key, value, eps = 0.01) {
+    this._last = this._last || {};
+    if (this._last[key] !== undefined && Math.abs(this._last[key] - value) < eps) return false;
+    this._last[key] = value;
+    return true;
+  }
+
   setTunnel(amount) {
     if (!this.echo) return;
+    if (!this._changed('tunnel', amount)) return;
     this.echo.gain.setTargetAtTime(0.55 * amount, this.now, 0.2);
     if (this.waterGain) this.waterGain.gain.setTargetAtTime(0.05 + 0.06 * amount, this.now, 0.3);
   }
