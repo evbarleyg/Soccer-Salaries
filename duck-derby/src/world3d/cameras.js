@@ -243,6 +243,11 @@ export class CameraRig {
         if (!d) break;
         // camera sits behind along the track (track space keeps it inside the channel/tunnel), swung by user yaw
         const inTunnel = this.chasePose(d, ctx, desiredPos, desiredLook);
+        // pack zoom: when the pack is tight around my duck, widen so neighbours stay in frame
+        let close = 0;
+        for (const o of ctx.ducks) if (o !== d && Math.abs(o.s - d.s) < 6 && Math.abs(o.lat - d.lat) < 5) close++;
+        this.packZoom = lerp(this.packZoom || 0, close >= 3 ? 1 : 0, Math.min(1, dt * 1.5));
+        wantFov += this.packZoom * (this.portrait ? 9 : 5);
         if (d.boosting) wantFov += 9;
         if (d.star) wantFov += 5;
         if (d.airborne) wantFov += 7;
