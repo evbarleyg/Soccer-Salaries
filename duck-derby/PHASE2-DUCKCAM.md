@@ -8,26 +8,29 @@ picks their duck and rides along; a TV/spectator camera works for the big
 screen. The 2D game's duck identities (palettes, hats, numbers) carry over so
 everyone recognises their racer.
 
-## The one rule that keeps it fair and replayable
+## Relationship to the 2D game
 
-The existing seeded engine (`duck-derby/src/sim.js`) remains the single
-source of truth for the OUTCOME. It produces, for every duck, distance along
-the course over time (`positionAt(sim, i, t)` in 0..TRACK_LENGTH), speed, and
-timed events (`burst`, `stumble`, `hotdog`, `lead`, `stretch`, `finish`).
-The 3D game maps that 1D distance onto a 3D spline course: `s = x / TRACK_LENGTH`
-→ `curve.getPointAt(s)`, tangent → heading. Everything else — lateral lane
-offsets, jostling, drifting wide in corners, leaning, hops off ramps, spray,
-item hits — is presentation layered on top and must never change who is ahead
-*along the spline*. Same link ⇒ same finishing order as `index.html`.
-No `Math.random()` for anything outcome-affecting (visual randomness fine;
-prefer a seeded RNG from `src/rng.js` so replays even *look* the same).
+This is a **fully separate implementation** of the same concept, not a 3D
+camera on the 2D race and not bound to its engine or share links. Reuse what
+helps — the duck identities in `src/ducks.js` (palettes, 16 hats, towel
+numbers, `assignLooks`), the seeded RNG in `src/rng.js`, ideas from
+`src/sim.js`, the synth audio — but the 3D game owns its own race logic.
 
-If you want extra world-specific drama events (e.g. "whirlpool grabs the
-leader", "log bump"), add them the way `hotdog` was added in `sim.js`:
-seeded, symmetric across ducks (target by race position, never by name/lane),
-covered by `test/fairness.test.js` — and propose the sim change in your PR
-description since another session owns that file; until then, drive all
-hazards visually from the existing `stumble`/`hotdog` events.
+What must carry over is the *contract*, not the code:
+- **Random but fair**: who wins must be genuinely random with every duck
+  having the same chance (parameters drawn i.i.d.; hazards target race
+  positions such as "the leader", never a name or lane). Include a headless
+  Monte Carlo fairness test like `test/fairness.test.js`.
+- **Seeded & replayable**: a race is reproducible from (names, seed) so a
+  league can share a link and everyone sees the same result; expose the seed.
+- **Dramatic**: rubber-banding that fades for the run-in, bursts, stumbles,
+  lead changes, photo finishes, item hits — tuned for a ~40 s race.
+
+A good architecture is still "simulate progress along the course
+deterministically from the seed (1D distance per duck over time + timed
+events), then render it on a 3D spline course", because it makes replays,
+slow-mo and camera cuts trivial — but that simulation lives in the 3D game's
+own modules and can model course features (currents, the Drop, rapids) directly.
 
 ## World & course
 
@@ -52,17 +55,17 @@ but the look should not depend on them):
 7. **Harbor finish**: lighthouse, cheering crowds on piers, chequered arch,
    fireworks + confetti cannons on finish, podium barge for the results.
 
-Hazards/items presentation (all driven by existing sim events):
-- `hotdog` (targets the leader): a spectator on a bridge/boat lobs a hot dog
+Hazards/items (drive them from your sim's timed events so replays match):
+- Hot dog (targets the leader): a spectator on a bridge/boat lobs a hot dog
   — visible wind-up and arc (launch ~0.8 s before the event time; the race is
   precomputed so look ahead in `sim.events`), impact → hop + 360° barrel roll
   (~0.95 s), mustard/ketchup particle burst, orbiting stars, crowd "OOH".
-- `stumble`: context-specific bonk (rock, lily pad, log) + wobble.
-- `burst`: boost — squash/stretch, speed lines, spray rooster-tail, FOV kick
+- Stumble: context-specific bonk (rock, lily pad, log) + wobble.
+- Burst: boost — squash/stretch, speed lines, spray rooster-tail, FOV kick
   for the chase cam if it's your duck.
-- `lead` change: brief "1st!" toast if it's your duck; TV cam cut.
-- `stretch`: final-stretch banner, music intensity up.
-- Photo finish (`sim.photoFinish`): slow-mo 0.3× for the leader's last ~3%,
+- Lead change: brief "1st!" toast if it's your duck; TV cam cut.
+- Final stretch: banner, music intensity up.
+- Photo finish: slow-mo 0.3× for the leader's last ~3%,
   freeze-frame flash at the line.
 
 ## Ducks
@@ -113,16 +116,19 @@ offset), airborne pose off the Drop, dizzy wobble, barrel roll.
 - Performance: 60 fps target on a mid-range phone. Instancing for crowd,
   buoys, trees, rocks; capped pixel ratio (≤2); cheap/blob shadows; LOD or
   density scaling by device; frustum-friendly chunking of the course.
-- URL params identical to the 2D app: `names=a~b~c` (URI-encoded, `~`
-  separated), `seed=XXXX-XXXX` (`codeToSeed` in `src/rng.js`), `len`
-  (24|38|55 → also scales course pacing), `rule` (w|l), `salt`, `hz` (0 = no
-  hot dogs), plus `cam=<duck name | 1-based lane>` and `view=tv|chase|free`.
+- URL params: keep the 2D app's conventions where sensible so links feel
+  familiar — `names=a~b~c` (URI-encoded, `~` separated), `seed=XXXX-XXXX`
+  (see `codeToSeed` in `src/rng.js`), `rule` (w|l = winner or last place
+  picks first), `hz` (0 = no hot dogs) — plus `cam=<duck name | 1-based
+  lane>` and `view=tv|chase|free`. A setup screen for entering 8/10/12/…
+  names (2–16) is required, like the 2D app's.
 - Files: `duck-derby/world.html` (entry), `duck-derby/src/world3d/**.js`,
   `duck-derby/tools/shots3d.mjs`. You may extend the `check` glob in
   `duck-derby/package.json`. Do not edit `index.html`, `styles.css`,
   `src/main.js`, `src/scene.js`, `src/draw-duck.js`, `src/sim.js`,
-  `src/ducks.js` or tests (the 2D session owns them and will link
-  "Enter Duck Derby World" → `world.html?<same params>`). Any earlier draft
+  `src/ducks.js` or the existing tests (the 2D session owns them and will add
+  an "Enter Duck Derby World" link to `world.html`). Put your own engine and
+  tests under `src/world3d/` and `test/world3d.*.test.js`. Any earlier draft
   under `src/cam3d/` / `duckcam.html` is disposable — reuse or delete.
 - Headless captures: Playwright is installed globally (see the import shim in
   `tools/shots.mjs`); launch Chromium with
@@ -134,8 +140,8 @@ offset), airborne pose off the Drop, dizzy wobble, barrel roll.
 
 ## Definition of done
 
-`world.html?names=…&seed=…` reproduces the exact finishing order of
-`index.html` for the same params; the course has all seven sections with
+`world.html` runs a fair, seeded, replayable race of 2–16 named ducks (same
+names + seed ⇒ same result, verified by a fairness test); the course has all seven sections with
 distinct looks; chase/TV/free cameras work; hot-dog spin-outs, the Drop,
 tunnel and fireworks finish all land; smooth on phone + laptop; no console
 errors; `cd duck-derby && npm run ci` passes; screenshots for every section;
