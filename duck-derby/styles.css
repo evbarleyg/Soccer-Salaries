@@ -1383,3 +1383,12 @@ body.calm .callout .big.go::before { display: none; }
 body.calm .callout .big::before { animation: none !important; }
 body.calm .podium .place-1::before { animation: none !important; }
 body.calm .ticker .line, body.calm .ticker .headline, body.calm .ticker .sub { animation-duration: .01s !important; }
+
+/* link from the 2D setup to the 3D world (roster carried in the URL) */
+.world-link {
+  display: block; margin: 8px 2px 0; text-align: center; font-size: 12px; font-weight: 800;
+  color: var(--ink-2, #28405f); text-decoration: none; opacity: .85;
+}
+.world-link strong { color: var(--blue, #1f5bd8); }
+.world-link:hover, .world-link:focus-visible { opacity: 1; text-decoration: underline; }
+body.shared-lock .world-link { display: none; }

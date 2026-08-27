@@ -378,6 +378,18 @@ function updateCta() {
     b.setAttribute('aria-pressed', String(on));
   });
   els.start.querySelector('.cta-main').textContent = state.shared ? 'Replay shared race' : 'Start the Derby';
+  syncWorldLink();
+}
+
+/** Keep the "race these ducks in 3D" link carrying the current roster (world.html reads names=a~b~c). */
+function syncWorldLink() {
+  const a = document.getElementById('link-world');
+  if (!a) return;
+  const names = state.names.map((n) => String(n || '').replace(/~/g, '-').trim()).filter(Boolean);
+  const p = new URLSearchParams();
+  if (names.length >= 2) p.set('names', names.join('~'));
+  if (state.rule === 'last-first') p.set('rule', 'l');
+  a.href = 'world.html' + (p.toString() ? `?${p}` : '');
 }
 
 /**
