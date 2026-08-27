@@ -1118,7 +1118,8 @@ function loop() {
   const raw = clock.getDelta();
   const dt = Math.min(raw, 0.05);
   state.realTime += dt;
-  state.phaseTime += dt;
+  // a synchronised start must track the wall clock even if frames are slow
+  state.phaseTime += state.go && (state.phase === 'grid' || state.phase === 'countdown' || state.phase === 'lobby') ? Math.min(raw, 0.5) : dt;
   step(dt);
   renderer.render(scene, camera);
   if (!calm && !urlFlags.has('noadapt')) adaptQuality(raw);

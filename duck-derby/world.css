@@ -263,7 +263,7 @@ body.phase-finish #hud-item { display: none; }
 #lobby-roster i { font: 800 0.72rem var(--num); font-style: normal; border-radius: 999px; padding: 2px 8px; border: 1.5px solid rgba(255,255,255,0.8); }
 .lobby-actions { display: flex; gap: 8px; }
 .lobby-actions button { border: 1px solid var(--line); background: rgba(255,255,255,0.08); color: #fff; border-radius: 10px; padding: 0.5rem 0.9rem; font: 800 0.9rem var(--num); }
-.lobby-actions .primary { box-shadow: 0 4px 0 #b37d00; }
+.lobby-actions .primary { background: linear-gradient(180deg, #ffe067, #ffbf1f); color: #1a1300; border: 0; box-shadow: 0 4px 0 #b37d00; }
 @media (max-width: 760px) { #lobby .lobby-card { flex-direction: column; text-align: center; } #lobby-roster { justify-content: center; } .lobby-actions { justify-content: center; } #lobby-qr { width: 150px; } }
 body.phase-lobby #hud-tl, body.phase-lobby #hud-item, body.phase-lobby #hud-ladder, body.phase-lobby #progress, body.phase-lobby #minimap, body.phase-lobby #hud-leader, body.phase-lobby #hud-clock { display: none; }
 
