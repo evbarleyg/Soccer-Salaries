@@ -1380,6 +1380,18 @@ function step(dt) {
   audio.setTunnel(inTunnel);
   sky.position.copy(camera.position);
   state.excite = state.phase === 'race' ? lerp(0.35, 1, smoothstep(L * 0.75, L, ctx.leaderS)) : state.phase === 'finish' || state.phase === 'results' ? 1 : 0.25;
+  // far sections (in opaque fog anyway) are hidden wholesale: fewer draw calls and no updater work
+  if (scenery.sections) {
+    const camPos = camera.position;
+    for (const key in scenery.sections) {
+      const sec = scenery.sections[key];
+      if (!sec || !sec.group) continue;
+      const inRange = camS > sec.s0 - 260 && camS < sec.s1 + 200;
+      let near = inRange;
+      if (!near && sec.center) near = camPos.distanceTo(sec.center) < 320;
+      sec.group.visible = near || rig.mode === 'free' || state.phase === 'flythrough' || state.phase === 'lobby';
+    }
+  }
   scenery.update(dt, ctx);
   fx.updateRace(dt, ctx);
   if (state.fireworks) {
