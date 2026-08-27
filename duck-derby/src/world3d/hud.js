@@ -497,7 +497,10 @@ export class Hud {
     this.el.banner.classList.remove('show');
     this.el.comm.classList.remove('show');
     this.el.section.classList.remove('show');
+    this.el.mud.style.transition = 'none';
     this.el.mud.classList.remove('show');
+    void this.el.mud.offsetWidth;
+    this.el.mud.style.transition = '';
     this._muddy = false;
     this.el.speed.classList.remove('show');
     this.incoming(null);
