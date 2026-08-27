@@ -393,6 +393,7 @@ function startRace({ fromUrl = false, names = null, trial = false } = {}) {
     state.race = createRace({ count: raceNames.length, seed: state.seed, hazards: state.hazards, items: state.items });
   }
   document.body.classList.toggle('trial', !!state.trial);
+  rig.lookLocked = !!state.trial && Q.mobile;
   buildTrialProps();
   state.looks = assignLooks(raceNames, state.salt || 0);
   commentator = new WorldCommentator(raceNames, state.seed);
@@ -1839,7 +1840,7 @@ window.addEventListener('keydown', (e) => {
 let downAt = null;
 canvas.addEventListener('pointerdown', (e) => (downAt = { x: e.clientX, y: e.clientY, t: performance.now() }));
 canvas.addEventListener('pointerup', (e) => {
-  if (!downAt || !state.race) return;
+  if (!downAt || !state.race || state.trial) return; // in a live trial touches steer; no tap-to-ride
   if (Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 8 || performance.now() - downAt.t > 400) return;
   if (state.phase === 'flythrough') { skipIntro(); return; }
   const rect = canvas.getBoundingClientRect();

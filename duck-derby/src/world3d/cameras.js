@@ -104,7 +104,7 @@ export class CameraRig {
       }
     });
     el.addEventListener('pointermove', (e) => {
-      if (!dragging || !touches.has(e.pointerId)) return;
+      if (!dragging || !touches.has(e.pointerId) || this.lookLocked) return; // (live trial: touches steer instead)
       const t = touches.get(e.pointerId);
       t.x = e.clientX;
       t.y = e.clientY;

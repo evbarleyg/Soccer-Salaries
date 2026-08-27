@@ -74,7 +74,8 @@ tools/                   analysis + screenshot tooling
 chase/TV/free cameras, a join-by-QR lobby so every phone starts together, and
 the same fair/seeded/replayable contract (its own engine and tests under
 `src/world3d/` and `test/world3d.*`). See `WORLD3D.md` for the architecture and
-`PHASE3-MULTIPLAYER.md` for the player-controlled follow-up.
+`PHASE3-MULTIPLAYER.md` for the player-controlled follow-up (a single-device preview,
+**Tilt Trial**, is already on the setup screen: steer your own duck with phone tilt or arrow keys).
 
 ## Deploying on its own
 
