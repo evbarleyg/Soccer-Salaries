@@ -162,7 +162,7 @@ export class CameraRig {
     const track = this.track;
     const inTunnel = d.section === 'tunnel' || (d.s > track.features.tunnelInS - 12 && d.s < track.features.tunnelOutS + 4);
     const portrait = this.portrait;
-    const dist = (inTunnel ? 4.2 : portrait ? 4.9 : 5.4) * this.userZoom;
+    const dist = (inTunnel ? 4.2 : portrait ? 5.6 : 5.4) * this.userZoom;
     const height = Math.max(0.7, (inTunnel ? 1.7 : portrait ? 2.7 : 2.35) * this.userZoom + this.userPitch * 3);
     const yaw = this.userYaw;
     const sBack = d.s - Math.cos(yaw) * dist;
@@ -170,13 +170,23 @@ export class CameraRig {
     const half = track.course.widthAt(sBack) / 2 - 1.0;
     track.toWorld(sBack, clamp(latOff, -half, half), height + Math.min(1.6, d.hop * 0.4), outPos);
     track.toWorld(d.s + (portrait ? 11 : 9), d.lat * 0.85, (portrait ? 0.8 : 0.9), outLook);
+    if (portrait && d.pos) {
+      // narrow portrait FOV: look straight past the duck (camera→duck ray, extended), so bends can't push it off-screen;
+      // aiming a little above it seats the duck in the lower-middle of the frame
+      tmpLook.copy(d.pos).sub(outPos).setY(0).normalize();
+      const aheadY = outLook.y;
+      outLook.copy(d.pos).addScaledVector(tmpLook, 7);
+      outLook.y = Math.max(aheadY, d.pos.y) + 0.4;
+    }
     if ((d.airborne || d.spinning) && d.pos) {
-      // over the weir (or while spinning out): look at the duck itself rather than the water ahead
+      // over the weir (or while spinning out): come in closer and lower and look at the duck itself,
+      // so the hop silhouettes against the sky instead of the foam
       const f = track.frame(d.s);
+      if (d.airborne) outPos.lerp(tmpLook.copy(d.pos).addScaledVector(f.flat, -dist * 0.7).setY(outPos.y), 0.6);
       tmpLook.copy(d.pos).addScaledVector(f.flat, 5);
-      tmpLook.y = d.pos.y - 0.2;
+      tmpLook.y = d.pos.y + (d.airborne ? 0.3 : -0.2);
       outLook.lerp(tmpLook, 0.85);
-      outPos.y = Math.max(outPos.y, d.pos.y - 1.2); // don't let the duck fly out of the top of the frame
+      outPos.y = d.airborne ? Math.max(Math.min(outPos.y, d.pos.y - 0.3), outPos.y - 2.5) : Math.max(outPos.y, d.pos.y - 1.2);
     }
     return inTunnel;
   }
@@ -258,7 +268,7 @@ export class CameraRig {
         if (d.spinning) wantFov += 4;
         if (d.boosting) wantFov += 9;
         if (d.star) wantFov += 5;
-        if (d.airborne) wantFov += 7;
+        if (d.airborne) wantFov += 9;
         wantFov += clamp((d.v / (ctx.race ? ctx.race.v0 : 23) - 1) * 10, -3, 6);
         const f = track.frame(d.s);
         const bankRoll = this.externalLook ? 0 : clamp(-f.bank * 0.35, -0.1, 0.1); // cap at ~6 degrees
@@ -408,10 +418,10 @@ export class CameraRig {
       if (s > F.canyonInS + 25 && s < F.lilyInS - 30) {
         // canyon: alternate in-channel apex cams and a low chase dolly
         const half = track.course.widthAt(s + 32) / 2;
-        shot = flip === 0 ? { id: 'canyon-apex-' + slot, s: s + 32, lat: (slot % 4 < 2 ? 1 : -1) * (half - 1.2), h: 3.2, lookPack: true, fov: 60 } : { id: 'canyon-dolly-' + slot, dolly: true, ahead: 12, h: 0.7, fov: 66, stiff: 7 };
-      } else if (s > F.lilyInS - 30 && s < F.dropLipS - 30) shot = flip === 0 ? { id: 'lily-low-' + slot, s: Math.min(s + 34, F.dropApproachS - 5), lat: -11, h: 0.45, lookPack: true, fov: 62 } : { id: 'lily-heli-' + slot, heli: true, r: 34, h: 20, fov: 54 };
-      else if (s > F.tunnelOutS + 20 && s < F.harborInS) shot = flip === 0 ? { id: 'rapids-dolly-' + slot, dolly: true, ahead: 11, h: 0.6, fov: 68, stiff: 7 } : { id: 'rapids-rock-' + slot, s: s + 36, lat: 9, h: 5.5, lookPack: true, fov: 56 };
-      else shot = flip === 0 ? { id: 'heli-' + slot, heli: true, r: 36, h: 22, fov: 55 } : { id: 'dolly-' + slot, dolly: true, ahead: 12, h: 0.8, fov: 66, stiff: 7 };
+        shot = flip === 0 ? { id: 'canyon-apex-' + slot, s: s + 32, lat: (slot % 4 < 2 ? 1 : -1) * (half - 1.2), h: 3.2, lookPack: true, fov: 60 } : { id: 'canyon-dolly-' + slot, dolly: true, ahead: 15, h: 1.5, fov: 50, stiff: 7 };
+      } else if (s > F.lilyInS - 30 && s < F.dropLipS - 30) shot = flip === 0 ? { id: 'lily-low-' + slot, s: Math.min(s + 34, F.dropApproachS - 5), lat: -11, h: 0.9, lookPack: true, fov: 50 } : { id: 'lily-heli-' + slot, heli: true, r: 34, h: 20, fov: 54 };
+      else if (s > F.tunnelOutS + 20 && s < F.harborInS) shot = flip === 0 ? { id: 'rapids-dolly-' + slot, dolly: true, ahead: 12, h: 1.4, fov: 50, stiff: 7 } : { id: 'rapids-rock-' + slot, s: s + 36, lat: 9, h: 5.5, lookPack: true, fov: 56 };
+      else shot = flip === 0 ? { id: 'heli-' + slot, heli: true, r: 36, h: 22, fov: 55 } : { id: 'dolly-' + slot, dolly: true, ahead: 13, h: 1.5, fov: 52, stiff: 7 };
     }
     // event cuts (lead changes, big hits) pre-empt the schedule for their duration
     if (this.tvOverride && this.tvOverride.shot && t < this.tvOverride.until && !(s > F.dropLipS - 30 && s < F.dropLandS + 22) && s < L - 70) shot = this.tvOverride.shot;

@@ -1,15 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { simulateRace, createRace, standingsAt, positionAt, lateralAt, heldAt, activeWindows, dramaScore, TUNING, DEFAULTS, ENGINE_VERSION } from '../src/world3d/race.js';
+import { ITEM_TUNING } from '../src/world3d/items.js';
 import { getCourse } from '../src/world3d/course.js';
 
 const course = getCourse();
 
 // Expected outcomes per engine version (order | finish times) for a few fixed seeds.
 const GOLDEN = {
-  2: {
-      "1": "6,4,7,1,9,2,8,0,5,3|40.873,40.041,40.178,41.347,38.990,40.949,38.959,39.272,40.868,40.077",
-      "777": "6,0,7,8,1,9,3,4,2,5|38.355,39.896,41.184,40.101,40.498,41.256,38.107,38.610,39.438,39.952",
+  3: {
+      "1": "2,8,9,3,4,5,6,1,7,0|42.282,40.244,38.128,39.446,39.675,39.886,40.052,42.133,38.767,39.131",
+      "777": "8,4,1,6,5,3,9,7,0,2|41.575,39.037,41.929,39.691,38.957,39.366,39.102,41.051,38.372,40.505",
       "123456789": "1,6,4,9,8,3,2,7,0,5|41.381,38.659,40.716,39.732,38.963,41.893,38.949,40.806,39.623,39.362"
   },
 };
@@ -194,17 +195,17 @@ test('an unused bubble shield expires and frees the item slot', () => {
       if (e.type === 'expire') {
         sawExpire++;
         assert.ok(shieldAt.has(e.duck), 'expire without a held shield');
-        assert.ok(e.t - shieldAt.get(e.duck) >= 7.9, 'shield expired early');
+        assert.ok(e.t - shieldAt.get(e.duck) >= ITEM_TUNING.shield.dur - 0.1, 'shield expired early');
         shieldAt.delete(e.duck);
       }
       if (e.type === 'finish') shieldAt.delete(e.duck);
     }
-    // nobody may still "hold" a shield more than 8.5 s after picking it up
+    // nobody may still "hold" a shield well after it expired
     for (const [duck, t0] of shieldAt) {
       const end = sim.finishTimes[duck];
-      assert.ok(end - t0 < 8.5, `duck ${duck} kept a dead shield from ${t0} to ${end}`);
-      const h = heldAt(sim, duck, Math.min(end - 0.05, t0 + 8.4));
-      assert.ok(!h || h.item !== 'shield' || end - t0 < 8.1);
+      assert.ok(end - t0 < ITEM_TUNING.shield.dur + 0.5, `duck ${duck} kept a dead shield from ${t0} to ${end}`);
+      const h = heldAt(sim, duck, Math.min(end - 0.05, t0 + ITEM_TUNING.shield.dur + 0.4));
+      assert.ok(!h || h.item !== 'shield' || end - t0 < ITEM_TUNING.shield.dur + 0.1);
     }
   }
   assert.ok(sawExpire > 5, 'shields should expire sometimes');

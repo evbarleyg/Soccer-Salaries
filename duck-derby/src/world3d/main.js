@@ -439,7 +439,8 @@ function renderLobbyQr() {
     qr.make();
     box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
   } catch { box.textContent = 'QR unavailable'; }
-  $('#lobby-url').textContent = url.replace(/^https?:\/\//, '');
+  $('#lobby-url').textContent = `${location.host}${location.pathname.replace(/world\.html$/, '')} · seed ${seedToCode(state.seed)} · full link behind “Copy link”`;
+  document.body.classList.toggle('guest-in', !!state.shared);
   $('#lobby-roster').innerHTML = state.raceNames.map((n, i) => `<i style="background:${state.looks[i].towel.bg};color:${state.looks[i].towel.text}">${i + 1} ${escapeHtml(n)}</i>`).join('');
   $('#lobby-now').hidden = state.shared; // guests can't move the start
 }
@@ -493,7 +494,7 @@ function replay() {
 }
 
 function setBodyClass(phase, view = state.view) {
-  const keep = ['joining', 'letterboxed'].filter((c) => document.body.classList.contains(c)).join(' ');
+  const keep = ['joining', 'letterboxed', 'guest-in'].filter((c) => document.body.classList.contains(c)).join(' ');
   document.body.className = `phase-${phase} view-${view} ${keep}`.trim();
 }
 
@@ -813,7 +814,7 @@ function handleEvent(ev) {
         setTimeout(() => { audio.duckMusic(2.2); audio.fanfare(); }, 700);
         // freeze-frame: hold the clock for a beat with letterbox bars and the verdict
         if (state.phase === 'race' && !state.jumping) {
-          state.freezeUntil = state.realTime + 0.38;
+          state.freezeUntil = state.realTime + 0.6;
           state.letterboxed = true;
           letterbox(true, race.photoFinish ? `PHOTO FINISH · ${name} by ${race.margin.toFixed(2)} s` : race.close ? `${name} BY A BEAK · ${race.margin.toFixed(2)} s` : `${name} WINS · by ${race.margin.toFixed(2)} s`);
         }
@@ -912,7 +913,9 @@ function showResults() {
   $('#res-notes').innerHTML = notes.map((n) => `<li><b>${n.title}</b> ${escapeHtml(n.text)}</li>`).join('');
   els.results.hidden = false;
   els.finishCard.hidden = true;
-  if (myRow) setTimeout(() => myRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 700);
+  els.resBoard.classList.toggle('dense', picks.length > 8);
+  // only scroll to my row when it can't be seen together with pick 1
+  if (myRow) setTimeout(() => { if (myRow.offsetTop + myRow.offsetHeight > els.resBoard.scrollTop + els.resBoard.clientHeight) myRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 700);
   history.replaceState(null, '', '?' + shareQuery(true));
 }
 /** Post-race highlights computed from the sim: comeback, punching bag, longest lead, photo margin. */
@@ -1070,7 +1073,10 @@ async function copyText(text, btn, done) {
 // --------------------------------------------------------------------------- grid name boards (bigger tags during line-up)
 function showGridNames(on) {
   state.ducks.forEach((d, i) => {
-    d.tag.scale.set(on ? 1.9 : 2.6, on ? 0.48 : 0.65, 1);
+    const asp = d.tag.userData.aspect || 4;
+    const h = on ? 0.48 : 0.65;
+    const w = Math.min(h * asp, 2.7);
+    d.tag.scale.set(w, w / asp, 1);
     d.tag.position.y = on ? (i % 2 ? 2.75 : 2.05) : 2.25; // stagger so neighbours don't overlap on the line
   });
 }
@@ -1324,6 +1330,7 @@ function step(dt) {
       const ds = state.duckStates[i];
       const dist = d.duck.group.position.distanceTo(camP);
       ctx.near = dist < 60;
+      ctx.lens = dist < 5 || d.ghosted;
       if (ds.podiumSpot) {
         // stand on the podium, face the camera, idle bob
         d.duck.group.position.copy(ds.podiumSpot);
@@ -1335,22 +1342,26 @@ function step(dt) {
         for (const wng of d.duck.wings) wng.rotation.z = wng.userData.side * (0.5 + Math.sin(state.realTime * 20 + i) * 0.5) * (i === race.order[0] ? 1 : 0.2);
         d.duck.shadow.visible = false;
         d.tag.visible = true;
-        d.tag.scale.set(3, 0.75, 1);
+        { const asp = d.tag.userData.aspect || 4; const w = Math.min(0.62 * asp, 3); d.tag.scale.set(w, w / asp, 1); }
         d.item.visible = false;
         continue;
       }
       d.duck.shadow.visible = true;
       // ducks between the camera and my duck are ghosted so they never blank the frame (hidden when right on the lens)
       let ghost = 1;
-      if (rig.mode === 'chase' && i !== state.target && state.phase === 'race' && dist < 7) {
-        const me = state.ducks[state.target];
-        const myDist = me ? me.duck.group.position.distanceTo(camP) : 99;
-        if (dist < myDist - 0.5) ghost = dist < 3.2 ? 0 : clamp((dist - 3.2) / 3.5, 0.3, 1);
-      }
+      if (rig.mode === 'chase' && i !== state.target && state.phase === 'race' && dist < 7) ghost = dist < 4.6 ? 0 : clamp((dist - 4.6) / 2.4, 0, 1);
       d.duck.group.visible = ghost > 0;
-      if (d.ghost !== ghost && ghost > 0) {
-        d.ghost = ghost;
-        for (const mt of d.duck.glowMats || []) { mt.transparent = ghost < 0.999; mt.opacity = ghost; mt.depthWrite = ghost > 0.6; }
+      d.ghosted = ghost < 1;
+      if (ghost > 0) {
+        const q = Math.round(ghost * 10) / 10; // quantised so materials only change on real steps
+        if (d.ghost !== q) {
+          const hashOn = q < 1; // alpha-hash fade: no sorting artefacts, no x-ray look
+          for (const mt of d.duck.glowMats) {
+            if (mt.alphaHash !== hashOn) { mt.alphaHash = hashOn; mt.needsUpdate = true; }
+            mt.opacity = q;
+          }
+          d.ghost = q;
+        }
       }
       ctx.isTarget = i === state.target;
       if (d.duck.lod && d.duck.lod.far) {
@@ -1368,9 +1379,10 @@ function step(dt) {
       }
       d.tag.material.opacity = clamp(1.25 - dist / 60, 0.3, 1);
       if (state.phase === 'results') { d.tag.visible = false; d.item.visible = false; continue; }
-      const held = ds.held;
+      const held = d.ghosted || (ds.held && ds.held.item === 'shield') ? null : ds.held; // ghosts carry nothing; a shield's tell is its bubble
       d.item.userData.setItem(held ? held.item : null, held ? held.charges : 1);
-      if (held) {
+      if (!held) d.item.visible = false;
+      else {
         d.item.visible = dist < 90 && dist > 4;
         const ki = clamp(dist * 0.055, 0.5, 2.4);
         d.item.scale.setScalar(ki);
@@ -1462,7 +1474,7 @@ function declutterTags() {
   for (let i = 0; i < n; i++) {
     const d = state.ducks[i];
     const hideMine = !tv && i === me && state.phase === 'race';
-    const ok = d.dist > 3.5 && d.dist < 75 && !hideMine && d.duck.group.visible;
+    const ok = d.dist > 3.5 && d.dist < 75 && !hideMine && d.duck.group.visible && !d.ghosted;
     d.tag.visible = false;
     if (ok) order.push(i);
   }
@@ -1526,7 +1538,7 @@ function updateYouMarker() {
   const k = clamp(dist * (chase ? 0.07 : 0.085), 0.45, 3.2);
   mk.scale.set(1.2 * k, 1.2 * k, 1);
   mk.position.copy(d.duck.group.position);
-  mk.position.y += (chase ? 1.45 : 2.3) + k * 0.6 + Math.sin(state.realTime * 3.8) * 0.05 * k;
+  mk.position.y += (chase ? (rig.portrait ? 1.05 : 1.45) : 2.3) + k * (chase ? 0.4 : 0.6) + Math.sin(state.realTime * 3.8) * 0.05 * k;
   mk.material.opacity = chase ? 0.92 : 1;
   // screen anchor for personal callouts
   tagV.copy(d.duck.group.position).setY(d.duck.group.position.y + 1.2).project(camera);
@@ -1664,6 +1676,7 @@ window.__duckWorld = {
   freeCam: (x, y, z, lx, ly, lz) => { state.prevView = state.view === 'free' ? state.prevView : state.view; state.view = 'free'; rig.setMode('free'); setBodyClass(state.phase, 'free'); rig.pos.set(x, y, z); rig.look.set(lx, ly, lz); const d = rig.look.clone().sub(rig.pos).normalize(); rig.free.yaw = Math.atan2(d.x, d.z); rig.free.pitch = Math.asin(clamp(d.y, -0.99, 0.99)); rig.free.vel.set(0, 0, 0); },
   eventsOf: (type) => (state.race ? state.race.events.filter((e) => e.type === type) : []),
   resultCard: () => resultCard().toDataURL('image/png'),
+  rig,
 };
 
 boot().catch((err) => {

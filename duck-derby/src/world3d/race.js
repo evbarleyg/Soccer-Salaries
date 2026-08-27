@@ -22,7 +22,7 @@ export const SIM_HZ = 60;
 export const DT = 1 / SIM_HZ;
 export const DEFAULTS = { duration: 40, candidates: 4 };
 /** Bump when tuning changes race outcomes, so shared links can announce a mismatch. */
-export const ENGINE_VERSION = 2;
+export const ENGINE_VERSION = 3;
 
 /** Engine tuning knobs (fractions of base speed v0 unless noted). */
 export const TUNING = {

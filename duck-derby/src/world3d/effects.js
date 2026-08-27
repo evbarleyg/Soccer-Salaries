@@ -63,7 +63,7 @@ export class Effects {
         }`,
       fragmentShader: /* glsl */ `
         varying vec4 vCol;
-        void main() { vec2 c = gl_PointCoord - 0.5; float d = dot(c, c); if (d > 0.25) discard; float a = vCol.a * smoothstep(0.25, 0.12, d); gl_FragColor = vec4(vCol.rgb, a);
+        void main() { vec2 c = gl_PointCoord - 0.5; float d = dot(c, c); if (d > 0.25) discard; float a = vCol.a * smoothstep(0.25, 0.05, d); gl_FragColor = vec4(vCol.rgb, a);
         #include <colorspace_fragment>
         }`,
     });
@@ -148,7 +148,7 @@ export class Effects {
       const sp = (ring ? this.rnd(2.6, 3.4) : this.rnd(0.5, 4.5)) * Math.sqrt(strength);
       this._v.set(Math.cos(a) * sp, (ring ? this.rnd(3.2, 4.2) : this.rnd(2, 6.5)) * Math.sqrt(strength), Math.sin(a) * sp);
       this._v3.set(pos.x + Math.cos(a) * 0.4, pos.y, pos.z + Math.sin(a) * 0.4);
-      this.emit(this._v3, this._v, k % 6 ? PAL.waterFoam : PAL.waterShallow, this.rnd(0.06, 0.14), this.rnd(0.35, 0.7), 1.3, 0.9, 0.9);
+      this.emit(this._v3, this._v, k % 3 ? PAL.waterShallow : PAL.waterFoam, this.rnd(0.12, 0.26), this.rnd(0.22, 0.45), 2.2, 0.9, 0.65);
     }
   }
 

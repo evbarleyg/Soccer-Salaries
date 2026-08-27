@@ -2165,9 +2165,9 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
       pp.push(colorize(place(new THREE.BoxGeometry(13, 0.9, 7), 0, 0, 0), PAL.woodLight));
       pp.push(colorize(place(new THREE.BoxGeometry(13.4, 0.3, 7.4), 0, -0.4, 0), 0x39424e));
       const blocks = [
-        { x: 0, h: 1.7, col: COL.gold, label: '1' },
-        { x: -3.3, h: 1.2, col: COL.silver, label: '2' },
-        { x: 3.3, h: 0.85, col: COL.bronze, label: '3' },
+        { x: 0, h: 1.9, col: COL.gold, label: '1' },
+        { x: -3.3, h: 1.45, col: COL.silver, label: '2' },
+        { x: 3.3, h: 1.1, col: COL.bronze, label: '3' },
       ];
       for (const b of blocks) {
         // medal blocks self-illuminate in their own colour so gold/silver/bronze stay saturated on the shadow side
@@ -2206,7 +2206,8 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
           c2.fillStyle = b.label === '1' ? '#ffffff' : '#14202e'; // white on gold, ink on silver / bronze
           c2.fillText(b.label, w / 2, h / 2 + 10);
         });
-        const lbl = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
+        const sz = Math.min(1.5, b.h - 0.15);
+        const lbl = new THREE.Mesh(new THREE.PlaneGeometry(sz, sz), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
         lbl.position.set(b.x, 0.45 + b.h / 2, 1.52);
         grp.add(lbl);
       }

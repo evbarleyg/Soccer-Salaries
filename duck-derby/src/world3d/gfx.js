@@ -48,7 +48,7 @@ export const PAL = {
   lily: 0x5fbf4a,
   lilyDark: 0x3f8f3a,
   buoyRed: 0xe8412e,
-  buoyWhite: 0xf5f1e6,
+  buoyWhite: 0xf2b61c /* safety yellow (the cream ones read oddly) */,
   bunting: [0xe8412e, 0xffd23f, 0x3d7be0, 0x5fbf4a, 0xff7fb0, 0xffffff],
 };
 

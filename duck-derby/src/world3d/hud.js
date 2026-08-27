@@ -483,6 +483,9 @@ export class Hud {
   setMuted(muted) { this.el.muteBtn.classList.toggle('off', muted); }
 
   clearTransient() {
+    this.queue = [];
+    this.commUntil = 0;
+    this.commPri = 0;
     this.el.popup.innerHTML = '';
     this.el.banner.classList.remove('show');
     this.el.comm.classList.remove('show');

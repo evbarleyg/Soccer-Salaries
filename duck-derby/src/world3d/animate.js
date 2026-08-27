@@ -231,7 +231,7 @@ export class DuckAnimator {
       sternPos.y = waterY + 0.15;
       if (!d.airborne && spinE < 0) {
         // wake spray scales with speed; rooster tail when boosting
-        this.sprayAcc += dt * (boostW || w.star ? 60 : d.v > 5 ? 14 * effort : 0) * (ctx.near ? 1 : 0.35);
+        this.sprayAcc += ctx.lens ? 0 : dt * (boostW || w.star ? 60 : d.v > 5 ? 14 * effort : 0) * (ctx.near ? 1 : 0.35);
         while (this.sprayAcc >= 1) {
           this.sprayAcc -= 1;
           fx.spray(sternPos, back, boostW || w.star ? 1.6 : 0.7);

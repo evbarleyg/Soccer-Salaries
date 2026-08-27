@@ -26,7 +26,7 @@ export const ITEM_TUNING = {
   boost: { dur: 1.35, amp: 0.36 },
   hornet: { speed: 1.9, maxFlight: 4.0, spin: { dur: 1.3, amp: 0.9 } },
   stone: { speed: 2.2, ttl: 2.0, sRadius: 2.0, latRadius: 1.5, spin: { dur: 1.1, amp: 0.82 } },
-  shield: { dur: 8 },
+  shield: { dur: 5 },
   mud: { range: 90, dur: 2.2, slow: 0.1, maxVictims: 3 },
   feather: { dur: 3.2, fast: 0.27, plowLat: 2.2, wobble: { dur: 0.55, amp: 0.05 } },
   seagull: { speed: 3.3, dive: 0.55, spin: { dur: 1.6, amp: 1.0 } },
@@ -46,11 +46,11 @@ export function itemWeights(rank, count, leaderProg) {
   const leader = rank === 0;
   const backThird = count >= 3 && rank >= Math.ceil((2 * count) / 3);
   const w = [
-    ['bread', leader ? 40 : lerp(34, 16, r)],
+    ['bread', leader ? 48 : lerp(38, 16, r)],
     ['triple', lerp(3, 22, r)],
     ['hornet', leader ? 0 : lerp(9, 22, r)],
-    ['stone', leader ? 6 : lerp(18, 8, r)],
-    ['shield', leader ? 36 : lerp(30, 6, r)],
+    ['stone', leader ? 12 : lerp(22, 9, r)],
+    ['shield', leader ? 22 : lerp(20, 5, r)],
     ['mud', leader ? 0 : lerp(9, 5, r)],
     ['feather', count >= 3 && r > 0.6 ? lerp(0, 17, (r - 0.6) / 0.4) : 0],
     ['seagull', backThird && leaderProg < 0.72 ? 10 : 0],
