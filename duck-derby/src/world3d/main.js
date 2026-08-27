@@ -1437,6 +1437,8 @@ function step(dt) {
   audio.setMusicIntensity(state.phase === 'race' ? 0.45 + 0.55 * smoothstep(0.3, 1, state.excite || 0) : state.phase === 'countdown' ? 0.35 : state.phase === 'finish' ? 0.7 : state.phase === 'results' ? 0.4 : 0.22);
   audio.setRate(state.phase === 'race' ? state.rate : 1);
   audio.pumpMusic();
+  const meS = state.duckStates[state.target];
+  audio.paddle(meS && state.race ? meS.v / state.race.v0 : 0, state.phase === 'race' && rig.mode === 'chase' && meS && !meS.airborne && !meS.finished);
 
   // ---- HUD
   if (race && state.phase !== 'menu') hud.update(ctx);

@@ -41,6 +41,33 @@ export class WorldAudio extends DuckAudio {
     this.echo = wet;
   }
 
+  /** Soft paddling loop for the followed duck: little filtered noise strokes at foot cadence (call every frame). */
+  paddle(speedFrac, active) {
+    if (!this.ctx || !this.noiseBuffer) return;
+    const now = this.ctx.currentTime;
+    if (!active || speedFrac < 0.15) { this._nextPaddle = now + 0.1; return; }
+    if (this._nextPaddle === undefined) this._nextPaddle = now;
+    const interval = 0.34 / Math.max(0.5, Math.min(1.8, speedFrac)); // faster duck, quicker strokes
+    let guard = 0;
+    while (this._nextPaddle < now + 0.12 && guard++ < 3) {
+      const t = Math.max(now, this._nextPaddle);
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noiseBuffer;
+      const bp = this.ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 500 + Math.random() * 300;
+      bp.Q.value = 1.4;
+      const g = this.ctx.createGain();
+      const v = 0.05 + 0.05 * Math.min(1, speedFrac);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(v, t + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
+      src.connect(bp); bp.connect(g); g.connect(this.master);
+      src.start(t, Math.random() * 2); src.stop(t + 0.13);
+      this._nextPaddle += interval * (0.85 + Math.random() * 0.3);
+    }
+  }
+
   // ---------------------------------------------------------------- music
   /** Start the procedural loop (124 bpm, A minor): kick/hat, bass ostinato, arpeggio, stabs — layered by intensity. */
   startMusic() {
