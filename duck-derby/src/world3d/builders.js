@@ -16,6 +16,68 @@ export function colorize(geo, color) {
   return geo;
 }
 
+/**
+ * Paint vertex colours from a callback: fn(x, y, z, color, normal) sets `color` (a THREE.Color) for the
+ * vertex at (x, y, z) (geometry-local; `normal` is a Vector3 when the geometry has normals). Returns the geometry.
+ */
+export function colorizeFn(geo, fn) {
+  const p = geo.attributes.position;
+  const nrm = geo.attributes.normal;
+  const n = p.count;
+  const arr = new Float32Array(n * 3);
+  const c = new THREE.Color();
+  const nv = new THREE.Vector3(0, 1, 0);
+  for (let i = 0; i < n; i++) {
+    if (nrm) nv.set(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
+    c.set(0xffffff);
+    fn(p.getX(i), p.getY(i), p.getZ(i), c, nv);
+    arr[i * 3] = c.r;
+    arr[i * 3 + 1] = c.g;
+    arr[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+  return geo;
+}
+
+/**
+ * Displace vertices radially by a deterministic hash of their (rounded) position, so coincident
+ * vertices of a non-indexed geometry move together and the mesh stays watertight. Returns the geometry.
+ */
+export function lumpify(geo, amount = 0.2, seed = 1) {
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i);
+    const y = p.getY(i);
+    const z = p.getZ(i);
+    const h = Math.sin(Math.round(x * 97) * 12.9898 + Math.round(y * 89) * 78.233 + Math.round(z * 83) * 37.719 + seed * 4.1) * 43758.5453;
+    const k = 1 + ((h - Math.floor(h)) * 2 - 1) * amount;
+    p.setXYZ(i, x * k, y * k, z * k);
+  }
+  p.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** Gable-roof prism: unit footprint (x = across the ridge, z = along it), base at y = 0, ridge at y = 1. */
+export function gableGeo() {
+  const g = new THREE.BufferGeometry();
+  // prettier-ignore
+  const v = [
+    // left slope (outward normal up-left)
+    -0.5, 0, -0.5,  -0.5, 0, 0.5,  0, 1, 0.5,   -0.5, 0, -0.5,  0, 1, 0.5,  0, 1, -0.5,
+    // right slope
+    0.5, 0, 0.5,  0.5, 0, -0.5,  0, 1, -0.5,   0.5, 0, 0.5,  0, 1, -0.5,  0, 1, 0.5,
+    // gable ends
+    -0.5, 0, 0.5,  0.5, 0, 0.5,  0, 1, 0.5,
+    0.5, 0, -0.5,  -0.5, 0, -0.5,  0, 1, -0.5,
+    // underside (seen from below the eaves)
+    -0.5, 0, -0.5,  0.5, 0, -0.5,  0.5, 0, 0.5,   -0.5, 0, -0.5,  0.5, 0, 0.5,  -0.5, 0, 0.5,
+  ];
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
 /** Apply a Matrix4 built from position/rotation/scale to a geometry (in place) and return it. */
 export function place(geo, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, sz = sx) {
   const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));

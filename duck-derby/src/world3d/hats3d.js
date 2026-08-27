@@ -82,15 +82,21 @@ const builders = {
   },
   viking() {
     const g = new THREE.Group();
-    g.add(mesh(G.hemi(0.32), shared.silver, 0, 0.05, 0));
-    g.add(mesh(G.torus(0.32, 0.03, 8, 28), shared.brown, 0, 0.06, 0, Math.PI / 2));
-    g.add(mesh(G.box(0.04, 0.3, 0.04), shared.silver, 0, 0.2, 0.3, 0.35));
+    // helmet sits high and tipped back so the brow band never hides the eyes
+    g.add(mesh(G.hemi(0.31), shared.silver, 0, 0.13, 0));
+    g.add(mesh(G.torus(0.31, 0.032, 8, 28), shared.brown, 0, 0.135, 0, Math.PI / 2));
+    g.add(mesh(G.box(0.045, 0.26, 0.045), shared.silver, 0, 0.27, 0.27, 0.42)); // nose guard stub up on the brow
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + 0.3;
+      g.add(mesh(G.sphere(0.022, 6, 4), shared.gold, Math.sin(a) * 0.325, 0.135, Math.cos(a) * 0.325)); // rivets
+    }
     for (const side of [-1, 1]) {
-      const horn = mesh(G.cone(0.075, 0.34, 12), shared.white, side * 0.36, 0.27, 0, 0, 0, -side * 0.7);
+      const horn = mesh(G.cone(0.075, 0.34, 12), shared.white, side * 0.36, 0.35, -0.02, 0, 0, -side * 0.7);
       g.add(horn);
-      const tip = mesh(G.cone(0.04, 0.16, 12), shared.white, side * 0.5, 0.45, 0, 0, 0, -side * 0.15);
+      const tip = mesh(G.cone(0.04, 0.16, 12), shared.white, side * 0.5, 0.53, -0.02, 0, 0, -side * 0.15);
       g.add(tip);
     }
+    g.rotation.x = -0.2;
     return g;
   },
   pirate() {
@@ -203,19 +209,32 @@ const builders = {
   },
   flower() {
     const g = new THREE.Group();
-    g.add(mesh(G.torus(0.29, 0.03, 6, 30), shared.green, 0, 0.16, 0, Math.PI / 2 - 0.15, 0, 0));
+    g.add(mesh(G.torus(0.29, 0.035, 6, 30), shared.green, 0, 0.16, 0, Math.PI / 2 - 0.15, 0, 0));
     const cols = [0xff6fae, 0xffd23f, 0xffffff, 0xff7a2f, 0xb18af0, 0x5ec8ff];
-    for (let i = 0; i < 9; i++) {
-      const a = (i / 9) * Math.PI * 2;
+    const petalGeo = G.sphere(0.05, 7, 5);
+    const centreGeo = G.sphere(0.032, 6, 5);
+    const n = 11;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
       const c = M(cols[i % cols.length]);
       const y = 0.16 + Math.sin(a) * 0.045 * -1;
-      const fx = Math.cos(a) * 0.3;
-      const fz = Math.sin(a) * 0.3;
+      const fx = Math.cos(a) * 0.31;
+      const fz = Math.sin(a) * 0.31;
+      // petals ring around the outward normal (radial), so every flower faces out from the head
+      const rx = Math.cos(a);
+      const rz = Math.sin(a);
       for (let k = 0; k < 5; k++) {
         const b = (k / 5) * Math.PI * 2;
-        g.add(mesh(G.sphere(0.035, 6, 5), c, fx + Math.cos(b) * 0.04, y + Math.sin(b) * 0.04, fz, 0, 0, 0, 1, 1, 0.6));
+        const t = Math.cos(b) * 0.052; // tangential offset
+        const up = Math.sin(b) * 0.052; // vertical offset
+        g.add(mesh(petalGeo, c, fx - rz * t, y + up, fz + rx * t, 0, -a, 0, 0.75, 1, 1));
       }
-      g.add(mesh(G.sphere(0.025, 6, 5), shared.yellow, fx * 1.02, y, fz * 1.02));
+      g.add(mesh(centreGeo, i % 3 === 1 ? shared.white : shared.yellow, fx + rx * 0.03, y, fz + rz * 0.03));
+    }
+    // a few leaves tucked between flowers
+    for (let i = 0; i < n; i++) {
+      const a = ((i + 0.5) / n) * Math.PI * 2;
+      g.add(mesh(G.sphere(0.045, 6, 4), shared.green, Math.cos(a) * 0.31, 0.15 - Math.sin(a) * 0.045, Math.sin(a) * 0.31, 0, -a, 0.5, 0.4, 1, 1.3));
     }
     return g;
   },
@@ -229,15 +248,21 @@ const builders = {
     return g;
   },
   helmet() {
+    // jockey cap: quartered blue/yellow silks, white centre stripe from peak to nape, peak tipped down, strap at the back
     const g = new THREE.Group();
-    const capA = new THREE.Mesh(new THREE.SphereGeometry(0.315, 20, 10, 0, Math.PI, 0, Math.PI / 2), shared.blue);
-    const capB = new THREE.Mesh(new THREE.SphereGeometry(0.315, 20, 10, Math.PI, Math.PI, 0, Math.PI / 2), shared.yellow);
-    capA.position.y = capB.position.y = 0.04;
-    g.add(capA, capB);
-    const visor = mesh(G.cyl(0.34, 0.36, 0.03, 24, false), shared.blue, 0, 0.05, 0.12, 0.18, 0, 0, 1, 1, 1);
-    visor.geometry = new THREE.CylinderGeometry(0.34, 0.37, 0.03, 24, 1, false, -Math.PI / 3, (Math.PI * 2) / 3);
+    const cy = 0.06;
+    for (let q = 0; q < 4; q++) {
+      const quad = new THREE.Mesh(new THREE.SphereGeometry(0.315, 8, 10, (q * Math.PI) / 2, Math.PI / 2, 0, Math.PI / 2), q % 2 ? shared.yellow : shared.blue);
+      quad.position.y = cy;
+      g.add(quad);
+    }
+    // centre stripe: thin open cylinder band bent over the crown (axis across the head)
+    g.add(mesh(new THREE.CylinderGeometry(0.322, 0.322, 0.09, 24, 1, true, 0, Math.PI), shared.white, 0, cy, 0, 0, 0, Math.PI / 2));
+    const visor = mesh(new THREE.CylinderGeometry(0.3, 0.4, 0.035, 24, 1, false, -Math.PI / 3, (Math.PI * 2) / 3), shared.blue, 0, cy + 0.01, 0.1, 0.34, 0, 0);
     g.add(visor);
-    g.add(mesh(G.sphere(0.04, 8, 6), shared.yellow, 0, 0.36, 0));
+    g.add(mesh(G.sphere(0.045, 8, 6), shared.white, 0, cy + 0.325, 0)); // button
+    // elastic strap round the back of the cap, dipping toward the nape
+    g.add(mesh(G.torus(0.318, 0.018, 6, 32, Math.PI), shared.black, 0, cy + 0.05, 0, -(Math.PI / 2 + 0.3), 0, 0));
     return g;
   },
 };
@@ -247,6 +272,9 @@ export function buildHat(id) {
   const b = builders[id] || builders.tophat;
   const hat = b();
   hat.name = `hat-${id}`;
+  // hats were modelled for a 0.3 m head; the duck's head is bigger now, so scale up and sit a touch higher
+  hat.scale.multiplyScalar(1.15);
+  hat.position.y += 0.03;
   hat.traverse((o) => {
     if (o.isMesh) {
       o.castShadow = false;
