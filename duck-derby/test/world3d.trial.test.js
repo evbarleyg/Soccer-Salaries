@@ -35,3 +35,12 @@ test('tilt trial: steering moves the player laterally and hard steering into the
   for (let k = 0; k < 400 && !bonk; k++) { trial.step(1 / 60, 1); for (const e of trial.drain()) if (e.type === 'stumble' && e.duck === 0 && e.what === 'bank') bonk = true; }
   assert.ok(bonk, 'holding full lock should eventually hit the bank');
 });
+
+import { ghostAt, dailyTrialSeed } from '../src/world3d/trial.js';
+test('ghost path sampling interpolates and ends', () => {
+  const path = [0, 0, 0, 1, 20, 2, 2, 40, -2];
+  const g = ghostAt(path, 0.5);
+  assert.ok(Math.abs(g.s - 10) < 1e-9 && Math.abs(g.lat - 1) < 1e-9);
+  assert.equal(ghostAt(path, 2.5), null);
+  assert.match(dailyTrialSeed(new Date(Date.UTC(2026, 0, 5))), /^trial-2026-01-05$/);
+});

@@ -82,6 +82,8 @@ export function createTrial({ names, playerIndex = 0, seed = 1, course = getCour
   let leader = -1;
   const events = []; // drained by main each frame
   const standings = [];
+  const path = []; // player's [t, s, lat] samples at ~10 Hz (ghost replays)
+  let nextSample = 0;
 
   function step(dt, steer) {
     t += dt;
@@ -154,6 +156,9 @@ export function createTrial({ names, playerIndex = 0, seed = 1, course = getCour
         if (race.order.length === 2) { race.margin = race.finishTimes[race.order[1]] - race.finishTimes[race.order[0]]; race.close = race.margin < 0.35; race.photoFinish = race.margin < 0.08; }
       }
     }
+    // ghost recording
+    const pl = ducks[playerIndex];
+    if (pl && t >= nextSample && pl.finishTime === null) { path.push(+t.toFixed(2), +pl.s.toFixed(2), +pl.lat.toFixed(2)); nextSample = t + 0.1; }
     // standings + lead changes
     standings.length = 0;
     for (const d of ducks) standings.push({ i: d.i, s: d.finishTime !== null ? L + 1e3 - d.finishTime : d.s });
@@ -194,6 +199,7 @@ export function createTrial({ names, playerIndex = 0, seed = 1, course = getCour
     logs,
     ducks,
     standings,
+    path,
     get t() { return t; },
     get leader() { return Math.max(0, leader); },
     get done() { return race.order.length === count; },
@@ -201,4 +207,26 @@ export function createTrial({ names, playerIndex = 0, seed = 1, course = getCour
     step,
     drain() { const out = events.splice(0, events.length); race.events.push(...out); return out; },
   };
+}
+
+/** Sample a recorded ghost path ([t, s, lat, t, s, lat, ...]) at time t → { s, lat } or null past its end. */
+export function ghostAt(path, t) {
+  const n = path.length / 3;
+  if (n < 2 || t > path[(n - 1) * 3]) return null;
+  let lo = 0;
+  let hi = n - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (path[mid * 3] <= t) lo = mid;
+    else hi = mid;
+  }
+  const t0 = path[lo * 3];
+  const t1 = path[hi * 3];
+  const f = t1 > t0 ? Math.min(1, Math.max(0, (t - t0) / (t1 - t0))) : 0;
+  return { s: path[lo * 3 + 1] + (path[hi * 3 + 1] - path[lo * 3 + 1]) * f, lat: path[lo * 3 + 2] + (path[hi * 3 + 2] - path[lo * 3 + 2]) * f };
+}
+
+/** The shared "course of the day" seed for trials (same arrows/logs for everyone today). */
+export function dailyTrialSeed(date = new Date()) {
+  return `trial-${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }

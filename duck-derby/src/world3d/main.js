@@ -6,7 +6,7 @@ import { assignLooks, SAMPLE_NAMES, MIN_DUCKS, MAX_DUCKS, TOWELS } from '../duck
 import { randomSeed, seedToCode, codeToSeed, clamp, lerp, smoothstep } from '../rng.js';
 import { ordinal } from '../commentary.js';
 import { getCourse } from './course.js';
-import { createTrial } from './trial.js';
+import { createTrial, ghostAt, dailyTrialSeed } from './trial.js';
 import { SteerInput } from './input.js';
 import { createRace, positionAt, lateralAt, speedAt, standingsAt, heldAt, activeWindows, timeAt, ENGINE_VERSION } from './race.js';
 import { parseParams, buildQuery, resolveCam, draftOrder } from './params.js';
@@ -386,8 +386,11 @@ function startRace({ fromUrl = false, names = null, trial = false } = {}) {
   const camIdx0 = state.camChoice === 'leader' ? -1 : resolveCam(state.camChoice, raceNames);
   if (trial) {
     // Tilt Trial (phase-3 preview): a live sim where you steer your own duck; never used for the draft order
-    state.trial = createTrial({ names: raceNames, playerIndex: Math.max(0, camIdx0), seed: state.seed });
+    state.trialSeed = dailyTrialSeed(); // course of the day: same arrows and logs for everyone today
+    state.trial = createTrial({ names: raceNames, playerIndex: Math.max(0, camIdx0), seed: state.trialSeed });
     state.race = state.trial.race;
+    // personal-best ghost for today's course
+    try { const g = JSON.parse(localStorage.getItem('ddw:trialGhost') || 'null'); state.ghost = g && g.seed === state.trialSeed ? g : null; } catch { state.ghost = null; }
   } else {
     state.trial = null;
     state.race = createRace({ count: raceNames.length, seed: state.seed, hazards: state.hazards, items: state.items });
@@ -419,6 +422,17 @@ function startRace({ fromUrl = false, names = null, trial = false } = {}) {
   if (!state.youMarker) {
     state.youMarker = makeYouMarker();
     scene.add(state.youMarker);
+  }
+  // ghost of your best run on today's trial course (translucent copy of your duck)
+  if (state.ghostDuck) { scene.remove(state.ghostDuck.group); state.ghostDuck = null; }
+  if (state.trial && state.ghost) {
+    const gd = buildDuck(state.looks[state.trial.playerIndex]);
+    gd.group.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.32; o.material.depthWrite = false; } });
+    if (gd.shadow) gd.shadow.visible = false;
+    if (gd.wake) gd.wake.visible = false;
+    if (gd.foam) gd.foam.visible = false;
+    scene.add(gd.group);
+    state.ghostDuck = gd;
   }
   state.youMarker.visible = false;
   state.youKey = null;
@@ -981,7 +995,16 @@ function handleEvent(ev) {
         state.fireworks = true;
         state.excite = 1;
       }
-      if (isT && state.trial) { showFinishCard(place, null, fmtTime(ev.t)); haptic(200); }
+      if (state.trial && i === state.trial.playerIndex) {
+        const prev = state.ghost ? state.ghost.time : null;
+        state.trialPB = prev === null || ev.t < prev;
+        state.trialDelta = prev === null ? null : ev.t - prev;
+        if (state.trialPB) {
+          state.ghost = { seed: state.trialSeed, time: ev.t, path: state.trial.path.slice() };
+          try { localStorage.setItem('ddw:trialGhost', JSON.stringify(state.ghost)); } catch { /* quota / private mode */ }
+        }
+      }
+      if (isT && state.trial) { showFinishCard(place, null, fmtTime(ev.t) + (state.trialPB && state.trialDelta !== null ? ' · NEW BEST!' : state.trialDelta !== null ? ` · ${state.trialDelta >= 0 ? '+' : '−'}${Math.abs(state.trialDelta).toFixed(2)} vs best` : '')); haptic(200); }
       else if (isT && state.follow === 'fixed') {
         const pick = draftOrder(race.order, state.rule).indexOf(i) + 1;
         showFinishCard(place, pick);
@@ -1045,12 +1068,13 @@ function showResults() {
   const winner = state.raceNames[order[0]];
   $('#res-title').textContent = trial ? 'Tilt Trial' : 'Draft order';
   $('#res-rule').textContent = trial ? 'Skill mode · not a draft race' : state.rule === 'l' ? 'Last place picks first' : 'Winner picks first';
-  $('#res-seed').textContent = 'seed ' + seedToCode(state.seed);
+  $('#res-seed').textContent = trial ? `course of the day · ${state.trialSeed.slice(6)}` : 'seed ' + seedToCode(state.seed);
   const minePlace = state.follow === 'fixed' ? order.indexOf(state.target) + 1 : 0;
   const minePick = minePlace ? picks.indexOf(state.target) + 1 : 0;
   if (trial) {
     const me = state.trial.ducks[state.trial.playerIndex];
-    els.resSub.textContent = `You finished ${ordinal(minePlace)} in ${fmtTime(race.finishTimes[state.target])} · ${me.padsHit} boost arrows · ${me.logsHit} logs hit`;
+    const pbTxt = state.trialPB && state.trialDelta !== null ? ' · NEW PERSONAL BEST' : state.trialPB ? ' · first run on today’s course (ghost saved)' : state.trialDelta !== null ? ` · ${state.trialDelta.toFixed(2)} s off your best` : '';
+    els.resSub.textContent = `You finished ${ordinal(minePlace)} in ${fmtTime(race.finishTimes[state.target])} · ${me.padsHit} boost arrows · ${me.logsHit} logs hit${pbTxt}`;
   } else els.resSub.textContent = (minePlace ? `You: pick ${minePick} (${ordinal(minePlace)}) · ` : '') + `${winner} ${race.photoFinish ? 'won a photo finish' : `won by ${race.margin.toFixed(2)} s`} · ${race.leadChanges} lead change${race.leadChanges === 1 ? '' : 's'}`;
   els.resBoard.innerHTML = '';
   const mine = state.follow === 'fixed' ? state.target : -1;
@@ -1509,6 +1533,11 @@ function step(dt) {
       break;
   }
   if (state.trial && trialProps.userData.pads) trialProps.userData.pads.material.opacity = 0.65 + Math.sin(state.realTime * 6) * 0.2;
+  if (state.ghostDuck) {
+    const g = state.trial && state.ghost && state.phase === 'race' ? ghostAt(state.ghost.path, state.trial.t) : null;
+    state.ghostDuck.group.visible = !!g;
+    if (g) { track.toWorld(g.s, g.lat, course.hopAt(g.s) + 0.02, state.ghostDuck.group.position); const f = track.frame(g.s); state.ghostDuck.group.rotation.set(0, Math.atan2(f.flat.x, f.flat.z), 0); }
+  }
 
   if (race) {
     computeDuckStates(state.t);
