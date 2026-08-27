@@ -7,7 +7,7 @@
 
 import { assignLooks, SAMPLE_NAMES, MIN_DUCKS, MAX_DUCKS, normalizeName } from './ducks.js';
 import { createRace, standingsAt, speedAt, TRACK_LENGTH } from './sim.js'; // playback-side reads only: the sim itself is never touched here
-import { RaceScene, CONFETTI_COLS } from './scene.js';
+import { RaceScene, CONFETTI_COLS, confettiShade, replayBarH } from './scene.js';
 import { renderPortrait, drawDuck, roundRectPath } from './draw-duck.js';
 import { DuckAudio } from './audio.js';
 import { Commentator, ordinal, metres } from './commentary.js';
@@ -27,6 +27,7 @@ const els = {
   hudTitle: $('#hud .hud-title'),
   hudLeague: $('#hud-league'),
   standings: $('#standings'),
+  pickPin: null, // compact rule-last: the pinned "→ 1.01" chip (built on demand by ensurePickPin)
   clock: $('#race-clock'),
   progressBar: $('#progress-bar'),
   progressDots: $('#progress-dots'),
@@ -48,9 +49,13 @@ const els = {
   actions: $('#results .results-actions'),
   quietGroup: $('#results .quiet-group'),
   share: $('#btn-share'),
-  replay: $('#btn-replay'),
+  replay: $('#btn-replay'), // "Watch full race" / "Watch again": re-runs the whole race from the gun
+  instant: $('#btn-instant'), // "Replay finish": the slow-motion instant replay again, then back to this board
+  clip: $('#btn-clip'), // "Save clip": the replay + celebration recorded off the canvas (only where MediaRecorder can)
+  replaySkip: $('#btn-replay-skip'),
   save: $('#btn-save'),
   copy: $('#btn-copy'),
+  more: $('#btn-more'), // very short screens: opens the quiet actions as a sheet (CSS shows the button; see setMoreOpen)
   again: $('#btn-again'),
   rulePill: $('#rule-pill'),
   confirmNew: $('#confirm-new'),
@@ -73,6 +78,8 @@ const els = {
   titleCard: $('#title-card'),
   names: $('#btn-names'),
   sound: $('#btn-sound'),
+  tv: $('#btn-tv'),
+  topbar: $('.topbar'),
   fullscreen: $('#btn-fullscreen'),
   safeProbe: $('#safe-probe'),
 };
@@ -122,12 +129,34 @@ const TELEGRAPH_LEAD = 1.5; // hot dog: thrower/reticle beat this long before im
 const LAUNCH_LEAD = 0.8; // hot dog: projectile flight time
 const FOLLOWUP_DELAY = 2.2; // hot dog: "drops from 1st to 4th" line this long after impact
 const FINISH_HOLD = 2.6; // 'finish' phase length before the results panel
+const FINISH_HOLD_REPLAY = 2.2; // …a touch shorter when the instant replay follows (its wipe covers the cut)
+// Instant replay of the deciding touch (playback only: the scene re-renders past race time off the deterministic sim)
+const REPLAY_RATE = 0.35; // slow-motion factor
+const REPLAY_PRE = 0.9; // race seconds shown before the touch…
+const REPLAY_POST = 0.3; // …and after it (1.2 s of race = 3.4 s on screen)
+const REPLAY_FREEZE = 0.3; // wall seconds held on the last frame before the flash out (total stays under 4 s)
+const REPLAY_CLOSE_LAST = 0.6; // last place picks first: a battle for last closer than this (s) is THE replay instead of the win
+const CLIP_CODA = 2.0; // "Save clip": seconds of real-time celebration recorded after the replay
+const CLIP_FPS = 30;
+const TV_IDLE_MS = 2000; // big-screen mode: top bar and cursor hide after this long without input
 
 // Compact layout = phones (portrait) and short/landscape viewports. One query, shared with styles.css.
 const compactMQ = window.matchMedia('(max-width: 720px), (max-height: 500px)');
 const isCompact = () => compactMQ.matches;
 const coarseMQ = window.matchMedia('(pointer: coarse)');
 const FX_PARAM = new URLSearchParams(location.search).get('fx') || ''; // '0'|'1'|'2' pins the quality tier
+const TV_PARAM = new URLSearchParams(location.search).get('tv') || ''; // '1' turns big-screen mode on (and remembers it), '0' off
+const REPLAY_PARAM = new URLSearchParams(location.search).get('replay') || ''; // '0': no automatic instant replay before the board (embeds, automation); the board's button stays
+// highlight clip export is progressive enhancement: the button only exists where the canvas can be recorded
+const CLIP_MIME = (() => {
+  try {
+    if (typeof HTMLCanvasElement === 'undefined' || !HTMLCanvasElement.prototype.captureStream || typeof window.MediaRecorder !== 'function') return '';
+    const ok = (m) => (typeof MediaRecorder.isTypeSupported === 'function' ? MediaRecorder.isTypeSupported(m) : m === 'video/webm');
+    return ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4;codecs=avc1', 'video/mp4'].find(ok) || '';
+  } catch {
+    return '';
+  }
+})();
 
 // ---------------------------------------------------------------------------
 // State
@@ -143,6 +172,7 @@ const state = {
   hazards: stored.hazards !== false,
   sound: stored.sound !== false,
   calm: stored.calm === true,
+  tv: TV_PARAM === '1' ? true : TV_PARAM === '0' ? false : stored.tv === true, // big-screen / cast mode (button "TV", key T, &tv=1)
   league: stored.league || '',
   shared: false, // roster + seed came from a share link and are untouched
   locked: false, // …and the setup is read-only until "Make my own race" (body.shared-lock mirrors it)
@@ -197,6 +227,7 @@ const state = {
   holdLeft: 0, // wall-clock hold (hit-stop): seconds remaining
   holdMul: 0.05,
   paused: false,
+  replay: null, // the instant replay in progress (see startInstantReplay): {kind, t0, t1, t, wall, dur, back, job…}
   // live-order board (display side; see updateHud)
   lastHud: 0,
   lastGap: 0,
@@ -213,8 +244,9 @@ const state = {
   hudRows: [], // <li> per duck (lane order) with cached child refs
   hudOrder: [], // duck ids as currently displayed, top to bottom
   hudLeader: -1,
+  pinDuck: -1, // compact rule-last: the duck the pinned 1.01 chip shows
   pendingSince: new Map(), // "a>b" displayed pair the truth disagrees with -> since when
-  rankMeta: new Map(), // duck -> {rank, dir, delta, at}
+  rankMeta: new Map(), // duck -> {duck, rank}: the rank each row is displayed at
   tickerH: 0,
   // broadcast (commentary sampling at fixed race-clock instants — deterministic per share link)
   pollT: 0, // last 0.25 s grid instant sampled
@@ -814,7 +846,9 @@ els.sound.addEventListener('click', () => {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     audio.suspend();
-    // nothing may pile up behind a hidden tab: the ceremony completes silently, pending stings are dropped
+    // nothing may pile up behind a hidden tab: the ceremony completes silently, pending stings are dropped;
+    // a replay ends (a clip recording is cancelled: no frames are painted while hidden)
+    if (state.replay) finishInstantReplay(true);
     if (ceremonyRunning()) finishCeremony(true);
     clearTimeout(state.homeTimer);
     state.homeTimer = 0;
@@ -843,11 +877,68 @@ function toggleFullscreen() {
 }
 els.fullscreen.addEventListener('click', toggleFullscreen);
 
+// big-screen / cast mode ("TV", key T, &tv=1): a couch-readable board, ticker and ribbons (CSS body.tv + taller rows
+// from sizeStandings + bigger name pills in the scene); the top bar and the cursor hide after TV_IDLE_MS without input
+// (body.tv-idle; never on the setup screen) and come back on any mouse move, touch or key. Remembered per browser.
+let tvIdleTimer = 0;
+let tvWokeAt = 0;
+function tvWake() {
+  if (!state.tv) return;
+  const now = performance.now();
+  const cl = document.body.classList;
+  if (cl.contains('tv-idle')) cl.remove('tv-idle');
+  else if (now - tvWokeAt < 250) return; // mousemove storms: the pending timer is fresh enough
+  tvWokeAt = now;
+  clearTimeout(tvIdleTimer);
+  tvIdleTimer = setTimeout(tvIdle, TV_IDLE_MS);
+}
+function tvIdle() {
+  tvIdleTimer = 0;
+  if (!state.tv) return;
+  // never hide the bar from under a hovering pointer or a focused control
+  if (els.topbar.matches(':hover') || els.topbar.contains(document.activeElement)) {
+    tvWokeAt = 0;
+    tvWake();
+    return;
+  }
+  document.body.classList.add('tv-idle');
+}
+function applyTv() {
+  const on = state.tv;
+  document.body.classList.toggle('tv', on);
+  if (!on) {
+    clearTimeout(tvIdleTimer);
+    document.body.classList.remove('tv-idle');
+  } else {
+    tvWokeAt = 0;
+    tvWake();
+  }
+  els.tv.setAttribute('aria-pressed', String(on));
+  scene.bigScreen = on;
+  // the board's rows, the ticker's height and the panel's width all changed: re-measure so the lanes use what is left
+  if (state.sim && !els.hud.hidden) buildStandings();
+  else updateInsets();
+  if (state.phase === 'results') {
+    layoutBoard();
+    arrangeActions();
+  }
+}
+function setTv(on, { quiet = false } = {}) {
+  state.tv = !!on;
+  saveStore();
+  applyTv();
+  if (!quiet) toast(state.tv ? 'Big-screen mode — bigger board, chrome hides when idle (T)' : 'Big-screen mode off', { ms: 2400 });
+  announce(state.tv ? 'Big-screen mode on' : 'Big-screen mode off', { now: true });
+}
+els.tv.addEventListener('click', () => setTv(!state.tv));
+for (const type of ['mousemove', 'pointerdown', 'touchstart', 'wheel', 'keydown']) window.addEventListener(type, tvWake, { passive: true, capture: true });
+els.topbar.addEventListener('focusin', tvWake);
+
 // ---------------------------------------------------------------------------
 // Persistence + share links
 // ---------------------------------------------------------------------------
 function loadStore() {
-  let o = null;
+  let o;
   try {
     o = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
   } catch {
@@ -868,6 +959,7 @@ function loadStore() {
     qtier: o.qtier === 1 || o.qtier === 2 ? o.qtier : 0,
     me: typeof o.me === 'string' ? o.me.slice(0, 40) : '',
     tip: o.tip === true,
+    tv: o.tv === true,
   };
 }
 function saveStore() {
@@ -886,6 +978,7 @@ function saveStore() {
         qtier: perf.storedTier | 0, // only a tier that provably bought frame rate is remembered (never a pinned or trial tier)
         me: stored.me || undefined,
         tip: stored.tip || undefined,
+        tv: state.tv || undefined,
       }),
     );
   } catch {
@@ -958,7 +1051,9 @@ function setPhase(phase) {
   els.setup.hidden = phase !== 'setup';
   els.hud.hidden = !RACE_PHASES.includes(phase);
   els.ticker.hidden = els.hud.hidden;
-  els.results.hidden = phase !== 'results';
+  // a replay started from the board keeps the board in the DOM (CSS hides it) so nothing re-runs its ceremony on return
+  els.results.hidden = !(phase === 'results' || (phase === 'replay' && !!state.replay && state.replay.back === 'results'));
+  els.replaySkip.hidden = phase !== 'replay';
   els.seedBadge.hidden = phase === 'setup' || state.seed === null;
   // league name rides in the top bar while racing (compact screens show it in the HUD strip)
   const racing = RACE_PHASES.includes(phase);
@@ -1050,9 +1145,13 @@ function updateInsets() {
     const tr = els.ticker.getBoundingClientRect();
     if (tr.height) {
       const covered = Math.max(0, H - tr.top);
-      // short landscape screens: let the scene's own bottom margin absorb the gap above the ticker
-      insets.bottom = H <= 500 && W >= 560 ? Math.max(0, covered - 9) : covered + 4;
+      // short landscape screens, and big fields on short laptops / tablets, have no height to spare for open water between
+      // the last rope and the bar: let the scene's own bottom margin absorb the gap above the ticker (the lanes run down to it)
+      const tight = (H <= 500 && W >= 560) || (!compact && state.looks.length >= 12 && H < 800);
+      insets.bottom = tight ? Math.max(0, covered - 9) : covered + 4;
     }
+  } else if (state.phase === 'replay') {
+    insets.bottom = replayBarH(H) - 6; // the lanes end above the replay's bottom letterbox bar (the top one only ever covers sky)
   }
   scene.topBarH = Math.round(document.querySelector('.topbar')?.getBoundingClientRect().bottom || 0) || 0; // hero push-ins keep the venue below the bar
   scene.setInsets(insets);
@@ -1060,7 +1159,7 @@ function updateInsets() {
   // ribbon / digit geometry lives on the callout layer (not :root — no document-wide style recalc per write)
   const skyH = scene.skyH || Math.round(H * 0.28);
   setCssPx(els.callout.style, '--sky-h0', skyH); // unzoomed: sizes the ribbon font, which must not breathe with the camera
-  setCssPx(els.callout.style, '--water-mid', Math.round(skyH + (H - skyH) / 2));
+  setCssPx(els.callout.style, '--water-mid', Math.round(skyH + (H - skyH - insets.bottom) / 2)); // the countdown digit: mid-water, above the ticker
   publishSkyBand(true);
   const hud = els.hud.hidden ? null : { top: els.hud.offsetTop, height: els.hud.offsetHeight };
   const st = document.documentElement.style;
@@ -1212,6 +1311,7 @@ function prepareRace(forcedSeed = null, source = null) {
   state.sim = null;
   state.awards = null;
   state.culprits = new Map();
+  teardownReplay();
   resetDirector();
   stopCeremony();
   clearTimeout(state.ambienceTimer);
@@ -1295,6 +1395,10 @@ function showBoardDirect(nav = 'replace', source = 'shared') {
 
 function skipToResults() {
   if (!state.sim || !scene.sim) return;
+  if (state.replay) {
+    finishInstantReplay(true); // Skip / Esc during the instant replay: straight to the board
+    return;
+  }
   if (state.paused) setPaused(false);
   // fast-forward silently
   const sim = state.sim;
@@ -1353,7 +1457,35 @@ els.scene.addEventListener('pointerdown', () => {
 // ---------------------------------------------------------------------------
 // Rows are positioned by *displayed* rank, which follows the true running order
 // with hysteresis (see updateHud) so mid-pack jostling doesn't turn the board
-// into a permanent blur of half-swapped rows.
+// into a permanent blur of half-swapped rows. Every board change is applied as
+// ONE move pass (FLIP-style: the new ranks of all rows are decided first, then
+// every transform, plate and z-index is written in the same frame — transform-
+// only motion, no layout work): climbing rows ride ABOVE as lifted opaque cards,
+// rows giving way slide BELOW them slightly dimmed, so two names never render
+// through each other. When a row comes to rest after gaining or losing places a
+// ▲n / ▼n badge holds its gap cell for a beat. styles.css owns the look (.mv /
+// .up / .dn / .gap.delta) and reads the same duration and curve (--row-move).
+//
+// Cadence & hysteresis (race-clock semantics unchanged since round 2):
+const HUD_PASS_MS = 1000; // min interval between reorder passes — well beyond the glide, so every swap lands and rests
+const HUD_GAP_UNITS = 10; // swap a displayed pair at once when they are this far apart (1 m)…
+const HUD_PERSIST_MS = 1200; // …or when the truth has disagreed this long
+const HUD_LEAD_PERSIST_MS = 300; // the leader row still reacts fast (checked every tick, not per pass)
+const HUD_REVERSE_COOLDOWN_MS = 2500; // a row won't move back the way it came this soon (no ping-pong)
+const HUD_MAX_SWAPS = 2; // adjacent swaps per pass
+const HUD_RESYNC_MS = 3000; // big reshuffles (start scramble, hot-dog tumbles) glide all rows at once, at most this often
+const HUD_HOTDOG_LOCK = 2.2; // race seconds the board holds still after a hot dog
+const LEAD_HYST_UNITS = 4; // = the sim's lead-call hysteresis (0.004 × track): the called leader keeps the top row inside it
+// Set-piece locks (updateHud): the photo run-in (photoCalled, nobody home yet), the tail watch and a hot dog's
+// aftermath hold the board; called lead changes and finishes still snap it (force).
+// Motion (one pass per change; CSS: .standings --row-move / cubic-bezier(.2,.8,.2,1)):
+const HUD_MOVE_MS = 280; // transform glide
+const HUD_SETTLE_MS = 70; // rest after the glide before the lift, plates and z-order release and badges post
+const HUD_BADGE_MS = 1600; // a ▲n / ▼n badge holds the row's gap cell this long, then the gap fades back
+const HUD_GAP_FAST_MS = 250; // gap text cadence per row: the front three (exact tenths)…
+const HUD_GAP_SLOW_MS = 600; // …and the rest (half-metre steps)
+const CHIP_PITCH = 28; // compact strip: slot width of a chip (chip 26 px + 2) — sixteen fit a 844 px landscape phone
+const CHIP_LEAD_GAP = 4; // compact strip: gap between the leader chip and chip #2
 
 /**
  * Desktop: the panel is only as tall as the field needs (two ducks = two rows, sixteen still fit);
@@ -1385,8 +1517,9 @@ function sizeStandings(n) {
     hudTop = 62 + safe.top;
     chrome = state.hudChrome || 132;
   }
-  const avail = window.innerHeight - hudTop - 64 - chrome; // 64: keep clear of the ticker row
-  const rowH = clamp(Math.floor(avail / Math.max(1, n)), 22, 34);
+  const tv = state.tv && window.innerWidth > 860 && window.innerHeight >= 560; // = the CSS big-screen block
+  const avail = window.innerHeight - hudTop - (tv ? 82 : 64) - chrome; // 64 (82 in TV mode): keep clear of the ticker row
+  const rowH = clamp(Math.floor(avail / Math.max(1, n)), 22, tv ? 46 : 34);
   st.height = `${n * rowH}px`;
   st.flex = '0 0 auto';
   return rowH;
@@ -1406,18 +1539,24 @@ function buildStandings() {
     li.dataset.duck = String(i);
     li.title = look.name;
     if (!compact) li.style.borderLeft = `4px solid ${look.towel.bg}`;
-    li.innerHTML = `<span class="pos"></span><span class="num"></span><span class="name"></span><span class="gap"></span><b class="arrow" aria-hidden="true"></b>`;
+    // the gap cell stacks the live gap (.gv) and the places-gained badge (.dl): fixed width, so neither reflows the name
+    li.innerHTML = `<span class="pos"></span><span class="num"></span><span class="name"></span><span class="gap"><i class="gv"></i><b class="dl" aria-hidden="true"></b></span>`;
     const num = li.children[1];
     num.textContent = String(look.number);
     num.style.background = look.towel.bg;
     num.style.color = look.towel.text;
     li.children[2].textContent = look.name;
     li._pos = li.children[0];
-    li._gap = li.children[3];
-    li._arrow = li.children[4];
-    li._last = { tf: '', pos: '', gap: null, gapCls: '', gapD: -1, arrow: '', arrowCls: 'arrow', leader: false, done: false, rank0: false, pick1: false };
-    li._movedAt = 0;
-    li._dir = 0;
+    li._gap = li.children[3]; // the cell (class: gap | gap lead | gap fin | gap pick1, + badge)
+    li._gv = li._gap.children[0]; // its text
+    li._dl = li._gap.children[1]; // ▲n / ▼n
+    li._last = { tf: '', pos: '', gap: null, gapCls: '', gapD: -1, leader: false, done: false, rank0: false, pick1: false };
+    li._movedAt = 0; // hysteresis: when this row last moved…
+    li._dir = 0; // …and which way (-1 up, 1 down, 0 bulk)
+    li._rank = i; // displayed rank (set by updateHud's move pass)
+    li._pass = 0; // motion: the move pass that currently owns the row's plate / lift / z-index
+    li._acc = 0; // badge: net places gained since its badge window opened…
+    li._accUntil = 0; // …which closes at this timestamp
     els.standings.appendChild(li);
     const dot = document.createElement('i');
     dot.style.background = look.towel.bg;
@@ -1446,6 +1585,11 @@ function buildStandings() {
   state.lastGap = 0;
   state.lastGapSlow = 0;
   state.lastHud = 0;
+  state.pinDuck = -1;
+  const pin = ensurePickPin();
+  pin.hidden = !compact || state.rule !== 'last-first'; // compact: measureStrip has the final say (it sizes the strip around it)
+  pin._num.textContent = '';
+  pin._num.style.background = '';
   syncHudChrome();
   if (compact) measureStrip(); // after syncHudChrome: the Skip pill has its compact label by now
   // every viewer of a shared link who picked their duck once is auto-followed in every later race with that name
@@ -1458,22 +1602,98 @@ function buildStandings() {
   updateInsets(); // the compact strip's height depends on its content
 }
 
-/** Compact strip geometry: where chip #2 parks (behind the leader chip, whose width CSS owns) and the Skip column the ribbon must leave free. */
+/**
+ * Compact strip geometry: where chip #2 parks (behind the leader chip, whose width CSS owns) and the Skip column the
+ * ribbon must leave free. Last takes 1.01: the pinned chip holds its column from the build, and when what is left of
+ * the strip cannot hold a named leader chip (narrow phones) the HUD goes `tight` — the leader chip keeps "1" + disc.
+ */
 function measureStrip() {
-  const w = parseFloat(getComputedStyle(els.standings).getPropertyValue('--lead-w')) || 132;
-  state.chipLead = Math.round(w) + 6;
+  const leadW = () => parseFloat(getComputedStyle(els.standings).getPropertyValue('--lead-w')) || 132;
+  const lastFirst = state.rule === 'last-first';
+  ensurePickPin().hidden = !lastFirst;
+  els.hud.classList.remove('tight');
+  let w = leadW();
+  if (lastFirst && els.standings.clientWidth < w + 2) {
+    els.hud.classList.add('tight');
+    w = leadW();
+  }
+  state.chipLead = Math.round(w) + CHIP_LEAD_GAP;
   setCssPx(document.documentElement.style, '--skip-w', els.skip.offsetWidth || 64);
 }
 
-/** Compact strip: a right-edge fade says "more chips this way" when the field does not fit (16 ducks on a narrow phone). */
+/**
+ * Compact strip: `overflow` marks a field that does not fit (16 ducks on a narrow phone) — the strip swipes (momentum,
+ * slot snap: snapStrip) and a short edge fade marks the side(s) more chips continue on (syncStripEdges keeps it current).
+ */
 function syncStripOverflow() {
   if (!isCompact()) {
-    els.standings.classList.remove('overflow');
+    els.standings.classList.remove('overflow', 'more-l', 'more-r');
     return;
   }
   const n = state.hudRows.length;
-  const need = n <= 1 ? 0 : state.chipLead + (n - 2) * 30 + 26; // right edge of the last chip
+  const need = n <= 1 ? 0 : state.chipLead + (n - 2) * CHIP_PITCH + 26; // right edge of the last chip
   els.standings.classList.toggle('overflow', need > els.standings.clientWidth + 2);
+  syncStripEdges();
+}
+function syncStripEdges() {
+  const el = els.standings;
+  const over = el.classList.contains('overflow');
+  const max = el.scrollWidth - el.clientWidth;
+  el.classList.toggle('more-l', over && el.scrollLeft > 1);
+  el.classList.toggle('more-r', over && el.scrollLeft < max - 1);
+}
+
+/**
+ * Compact strip, last place picks first: the duck currently sitting on the 1.01 is the story on a phone, but its chip is
+ * the LAST one — usually scrolled out of a strip that only fits the leaders. A pinned chip at the strip's right end
+ * mirrors it ([disc] → 1.01); tapping it follows that duck. Created once; CSS shows it only in the compact rule-last HUD.
+ */
+function ensurePickPin() {
+  if (els.pickPin) return els.pickPin;
+  const pin = document.createElement('button');
+  pin.id = 'pick-pin';
+  pin.className = 'pick-pin';
+  pin.type = 'button';
+  pin.hidden = true;
+  pin.innerHTML = '<span class="num"></span><span class="lbl">\u2192 1.01</span>';
+  pin.classList.add('idle');
+  pin._idle = true;
+  pin.tabIndex = -1;
+  pin.setAttribute('aria-label', 'On the first pick: nobody yet');
+  pin._num = pin.children[0];
+  pin.addEventListener('click', () => {
+    if (state.pinDuck >= 0 && state.pinDuck !== state.focus) setFocus(state.pinDuck);
+    else if (state.pinDuck >= 0) flashRow(state.pinDuck, 'rise', 480);
+  });
+  els.hud.insertBefore(pin, els.standings.nextSibling);
+  els.pickPin = pin;
+  return pin;
+}
+
+/** Point the pinned 1.01 chip at duck `i` (idle until the race is live and someone is last); a new holder lands with the row's gold flash. */
+function syncPickPin(i, live) {
+  const pin = els.pickPin;
+  if (!pin || pin.hidden) return; // desktop, or not last-takes-1.01 (measureStrip decides)
+  const show = live && i >= 0;
+  if (pin._idle !== !show) {
+    pin._idle = !show;
+    pin.classList.toggle('idle', !show);
+    pin.tabIndex = show ? 0 : -1;
+  }
+  if (!show || i === state.pinDuck) return;
+  const look = state.looks[i];
+  const had = state.pinDuck >= 0;
+  state.pinDuck = i;
+  pin._num.textContent = String(look.number);
+  pin._num.style.background = look.towel.bg;
+  pin._num.style.color = look.towel.text;
+  pin.title = `${look.name} is last \u2014 on the first pick`;
+  pin.setAttribute('aria-label', `On the first pick: ${look.name}. Follow`);
+  if (had && !mute.ui) {
+    pin.classList.remove('newpick');
+    void pin.offsetWidth;
+    pin.classList.add('newpick');
+  }
 }
 
 /** HUD foot labels that depend on the layout: the Skip pill text and the Names toggle. */
@@ -1509,6 +1729,10 @@ function setFocus(i, { silent = false } = {}) {
   const name = next >= 0 ? state.raceNames[next] : '';
   if (!silent) {
     stored.me = next >= 0 ? normalizeName(name) : '';
+    if (next >= 0) {
+      stored.tip = true; // found it: the "follow your duck" tip never needs to air (again)
+      hideTip();
+    }
     saveStore();
     announce(next >= 0 ? `Following ${name}` : 'Not following anyone', { now: true });
     if (next >= 0 && !isCompact()) flashRow(next, 'rise', 480);
@@ -1587,49 +1811,140 @@ els.scene.addEventListener('pointerup', (e) => {
 });
 
 let standingsTouchedAt = 0;
-els.standings.addEventListener('scroll', () => {
-  if (!hudAutoScrolling) standingsTouchedAt = performance.now();
-});
 let hudAutoScrolling = false;
-
-/** A row on the move is opaque (and above the rows it passes when climbing) so two names never blend mid-glide. */
-function glideRow(li, up) {
-  li.classList.add('mv');
-  li.classList.toggle('up', !!up);
-  clearTimeout(li._mvT);
-  li._mvT = setTimeout(() => li.classList.remove('mv', 'up'), 340);
+els.standings.addEventListener('scroll', () => {
+  if (isCompact()) syncStripEdges();
+  if (hudAutoScrolling) return;
+  standingsTouchedAt = performance.now();
+  if (!('onscrollend' in window)) scheduleStripSnap(140); // no scrollend (older Safari): settle once the momentum goes quiet
+});
+// Compact strip: a swipe comes to rest on a chip slot (x = 0, then chipLead + k·CHIP_PITCH). Done here rather than with
+// CSS scroll-snap, which re-snaps to the snapped chip ELEMENT whenever it changes slot and would drag the strip along
+// with every reorder. scrollend waits for the finger to lift and the momentum to end; the fallback debounces.
+let stripSnapT = 0;
+let stripHeld = false;
+function scheduleStripSnap(ms) {
+  clearTimeout(stripSnapT);
+  stripSnapT = setTimeout(snapStrip, ms);
 }
-
-/** Pop highlight for a row that climbed into the front three (callers batch the reflow: remove 'rise', one offsetWidth, then this). */
-function riseRow(li) {
-  li.classList.add('rise');
-  clearTimeout(li._riseT);
-  li._riseT = setTimeout(() => li.classList.remove('rise'), 480);
+function snapStrip() {
+  if (!isCompact() || hudAutoScrolling) return;
+  if (stripHeld) return scheduleStripSnap(140);
+  const el = els.standings;
+  const x = el.scrollLeft;
+  const max = el.scrollWidth - el.clientWidth;
+  if (max <= 0 || x <= 0.5 || x >= max - 0.5) return; // at either end: leave it there
+  const lead = state.chipLead;
+  const target = x < lead / 2 ? 0 : Math.min(max, lead + Math.max(0, Math.round((x - lead) / CHIP_PITCH)) * CHIP_PITCH);
+  if (Math.abs(target - x) < 1) return;
+  hudAutoScrolling = true;
+  el.scrollTo({ left: target, behavior: scene.reduceMotion ? 'auto' : 'smooth' });
+  setTimeout(() => (hudAutoScrolling = false), 320);
 }
+els.standings.addEventListener('scrollend', () => {
+  if (!hudAutoScrolling) scheduleStripSnap(0);
+});
+els.standings.addEventListener('touchstart', () => (stripHeld = true), { passive: true });
+for (const type of ['touchend', 'touchcancel']) els.standings.addEventListener(type, () => (stripHeld = false), { passive: true });
 
-// Board hysteresis. A pass may start at most every PASS_MS — well beyond the
-// .30 s row transition, so every swap lands and rests before the next begins.
-const HUD_PASS_MS = 1000; // min interval between reorder passes
-const HUD_GAP_UNITS = 10; // swap at once when the pair is this far apart (1 m)…
-const HUD_PERSIST_MS = 1200; // …or when the truth has disagreed this long
-const HUD_LEAD_PERSIST_MS = 300; // the leader row still reacts fast
-const HUD_REVERSE_COOLDOWN_MS = 2500; // a row won't move back the way it came this soon (no ping-pong)
-const HUD_MAX_SWAPS = 2; // adjacent swaps per pass
-const HUD_RESYNC_MS = 3000; // big reshuffles (start scramble, hot-dog tumbles) glide all rows at once, at most this often
-const HUD_ARROW_MS = 1000; // an arrow marks a move for this long…
-const HUD_MAX_ARROWS = 3; // …on at most this many rows (the most recent moves)
-const HUD_HOTDOG_LOCK = 2.2; // race seconds the board holds still after a hot dog
-const LEAD_HYST_UNITS = 4; // = the sim's lead-call hysteresis (0.004 × track): the called leader keeps the top row inside it
+let hudPass = 0; // move-pass sequence: the pass that last touched a row owns its release
 
 /**
- * Live order tick. `force` places every row at its true rank immediately
- * (build, lead/finish events, jump); otherwise the displayed order converges on
- * the truth by at most two adjacent swaps per pass, and a swap only happens
- * once the pair is clearly apart, has disagreed for a while, or one of them has
- * finished (finishers snap straight to their final slot). Set pieces (photo
- * run-in, race for last, a hot dog's aftermath) hold the board still.
+ * ONE move pass for a board change. `moves` are the rows whose slot changed ({li, from, to, tf}); everything is written
+ * in this call (no reads in between), so a twelve-row resync costs one style recalculation, not twelve.
+ *  - animate: climbers get .mv.up (opaque lifted card, z 20+ — the biggest gain rides highest), rows giving way .mv.dn
+ *    (opaque, dimmed, z < 10 — the biggest drop sinks lowest), so any two rows that cross occlude cleanly instead of
+ *    printing name over name; HUD_MOVE_MS + HUD_SETTLE_MS later the pass releases them together and posts badges.
+ *  - !animate (build, jump, reduced motion): rows are committed to their slots with transitions off for that one write.
+ *  - badges: accumulate the places gained per row; a there-and-back inside one badge window nets to nothing, and a
+ *    net move smaller than minBadge places posts nothing (bulk passes only badge the notable movers).
  */
-function updateHud(force = false) {
+function movePass(moves, { animate, badges, minBadge = 1 }) {
+  const now = performance.now();
+  const pass = ++hudPass;
+  for (const m of moves) {
+    const li = m.li;
+    const gained = m.from - m.to; // + climbed, - dropped
+    li._pass = pass;
+    if (badges && gained) {
+      if (now > li._accUntil) li._acc = 0;
+      li._acc += gained;
+      li._accUntil = now + HUD_MOVE_MS + HUD_SETTLE_MS + HUD_BADGE_MS;
+    }
+    if (animate) {
+      li.classList.add('mv');
+      li.classList.toggle('up', gained > 0);
+      li.classList.toggle('dn', gained < 0);
+      li.style.zIndex = String(gained > 0 ? 20 + Math.min(gained, 19) : gained < 0 ? Math.max(1, 10 + Math.max(gained, -9)) : 10);
+    } else {
+      releaseRow(li);
+      li.style.transition = 'none';
+    }
+    li.style.transform = li._last.tf = m.tf;
+  }
+  if (!animate) {
+    void els.standings.offsetWidth; // one reflow commits the snap; the stylesheet's transitions are back for the next pass
+    for (const m of moves) m.li.style.transition = '';
+    if (badges) for (const m of moves) postBadge(m.li, now, minBadge);
+    return;
+  }
+  setTimeout(() => {
+    const t1 = performance.now();
+    for (const m of moves) {
+      if (m.li._pass !== pass) continue; // a newer pass owns this row (it will release it)
+      releaseRow(m.li);
+      if (badges) postBadge(m.li, t1, minBadge);
+    }
+  }, HUD_MOVE_MS + HUD_SETTLE_MS);
+}
+
+/** Drop a row's motion dressing (plate, lift, dim, z-order); CSS eases the plate and scale out. */
+function releaseRow(li) {
+  if (li.classList.contains('mv')) li.classList.remove('mv', 'up', 'dn');
+  if (li.style.zIndex) li.style.zIndex = '';
+}
+
+/**
+ * ▲n / ▼n: post the row's accumulated places gained into its gap cell for HUD_BADGE_MS (desktop rows; finished rows
+ * keep their time and the 1.01 row keeps its marker — those ARE the story). CSS cross-fades gap ↔ badge.
+ */
+function postBadge(li, now, minBadge = 1) {
+  const d = li._acc;
+  // the final stretch recedes the also-rans (setRecede): only the front three post badges then
+  if (Math.abs(d) < minBadge || isCompact() || li._last.done || li._last.pick1 || mute.ui || (state.recede && li._rank >= 3)) {
+    hideBadge(li);
+    return;
+  }
+  li._accUntil = now + HUD_BADGE_MS; // a move inside the window adds to this badge (net gain) instead of starting over
+  const txt = `${d > 0 ? '\u25B2' : '\u25BC'}${Math.abs(d)}`;
+  if (li._dl.textContent !== txt) li._dl.textContent = txt;
+  li._dl.className = d > 0 ? 'dl up' : 'dl down';
+  li._gap.classList.add('delta');
+  clearTimeout(li._dlT);
+  li._dlT = setTimeout(() => hideBadge(li), HUD_BADGE_MS);
+}
+
+/** Take a row's badge down (its gap fades back) and close its accumulation window. */
+function hideBadge(li) {
+  clearTimeout(li._dlT);
+  li._acc = 0;
+  li._accUntil = 0;
+  if (li._gap.classList.contains('delta')) li._gap.classList.remove('delta');
+}
+
+/**
+ * Live order tick. `force` sends every row to its true rank at once (build,
+ * called lead changes, finishes, jump); otherwise the displayed order converges
+ * on the truth by at most two adjacent swaps per pass, and a swap only happens
+ * once the pair is clearly apart, has disagreed for a while, or one of them has
+ * finished (finishers go straight to their final slot). Set pieces (photo
+ * run-in, race for last, a hot dog's aftermath) hold the board still. However
+ * many rows change, they move in one pass (movePass). `snap` (jump / build)
+ * commits the board without motion or badges: a time cut is not a move;
+ * `badges: false` (a finish) glides the rows but posts no ▲▼ — the also-rans
+ * catching up with the truth behind a finisher is bookkeeping, not a story.
+ */
+function updateHud(force = false, { snap = false, badges = true } = {}) {
   const now = performance.now();
   if (!force && now - state.lastHud < 90) return;
   state.lastHud = now;
@@ -1671,8 +1986,9 @@ function updateHud(force = false) {
 
   let order = state.hudOrder;
   let changed = false;
-  let bulk = force; // whole-board placement (force / resync): rows glide together, no arrows, no 'rise' highlight
-  if (force || order.length !== n) {
+  let bulk = force; // whole-board placement (force / resync): no pair swaps this tick
+  const placement = order.length !== n; // first tick after a build: rows take their slots, nothing "moved"
+  if (force || placement) {
     order = truth.map((r) => r.i);
     state.pendingSince.clear();
     state.lastReorder = now;
@@ -1755,39 +2071,25 @@ function updateHud(force = false) {
   state.hudOrder = order;
 
   if (changed || force) {
-    const toRise = [];
+    const quiet = snap || placement; // a build or a time cut places rows; it is not a move (no glide, no badge)
+    if (quiet) for (const li of rows) hideBadge(li);
+    const moves = [];
     order.forEach((duck, rank) => {
       const li = rows[duck];
       const L = li._last;
       let meta = state.rankMeta.get(duck);
-      let up = false;
-      if (!meta) state.rankMeta.set(duck, (meta = { duck, rank, dir: '', delta: 0, at: -1e9 }));
-      else if (meta.rank !== rank) {
-        up = rank < meta.rank;
-        if (!bulk) {
-          meta.dir = up ? 'up' : 'down';
-          meta.delta = rank - meta.rank;
-          meta.at = now;
-          if (up && rank < 3 && !compact) toRise.push(li);
-        }
-        meta.rank = rank;
-      }
-      const tf = compact ? `translateX(${rank === 0 ? 0 : state.chipLead + (rank - 1) * 30}px)` : `translateY(${rank * state.rowH}px)`;
-      if (L.tf !== tf) {
-        if (!compact && L.tf) glideRow(li, up); // opaque while it crosses other rows
-        li.style.transform = L.tf = tf;
-      }
+      if (!meta) state.rankMeta.set(duck, (meta = { duck, rank }));
+      const from = meta.rank;
+      meta.rank = li._rank = rank;
+      const tf = compact ? `translateX(${rank === 0 ? 0 : state.chipLead + (rank - 1) * CHIP_PITCH}px)` : `translateY(${rank * state.rowH}px)`;
+      if (L.tf !== tf || quiet) moves.push({ li, from: L.tf ? from : rank, to: rank, tf }); // quiet: every row is (re)committed with motion off
       const rank0 = compact && rank === 0;
       if (L.rank0 !== rank0) li.classList.toggle('rank-0', (L.rank0 = rank0));
       const pos = String(rank + 1);
       if (L.pos !== pos) li._pos.textContent = L.pos = pos;
     });
-    if (toRise.length) {
-      // one reflow for the batch restarts every 'rise' animation together
-      for (const li of toRise) li.classList.remove('rise');
-      void els.standings.offsetWidth;
-      for (const li of toRise) riseRow(li);
-    }
+    // bulk passes (resync, called lead change) badge only the notable movers (2+ places): the ±1 churn around them is noise
+    if (moves.length) movePass(moves, { animate: !quiet && !scene.reduceMotion, badges: badges && !quiet && t > 0.5, minBadge: bulk ? 2 : 1 });
     if (compact && order[0] !== state.hudLeader && now - standingsTouchedAt > 2500 && els.standings.scrollLeft > 0) {
       hudAutoScrolling = true;
       els.standings.scrollLeft = 0;
@@ -1796,25 +2098,9 @@ function updateHud(force = false) {
     state.hudLeader = order[0];
   }
 
-  // arrows are an attention budget: recent genuine moves only, front three or big swings, at most three lit
-  let arrowSet = null;
-  if (t > 0.5) {
-    const cand = [];
-    for (const duck of order) {
-      const meta = state.rankMeta.get(duck);
-      if (!meta || !meta.dir || info[duck].done || now - meta.at >= HUD_ARROW_MS) continue;
-      if (meta.rank < 3 || Math.abs(meta.delta) >= 2) cand.push(meta);
-    }
-    if (cand.length) {
-      if (cand.length > HUD_MAX_ARROWS) cand.sort((a, b) => b.at - a.at);
-      arrowSet = new Set();
-      for (let k = 0; k < cand.length && k < HUD_MAX_ARROWS; k++) arrowSet.add(cand[k].duck);
-    }
-  }
-
-  // row states every tick (cheap, cached); gap text: front three every 200 ms, the rest every 600 ms in half metres
-  const writeFast = force || now - state.lastGap >= 200;
-  const writeSlow = force || now - state.lastGapSlow >= 600;
+  // row states every tick (cheap, cached); gap text per row: front three every 250 ms, the rest every 600 ms in half metres
+  const writeFast = force || now - state.lastGap >= HUD_GAP_FAST_MS;
+  const writeSlow = force || now - state.lastGapSlow >= HUD_GAP_SLOW_MS;
   if (writeFast) state.lastGap = now;
   if (writeSlow) state.lastGapSlow = now;
   const leaderX = truth[0].x;
@@ -1828,6 +2114,7 @@ function updateHud(force = false) {
       }
     }
   }
+  syncPickPin(pickDuck, t > 0);
   order.forEach((duck, rank) => {
     const li = rows[duck];
     const L = li._last;
@@ -1840,14 +2127,7 @@ function updateHud(force = false) {
       li.classList.toggle('pick1', (L.pick1 = pick1));
       li._dot.classList.toggle('pick1', pick1);
     }
-    const meta = state.rankMeta.get(duck);
-    const showArrow = !!arrowSet && !!meta && arrowSet.has(duck);
-    const arrowCls = showArrow ? `arrow ${meta.dir}` : 'arrow';
-    if (L.arrowCls !== arrowCls) {
-      li._arrow.className = L.arrowCls = arrowCls;
-      const glyph = showArrow ? (meta.dir === 'up' ? '▲' : '▼') : '';
-      if (L.arrow !== glyph) li._arrow.textContent = L.arrow = glyph;
-    }
+    if ((r.done || pick1) && li._acc) postBadge(li, now); // clears a standing badge: the time / the 1.01 marker takes the cell
     // gap column
     let cls = null;
     let txt = '';
@@ -1881,8 +2161,11 @@ function updateHud(force = false) {
       L.gapD = d;
     }
     if (cls !== null) {
-      if (L.gapCls !== cls) li._gap.className = L.gapCls = cls;
-      if (L.gap !== txt) li._gap.textContent = L.gap = txt;
+      if (L.gapCls !== cls) {
+        L.gapCls = cls;
+        li._gap.className = li._gap.classList.contains('delta') ? `${cls} delta` : cls;
+      }
+      if (L.gap !== txt) li._gv.textContent = L.gap = txt;
     }
     if (writeFast) {
       const left = `${clamp((r.x / TRACK_LENGTH) * 100, 0, 100).toFixed(1)}%`;
@@ -1924,9 +2207,8 @@ const TICKER_WIN_PROTECT = 1800; // nothing replaces the winner's headline soone
 const TICKER_STALE = { 2: 2, 3: 3 }; // race seconds after which a queued line is no longer true enough to air
 const TICKER_IDLE_MS = 1200; // phones: the empty bar fades away after this long…
 const TICKER_IDLE_WIDE_MS = 2500; // …wide layouts a little later (a filler fact usually arrives first mid-race)
-const TIP_MS = 4000; // the one-time "follow your duck" tip rides the bar this long
-const TIP_HOLD = 1200; // …and, like chatter, may be replaced by a real line once it has had this long (wide)
-const TIP_HOLD_COMPACT = 2200; // phones: chatter waits this long for the tip (long enough to read it); story beats cut in at once
+const TIP_RACE_S = 1.2; // the one-time "follow your duck" tip owns its slot from the last countdown light until this much racing…
+const TIP_MS = 4000; // …then yields to the first line that wants the slot, or leaves after this long at most
 const FILL_QUIET_MS = 2500; // wide: a low-key filler fact after this much dead air…
 const FILL_EVERY = 8; // …rotating to the next fact every 8 s of racing
 const FILL_REFRESH_MS = 500; // a filler's number follows the race clock
@@ -2036,13 +2318,14 @@ function hideTickerLine(tier) {
   el.classList.add('out');
 }
 
-// The once-per-browser "follow your duck" tip: a quiet one-liner INSIDE the bar (never a floating box over the lanes),
-// after the launch has settled. It is not commentary: not queued, not in the transcript, and any real line takes its slot
-// (phones: a story beat at once, chatter after TIP_HOLD_COMPACT — and it may itself retire chatter that has had its hold).
+// The once-per-browser "follow your duck" tip: a quiet one-liner INSIDE the bar (never a floating box over the lanes) with
+// a slot of its own — the last countdown light through the first TIP_RACE_S of racing, before any launch chatter can air
+// (phones: even the GO line waits for it; a set piece would still cut in). It is not commentary: not queued, not in the
+// transcript; once its slot closes any real line takes it over (phones: the single tier, wide: the sub line).
 function showTip(text) {
   const d = ensureTickerDom();
   const now = performance.now();
-  if (isCompact() && tk.head && tk.head.pri <= 1) hideTickerLine('head'); // the single tier: stale chatter makes way
+  if (isCompact() && tk.head) hideTickerLine('head'); // the single tier is the tip's: the intro line makes way for good
   d.tip.textContent = text;
   d.tip.classList.remove('out');
   void d.tip.offsetWidth;
@@ -2062,17 +2345,16 @@ function hideTip(animate = true) {
   if (animate) tk.els.tip.classList.add('out');
   else tk.els.tip.classList.remove('out');
 }
-/** The tip may take the bar: nothing that matters is on air or waiting (phones have one tier: empty, or chatter past its hold). */
-function tipSlotFree() {
-  if (tickerQueue.some((l) => l.pri >= 2)) return false;
-  if (isCompact()) return !tk.head || (tk.head.pri <= 1 && performance.now() - tk.head.shownAt >= TICKER_HOLD[1]);
-  return !(tk.head && tk.head.pri >= 2) && !tk.sub && !tk.fill;
+/** The tip's slot is open: the last countdown light is on, or the race is younger than TIP_RACE_S. */
+function tipSlotOpen() {
+  return (state.phase === 'countdown' && state.countdownStep >= 2) || (state.phase === 'race' && state.t < TIP_RACE_S);
 }
+/** Called on the last countdown light: once per browser, and never for someone who already follows a duck (they found it). */
 function maybeShowTip() {
-  if (stored.tip || state.focus >= 0 || mute.ui || els.ticker.hidden) return;
-  if (state.phase !== 'race' || state.finished !== 0 || state.t < 4 || state.t >= 14 || !tipSlotFree()) return;
+  if (stored.tip || mute.ui || els.ticker.hidden) return;
   stored.tip = true;
   saveStore();
+  if (state.focus >= 0) return;
   showTip(coarseMQ.matches ? 'Tip: tap your name to follow your duck' : 'Tip: click your name (or a duck) to follow it');
 }
 
@@ -2170,15 +2452,16 @@ function pumpTicker() {
     if (l.pri === 2 && l.kind === 'lead' && hLead < 0) hLead = k;
     if (l.pri <= 1 && h1 < 0) h1 = k;
   }
-  // phones: chatter shares the single tier — but not over the one-time tip's first moments (nobody could read it)
-  const tipHold = single && !!tk.tip && now - tk.tip.shownAt < TIP_HOLD_COMPACT;
-  if (hi < 0) hi = hLead >= 0 ? hLead : h2 >= 0 ? h2 : single && !tipHold ? h1 : -1;
+  // the one-time tip owns its slot (phones: the single tier, wide: the sub line) while it is open; only a set piece cuts in
+  const tipLock = !!tk.tip && tipSlotOpen();
+  if (hi < 0) hi = hLead >= 0 ? hLead : h2 >= 0 ? h2 : single && !tipLock ? h1 : -1;
   const H = tk.head;
   if (hi >= 0) {
     const line = tickerQueue[hi];
     const up = H ? now - H.shownAt : Infinity;
     let can;
-    if (H && H.kind === 'win' && up < TICKER_WIN_PROTECT) can = false; // the winner's line is never trampled
+    if (single && tipLock && line.pri < 3) can = false; // phones: the GO line waits the second out for the tip
+    else if (H && H.kind === 'win' && up < TICKER_WIN_PROTECT) can = false; // the winner's line is never trampled
     else if (!H || line.pri >= 3) can = true;
     else if (line.pri === 2 && H.pri <= 1) can = up >= 600;
     else if (line.kind === 'lead' && H.pri === 2) can = up >= TICKER_LEAD_PREEMPT;
@@ -2189,7 +2472,7 @@ function pumpTicker() {
       showTickerLine('head', line, now);
     }
   } else if (H && now - H.shownAt > TICKER_LINGER[Math.min(3, H.pri)]) hideTickerLine('head');
-  if (tk.tip && now >= tk.tip.until) hideTip();
+  if (tk.tip && !tipLock && now >= tk.tip.until) hideTip();
   // sub tier: chatter, in order (wide layouts only)
   const S = tk.sub;
   if (single) {
@@ -2200,8 +2483,7 @@ function pumpTicker() {
   }
   const si = tickerQueue.findIndex((l) => l.pri <= 1);
   if (si >= 0) {
-    const tipYoung = tk.tip && now - tk.tip.shownAt < TIP_HOLD; // the tip gets a chatter line's hold, then yields
-    if (!tipYoung && (!S || now - S.shownAt >= TICKER_HOLD[1])) showTickerLine('sub', tickerQueue.splice(si, 1)[0], now);
+    if (!tipLock && (!S || now - S.shownAt >= TICKER_HOLD[1])) showTickerLine('sub', tickerQueue.splice(si, 1)[0], now); // (a line here retires the tip)
   } else if (S && now - S.shownAt > TICKER_LINGER[1]) hideTickerLine('sub');
   pumpFiller(now);
   setTickerIdle(!tk.head && !tk.sub && !tk.tip && !tk.fill && now - Math.max(tk.headOffAt, tk.subOffAt) >= TICKER_IDLE_WIDE_MS);
@@ -2421,6 +2703,10 @@ function toast(msg, opts = {}) {
   span.textContent = msg;
   box.appendChild(span);
   box.classList.toggle('actionable', !!opts.action);
+  // optional thin progress bar under the text (clip recording)
+  const prog = Number.isFinite(opts.progress);
+  box.classList.toggle('progress', prog);
+  if (prog) box.style.setProperty('--p', `${clamp(opts.progress, 0, 100)}%`);
   if (opts.action) {
     const b = document.createElement('button');
     b.type = 'button';
@@ -2548,6 +2834,9 @@ function frame(now) {
         case 'finish':
           advanceRace(dt);
           break;
+        case 'replay':
+          tickReplay(dt);
+          break;
         default:
           break;
       }
@@ -2556,12 +2845,16 @@ function frame(now) {
       hold(scene.pendingHoldMs);
       scene.pendingHoldMs = 0;
     }
-    // while paused the scene still ticks (water, bobbing) but the race clock holds
-    scene.update(dt, state.t, state.phase, state.phaseTime);
+    // while paused the scene still ticks (water, bobbing) but the race clock holds; during the instant replay the scene
+    // renders the replay clock as a live 'finish' frame (state.t itself is untouched: the board and results keep their time)
+    const rp = state.replay;
+    const tScene = rp ? rp.t : state.t;
+    const phScene = rp ? 'finish' : state.phase;
+    scene.update(dt, tScene, phScene, state.phaseTime);
     // idle screens (setup / results): draw every other frame (~30 fps); the sim side still ticks every frame
     const idle = state.phase === 'setup' || state.phase === 'results';
     perf.skip = idle ? !perf.skip : false;
-    if (!perf.skip) scene.render(state.t, state.phase);
+    if (!perf.skip) scene.render(tScene, phScene);
     publishSkyBand();
     if (!els.hud.hidden) {
       updateHud();
@@ -2603,7 +2896,7 @@ function placeCountdownDigit() {
         el.style.fontSize = `${Math.round(fs)}px`;
       }
     }
-    const half = k * fs;
+    const half = Math.max(k * fs, el.offsetWidth / 2); // the ring, or the word when it is wider ("GO!" on a phone must not run off the track)
     x = `${Math.round(clamp(Math.max(sx0 + 0.58 * (trackRight - sx0), pillRight + 6 + half), half + 4, trackRight - half - 4))}px`;
   }
   els.callout.style.setProperty('--count-x', x);
@@ -2621,6 +2914,7 @@ function stepCountdown() {
     announce(digit, { now: true });
     audio.beep(false);
     scene.startLights = step + 1;
+    if (step === 2) maybeShowTip(); // the last light: the bar is quiet from here to the first launch chatter (TIP_RACE_S in)
     return;
   }
   callout('GO!', 'big go', { ttl: 1000 });
@@ -2642,7 +2936,6 @@ function stepCountdown() {
   setPhase('race');
   perf.improved = false;
   say(commentator.go(), 2, { t: 0, kind: 'go' }); // each duck's launch splash comes from the scene at its own reaction time
-  // (the once-per-browser "follow your duck" tip airs in the commentary bar once the launch has settled: see maybeShowTip)
 }
 
 function advanceRace(dt) {
@@ -2802,13 +3095,15 @@ function advanceRace(dt) {
     }
   }
 
-  maybeShowTip(); // once per browser, t 4–14 s, only into a quiet bar
-
   // crowd excitement follows the race (and leans in for a photo)
   audio.setCrowd(clamp(0.3 + (leadX / TRACK_LENGTH) * 0.5 + scene.cheer * 0.4 + (state.photoCalled && state.finished === 0 ? 0.15 : 0), 0, 1));
 
   if (state.phase === 'race' && state.finished >= n) setPhase('finish');
-  if (state.phase === 'finish' && state.phaseTime > FINISH_HOLD) showResults();
+  if (state.phase === 'finish') {
+    // the instant replay of the touch bridges the finish hold and the board (skipped under reduced motion / Calm or &replay=0)
+    const replayable = !scene.reduceMotion && REPLAY_PARAM !== '0';
+    if (state.phaseTime > (replayable ? FINISH_HOLD_REPLAY : FINISH_HOLD) && !(replayable && startInstantReplay('show'))) showResults();
+  }
 }
 
 /** Hot-dog aftermath: did it actually cost them? (ranked at the follow-up instant, not the frame) */
@@ -3130,12 +3425,274 @@ function handleEvent(ev) {
           if (gen === raceGen && state.phase === 'finish') audio.fanfareTag();
         }, lastFirst ? 1200 : 1700);
       }
-      updateHud(true);
+      updateHud(true, { badges: false }); // the finisher takes its final slot now; the pack's catch-up behind it posts no badges
       break;
     }
     default:
       break;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Instant replay: the deciding touch again at 0.35x from the line camera, TV furniture drawn in-canvas by the scene
+// (letterbox, REPLAY bug, winner card, a wipe off the frame we left). Playback only — the director re-drives a private
+// replay clock (state.replay.t) across [t0, t1] and hands the scene the sim events inside the window; state.t, the
+// board, the ticker and the sound one-shots stay out of it. Three ways in: the finish hold hands over to it before the
+// board ('show'), the board's "Replay finish" plays it again ('results'), and "Save clip" plays it with a recorder on
+// the canvas plus CLIP_CODA seconds of real-time celebration. Click / Space / Enter / Esc / Skip end it early.
+// ---------------------------------------------------------------------------
+
+/**
+ * What the replay shows — a pure function of the sim + rule, so a shared link and its clip agree: the winner's touch,
+ * or under last-place-picks-first a battle for last closer than REPLAY_CLOSE_LAST (that touch decided the 1.01; a lone
+ * straggler paddling home is not worth four seconds, and two replays back to back would keep the board waiting).
+ * null = nothing to replay (no race, reduced motion / Calm).
+ */
+function replayPlan() {
+  const sim = state.sim;
+  if (!sim || !scene.sim || scene.reduceMotion) return null;
+  const n = sim.count;
+  const order = sim.order;
+  const fts = sim.finishTimes;
+  const lastFirst = state.rule === 'last-first';
+  let kind = 'win';
+  let duck = order[0];
+  if (lastFirst && n >= 3 && fts[order[n - 1]] - fts[order[n - 2]] < REPLAY_CLOSE_LAST) {
+    kind = 'tail';
+    duck = order[n - 1];
+  }
+  const tMark = fts[duck];
+  const t0 = Math.max(0, tMark - REPLAY_PRE);
+  const t1 = tMark + REPLAY_POST;
+  let ducks;
+  if (kind === 'tail') ducks = [order[n - 2], order[n - 1]];
+  else {
+    ducks = [duck];
+    for (let k = 1; k < n && ducks.length < 4; k++) if (fts[order[k]] - tMark <= 0.9) ducks.push(order[k]); // the chasers in the same shot
+    if (ducks.length === 1 && n >= 2) ducks.push(order[1]); // a clear win: frame the daylight
+  }
+  const look = state.looks[duck];
+  let card;
+  if (kind === 'tail') {
+    const gap = fts[order[n - 1]] - fts[order[n - 2]];
+    card = { kicker: 'LAST', name: look.name, meta: `${tMark.toFixed(2)}s · last by ${gap.toFixed(2)}s · takes the 1.01`, look, gold: true };
+  } else {
+    const how = n < 2 ? '' : sim.photoFinish ? ' · photo finish' : ` · by ${sim.margin.toFixed(2)}s`;
+    card = { kicker: '1ST', name: look.name, meta: `${tMark.toFixed(2)}s${how}${lastFirst ? ' · picks last' : ''}`, look, gold: !lastFirst };
+  }
+  const sub = kind === 'tail' ? 'RACE FOR THE 1.01' : sim.photoFinish ? 'PHOTO FINISH' : 'THE FINISH';
+  return { kind, duck, tMark, t0, t1, ducks, sub, card };
+}
+
+/**
+ * Start the replay. `back`: 'show' = the finish hold is handing over (the board is built when it ends);
+ * 'results' = from the board (kept in the DOM, hidden by CSS, shown again as it was). `job`: a clip recording
+ * ({rec, cancelled}) — no wipe (the clip opens clean on a white blink) and a real-time coda after the slow motion.
+ * @returns {boolean} false when there is nothing to replay
+ */
+function startInstantReplay(back = 'show', { job = null } = {}) {
+  const plan = replayPlan();
+  if (!plan) return false;
+  if (state.paused) setPaused(false);
+  teardownReplay();
+  clearCallouts();
+  clearTicker();
+  hideTitleCard(0);
+  if (!job) toast.clear();
+  const sim = state.sim;
+  let evIdx = 0;
+  while (evIdx < sim.events.length && sim.events[evIdx].t < plan.t0) evIdx++;
+  const dur = (plan.t1 - plan.t0) / REPLAY_RATE; // wall seconds of slow motion
+  state.replay = { ...plan, back, job, t: plan.t0, wall: 0, dur, total: dur + (job ? CLIP_CODA : REPLAY_FREEZE), evIdx, marked: false, pct: -1, coda: false };
+  if (back === 'results' && state.podiumRaf) {
+    cancelAnimationFrame(state.podiumRaf); // the champion can stop hopping while nobody sees the podium
+    state.podiumRaf = 0;
+  }
+  els.replaySkip.querySelector('.lbl').textContent = job ? 'Cancel' : 'Skip';
+  els.replaySkip.setAttribute('aria-label', job ? 'Cancel the clip' : 'Skip the replay');
+  setPhase('replay'); // hides the board / HUD / ticker, reserves the letterbox (updateInsets), shows the Skip pill
+  scene.beginReplay({ t0: plan.t0, t1: plan.t1, kind: plan.kind, ducks: plan.ducks, label: 'REPLAY', sub: plan.sub, wipe: !job });
+  if (job) scene.flash = 0.8; // the clip opens on a white blink instead of a wipe off the board's backdrop
+  audio.replaySwoosh(false);
+  audio.setSlowmo(0.85); // the world goes under water for the slow motion (whoomp + muffled beds)
+  state.slowmoSent = 0.85;
+  announce(plan.kind === 'tail' ? `Replay: the race for the first pick` : `Replay: ${plan.card.name} at the line`, { now: true });
+  return true;
+}
+
+/** Per frame in phase 'replay': advance the replay clock, hand the scene the events inside the window, card on the touch. */
+function tickReplay(dt) {
+  const r = state.replay;
+  if (!r) {
+    showResults();
+    return;
+  }
+  r.wall += dt;
+  const sim = state.sim;
+  if (r.wall <= r.dur) r.t = Math.min(r.t1, r.t0 + r.wall * REPLAY_RATE);
+  else if (r.job) {
+    // clip coda: ease back to real time and let the celebration play (confetti lands, the champion hops)
+    const k = clamp((r.wall - r.dur) / 0.6, 0, 1);
+    r.t += dt * lerp(REPLAY_RATE, 1, k * k * (3 - 2 * k));
+  } // else: frozen on the last frame for REPLAY_FREEZE, then the flash out
+  const evs = sim.events;
+  while (r.evIdx < evs.length && evs[r.evIdx].t <= r.t) scene.onEvent(evs[r.evIdx++], r.t); // scene side only: no sound, no lines, no board
+  if (!r.marked && r.t >= r.tMark) {
+    r.marked = true;
+    scene.setReplayCard(r.card);
+    scene.cheer = 1;
+    sfx().cheer(0.32, 1.8); // one muffled roar under the slow-mo bed; every other one-shot stays silent
+  }
+  scene.slowmo = lerp(scene.slowmo, r.wall <= r.dur ? 0.85 : 0, 1 - Math.exp(-dt * 5));
+  if (r.job) {
+    const pct = Math.round(100 * clamp(r.wall / r.total, 0, 1));
+    if (pct >= r.pct + 3 || (pct === 100 && r.pct !== 100)) {
+      r.pct = pct;
+      toast(`Recording clip… ${pct}%`, { ms: 1500, progress: pct });
+    }
+    if (r.wall > r.dur && !r.coda) {
+      r.coda = true; // the slow motion is over: surface the sound, widen the shot so the champion's coast and the confetti stay in frame
+      audio.setSlowmo(0);
+      state.slowmoSent = 0;
+      scene.relaxReplayCamera();
+    }
+  }
+  if (r.wall >= r.total) finishInstantReplay(false);
+}
+
+/** End of the replay (played out or skipped): flash out, then the board — built fresh after the race, shown again as it was otherwise. */
+function finishInstantReplay(skipped = false) {
+  const r = state.replay;
+  if (!r) return;
+  const back = r.back;
+  if (r.job && skipped) r.job.cancelled = true;
+  teardownReplay();
+  audio.replaySwoosh(true);
+  if (back === 'show') showResults();
+  else {
+    setPhase('results'); // the panel glides back in (its entry animation re-runs); rows and plinths stay as they were
+    if (!state.podiumRaf) startPodiumLoop();
+    layoutBoard(); // (a resize during the replay skipped the hidden board)
+    arrangeActions();
+    if (!coarseMQ.matches) (r.job ? els.clip : els.instant).focus({ preventScroll: true });
+  }
+  if (!scene.reduceMotion) scene.flash = skipped ? 0.5 : 0.9; // (after showResults: its resetPresentation zeroes the channel)
+}
+
+/** Drop replay state without navigating (a new race, back to setup, the jump() hook, the end of a replay). Stops a recorder. */
+function teardownReplay() {
+  const r = state.replay;
+  if (!r) return;
+  state.replay = null;
+  const rec = r.job && r.job.rec;
+  if (rec && rec.state !== 'inactive') {
+    try {
+      rec.stop(); // saveClip() resumes from the recorder's stop event (and reads job.cancelled)
+    } catch {
+      /* already stopped */
+    }
+  }
+  scene.endReplay();
+  scene.slowmo = 0;
+  audio.setSlowmo(0);
+  state.slowmoSent = 0;
+}
+
+function skipReplay() {
+  if (state.phase === 'replay') finishInstantReplay(true);
+}
+els.replaySkip.addEventListener('click', skipReplay);
+els.scene.addEventListener('click', () => {
+  if (state.phase === 'replay') skipReplay(); // click / tap anywhere on the picture
+});
+
+/**
+ * "Save clip": the replay + CLIP_CODA seconds of celebration recorded off the main canvas at CLIP_FPS (the card, bug and
+ * letterbox are drawn in-canvas, so the clip is self-contained), then handed to the share sheet (touch devices that
+ * take files) or downloaded as duck-derby-<code>.webm|mp4. The board's state is untouched throughout.
+ */
+async function saveClip() {
+  if (state.phase !== 'results' || state.replay || !CLIP_MIME || !state.sim) return;
+  if (ceremonyRunning()) finishCeremony(true);
+  const type = CLIP_MIME.split(';')[0];
+  const ext = type === 'video/mp4' ? 'mp4' : 'webm';
+  const filename = `duck-derby-${seedToCode(state.seed)}.${ext}`;
+  let rec;
+  let stream = null;
+  const chunks = [];
+  try {
+    // a 2x backing store is four times the encoder's work for a clip people watch on a phone: record CSS pixels
+    scene.forceDpr = window.innerWidth * window.innerHeight > 1.3e6 ? 1 : 1.5;
+    scene.resize();
+    stream = els.scene.captureStream(CLIP_FPS);
+    rec = new MediaRecorder(stream, { mimeType: CLIP_MIME, videoBitsPerSecond: 6_000_000 });
+  } catch {
+    if (stream) for (const tr of stream.getTracks()) tr.stop();
+    scene.forceDpr = 0;
+    scene.resize();
+    els.clip.hidden = true; // the feature test passed but the recorder refused: don't offer it again this session
+    toast('This browser could not record the clip — Save image still works');
+    return;
+  }
+  const job = { rec, cancelled: false };
+  const stopped = new Promise((resolve) => {
+    rec.onstop = resolve;
+    rec.onerror = () => {
+      job.cancelled = true;
+      job.failed = true;
+      resolve();
+    };
+  });
+  rec.ondataavailable = (e) => {
+    if (e.data && e.data.size) chunks.push(e.data);
+  };
+  try {
+    rec.start(250);
+  } catch {
+    job.cancelled = job.failed = true;
+  }
+  if (job.failed || !startInstantReplay('results', { job })) {
+    if (rec.state !== 'inactive') rec.stop();
+    for (const tr of stream.getTracks()) tr.stop();
+    scene.forceDpr = 0;
+    scene.resize();
+    toast(job.failed ? 'This browser could not record the clip — Save image still works' : 'Nothing to replay yet');
+    return;
+  }
+  await stopped; // the replay runs; teardownReplay() stops the recorder when it ends (or is cancelled)
+  for (const tr of stream.getTracks()) tr.stop();
+  scene.forceDpr = 0;
+  scene.resize(); // back to the device's pixel ratio (behind the board: nobody sees the reallocation)
+  if (job.cancelled || !chunks.length) {
+    toast(job.failed ? 'Recording failed — Save image still works' : 'Clip cancelled', { ms: 2200 });
+    return;
+  }
+  const blob = new Blob(chunks, { type });
+  if (coarseMQ.matches && typeof navigator.share === 'function' && typeof File === 'function') {
+    try {
+      const file = new File([blob], filename, { type });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: `${state.league || 'Duck Derby'} — the finish` });
+        state.resultExported = true;
+        toast('Clip shared');
+        return;
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      /* refused: fall back to a download */
+    }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(a.href);
+    a.remove();
+  }, 4000);
+  state.resultExported = true;
+  toast(`Clip saved · ${filename}`, { ms: 2600 });
 }
 
 // ---------------------------------------------------------------------------
@@ -3208,7 +3765,10 @@ function showResults({ nav = 'push' } = {}) {
   els.results.classList.toggle('rule-last', lastFirst);
   els.results.classList.toggle('from-share', state.sharedRun);
   els.results.classList.toggle('results--short', picks.length <= 5); // a small field gets a content-height panel, not a slab of empty glass
-  els.replay.textContent = state.sharedRun ? 'Watch again' : 'Watch replay';
+  els.replay.textContent = state.sharedRun ? 'Watch again' : 'Watch full race';
+  // the instant replay and its clip are motion by definition: neither is offered under reduced motion / Calm
+  els.instant.hidden = scene.reduceMotion;
+  els.clip.hidden = scene.reduceMotion || !CLIP_MIME;
   els.rulePill.textContent = R.pill;
   arrangeActions();
 
@@ -3584,13 +4144,6 @@ function startPodiumLoop() {
 // removed with the last piece. Where the panel has no blur to show through (phones, low-fx, old browsers) the
 // drizzle only falls beside the panel.
 const FX_FRONT_MS = 1200;
-function darker(hex) {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
-  if (!m) return hex;
-  const v = parseInt(m[1], 16);
-  const ch = (k) => Math.round(((v >> k) & 255) * 0.7);
-  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
-}
 function launchDomConfetti() {
   if (scene.reduceMotion) return;
   const panel = els.results.getBoundingClientRect();
@@ -3632,7 +4185,7 @@ function launchDomConfetti() {
       w: (9 + Math.random() * 3) * ui,
       h: (5 + Math.random() * 2) * ui,
       color,
-      shade: darker(color),
+      shade: confettiShade(color),
       age: 0,
       life: 2.4 + Math.random(),
     });
@@ -3750,25 +4303,49 @@ function resultText({ withUrl = true } = {}) {
 function arrangeActions() {
   const strip = els.quietGroup;
   const edit = $('#btn-edit');
-  if (isCompact()) {
+  // phones fit four quiet chips a row: short labels there (the titles carry the long form)
+  const compact = isCompact();
+  els.instant.lastElementChild.textContent = compact ? 'Replay' : 'Replay finish';
+  if (!state.sharedRun) els.replay.textContent = compact ? 'Full race' : 'Watch full race';
+  els.replay.title = state.sharedRun ? 'Watch the whole race again' : 'Watch the whole race again from the start';
+  els.copy.textContent = compact ? 'Copy text' : 'Copy as text';
+  if (compact) {
     if (state.sharedRun) els.actions.insertBefore(els.replay, els.share);
     else strip.insertBefore(els.replay, strip.firstChild);
+    strip.insertBefore(els.instant, strip.firstChild); // the strip opens with "Replay finish"
     strip.insertBefore(els.save, edit);
+    strip.insertBefore(els.clip, edit);
     strip.insertBefore(els.copy, edit);
   } else {
     els.actions.insertBefore(els.save, strip);
+    els.actions.insertBefore(els.clip, strip);
     els.actions.insertBefore(els.copy, strip);
     strip.insertBefore(els.replay, strip.firstChild);
+    strip.insertBefore(els.instant, strip.firstChild);
   }
-  // landscape phones keep the chips on one line: a fade marks the (rare) overflow; toasts learn the footer's height
-  strip.classList.toggle('overflow', landscapeCompact() && strip.scrollWidth > strip.clientWidth + 2);
+  setMoreOpen(false);
+  // landscape phones: the chips ride beside the primary button(s) when they fit; when they don't (six or seven chips on
+  // most phones) they take a row of their own, and only if even that row overflows does the strip scroll, with a fade
+  // marking it. Measured from a clean slate each time (the classes themselves change the widths). Toasts learn the
+  // footer's height; the board's scroll cue learns its new fold.
+  els.actions.classList.remove('stacked');
+  strip.classList.remove('overflow');
+  let over = landscapeCompact() && strip.scrollWidth > strip.clientWidth + 2;
+  if (over) {
+    els.actions.classList.add('stacked');
+    over = strip.scrollWidth > strip.clientWidth + 2;
+  }
+  strip.classList.toggle('overflow', over);
   publishFooterH();
+  syncResultsOverflow();
 }
 
 /** @param {{keepShared?: boolean}} [opts] keepShared: arriving on a shared link via browser Back — stay locked to it */
 function backToSetup({ keepShared = false } = {}) {
   if (state.paused) setPaused(false);
+  teardownReplay();
   hideConfirm();
+  setMoreOpen(false);
   if (!keepShared) leaveSharedMode(true); // back to setup = a new race: never re-run the seed we just watched
   clearCallouts();
   clearTicker();
@@ -3802,10 +4379,29 @@ function newRace() {
   startDerby({ seed: randomSeed(), source: 'random' });
 }
 function showConfirm() {
+  setMoreOpen(false);
   els.actions.classList.add('confirming');
   els.confirmNew.hidden = false;
   $('#btn-cancel-new').focus();
 }
+
+// Very short screens (CSS: at most 559 x 600): the quiet actions sit behind a "More" button, in a sheet over the footer's
+// top edge; anywhere else the button is display:none and the class is inert. Any action in the sheet, a tap outside it,
+// Esc or a layout change closes it.
+function setMoreOpen(on) {
+  on = !!on;
+  if (els.actions.classList.contains('more-open') === on) return;
+  els.actions.classList.toggle('more-open', on);
+  els.more.setAttribute('aria-expanded', String(on));
+}
+els.more.addEventListener('click', () => setMoreOpen(!els.actions.classList.contains('more-open')));
+els.quietGroup.addEventListener('click', (e) => {
+  if (e.target instanceof Element && e.target.closest('button')) setMoreOpen(false); // (bubbles after the action's own handler)
+});
+document.addEventListener('pointerdown', (e) => {
+  if (!els.actions.classList.contains('more-open')) return;
+  if (!(e.target instanceof Element && e.target.closest('.quiet-group, #btn-more'))) setMoreOpen(false);
+});
 function hideConfirm() {
   els.actions.classList.remove('confirming');
   els.confirmNew.hidden = true;
@@ -3826,6 +4422,10 @@ $('#btn-cancel-new').addEventListener('click', () => {
   els.again.focus();
 });
 els.replay.addEventListener('click', () => startDerby({ seed: state.seed, source: state.seedSource }));
+els.instant.addEventListener('click', () => {
+  if (state.phase === 'results' && !state.replay && !startInstantReplay('results')) toast('Nothing to replay');
+});
+els.clip.addEventListener('click', saveClip);
 $('#btn-edit').addEventListener('click', () => backToSetup());
 els.copy.addEventListener('click', () => copyText(resultText(), 'Draft order copied', { exported: true }));
 $('#btn-copylink').addEventListener('click', () => copyText(shareUrl(), 'Share link copied — anyone can replay this exact race', { exported: true }));
@@ -4191,6 +4791,7 @@ const onCompactChange = () => {
 // browser Back / Forward: a result URL reopens its board, a shared link its locked setup, a bare URL the plain setup
 window.addEventListener('popstate', (e) => {
   const data = decodeShare(location.search);
+  if (state.phase === 'replay') finishInstantReplay(true); // Back / Forward during the instant replay: settle on the board first, then navigate
   const ph = state.phase;
   if (data && data.seed !== null) {
     if (ph !== 'setup' && ph !== 'results') return; // mid-race: the race owns the screen (its result is pushed when it ends)
@@ -4225,10 +4826,18 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (e.ctrlKey || e.metaKey || inField) return;
+  if (state.phase === 'replay' && (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter')) {
+    e.preventDefault();
+    skipReplay(); // the instant replay: any of these goes straight to the board
+    return;
+  }
   const live = PAUSABLE.includes(state.phase);
   switch (e.key) {
     case 'Escape':
-      if (!els.confirmNew.hidden) {
+      if (els.actions.classList.contains('more-open')) {
+        setMoreOpen(false);
+        els.more.focus();
+      } else if (!els.confirmNew.hidden) {
         hideConfirm();
         $('#btn-again').focus();
       } else if (live || state.phase === 'intro') skipToResults();
@@ -4262,11 +4871,17 @@ document.addEventListener('keydown', (e) => {
     case 'N':
       if (RACE_PHASES.includes(state.phase)) cycleLabelMode();
       break;
+    case 't':
+    case 'T':
+      setTv(!state.tv);
+      break;
     default:
       break;
   }
 });
 scene.resize();
+applyTv(); // big-screen mode from the store / &tv= (before the first layout pass)
+if (TV_PARAM === '1' || TV_PARAM === '0') saveStore(); // a link that says tv=1 is remembered like the button
 // quality tier: ?fx=0|1|2 pins it (captures, debugging); otherwise last session's tier, and weak devices start at 1
 {
   const pinned = /^[012]$/.test(FX_PARAM) ? Number(FX_PARAM) : null;
@@ -4311,9 +4926,13 @@ window.__duckDerby = {
   setPaused,
   showResults,
   setFocus,
+  setTv,
+  /** Testing hook: play the instant replay now (from the board it returns to the board; mid-race it ends on the board). */
+  replayFinish: () => startInstantReplay(state.phase === 'results' ? 'results' : 'show'),
+  replayPlan,
   /**
    * Testing hook: put the race clock at `t` seconds. Idempotent — jumping
-   * backwards (or from finish/results) rewinds the director and replays.
+   * backwards (or from finish/results/the replay) rewinds the director and replays.
    * Events before `t` are applied with sound off; banners/ticker lines only
    * for the last 2.5 s so a capture shows what a viewer would see at `t`.
    */
@@ -4322,8 +4941,10 @@ window.__duckDerby = {
     if (!sim || !scene.sim) return;
     t = Math.max(0, Number(t) || 0);
     if (state.paused) setPaused(false);
+    const wasReplay = !!state.replay;
+    teardownReplay();
     if (state.phase === 'intro' || state.phase === 'countdown') setPhase('race');
-    if (t < state.t || state.phase === 'results' || state.phase === 'finish') {
+    if (t < state.t || wasReplay || state.phase === 'results' || state.phase === 'finish' || state.phase === 'replay') {
       resetDirector();
       scene.setRace(sim, state.looks);
       setPhase('race');
@@ -4360,6 +4981,6 @@ window.__duckDerby = {
     scene.projectiles.length = 0;
     scene.snapCamera(t);
     state.lastHud = 0;
-    updateHud(true);
+    updateHud(true, { snap: true }); // a time cut places the board; nothing glides, no badges
   },
 };

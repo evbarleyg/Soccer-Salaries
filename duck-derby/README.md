@@ -43,6 +43,17 @@ self-hosted typefaces. No build step. Drop the folder on any static host.
   fanfare, the board arrives sealed and flips open pick by pick, two-tone
   confetti in the champion's colours arcs over the panel then drifts behind the
   glass).
+- Instant replay: once everyone is home, the deciding touch plays again at
+  0.35x from a tight line camera — wipe in, letterbox, a TV "REPLAY" bug and a
+  winner card drawn in-canvas — then the board (under last-place-picks-first a
+  close battle for last is the replay instead: that touch decided the 1.01).
+  Skippable (click / Space / Esc), replayable from the board ("Replay finish"),
+  skipped under reduced motion. "Save clip" (where the browser can record a
+  canvas) turns the replay plus two seconds of celebration into a
+  `duck-derby-<code>.webm|mp4` for the group chat.
+- Big-screen mode ("TV" button, `T`, or `&tv=1`; remembered): a couch-readable
+  live board, ticker, ribbons and name tags, and chrome that hides itself — the
+  top bar and cursor disappear after two idle seconds and return on any input.
 - An honest run-in call: 4.5 m out the director classifies the finish by *time*
   (live gap in seconds and how tight the touch will really be) — PHOTO FINISH
   only for a genuine photo, "to the wall!" for a fight, "nobody is catching X"
@@ -86,7 +97,7 @@ self-hosted typefaces. No build step. Drop the folder on any static host.
   to be shortened.
 - Responsive (phone portrait + landscape → TV, safe-area aware), keyboard and
   screen-reader friendly (`P`/`Space` pause, `Esc` skip to results, `M` mute,
-  `F` fullscreen, `N` name tags, polite live announcements), honours
+  `F` fullscreen, `T` big screen, `N` name tags, polite live announcements), honours
   `prefers-reduced-motion` live plus an in-app "Calm" effects setting. The
   quality governor tells a capped refresh rate (Low Power Mode, 30 Hz TVs)
   from a slow device: a shed tier that doesn't buy frame rate is undone and
@@ -106,9 +117,10 @@ npm run shots      # Playwright: screenshots of every phase across 17 viewports/
 npm run smoke      # Playwright: end-to-end flows, exits 1 on any page/console error (~2 min)
 ```
 
-`tools/shots.mjs <baseUrl> <outDir> [seed] [--only=desktop12,fin390,…]` re-shoots
-a subset; `tools/smoke.mjs <baseUrl>` needs the same static server. Both use a
-global or local Playwright install.
+`tools/shots.mjs <baseUrl> <outDir> [seed] [--only=desktop12,fin390,…] [--settle=ms]`
+re-shoots a subset (`--settle`: how long to wait after a race-clock jump before its
+screenshot, default 350 ms — 700 gives a settled live-order board); `tools/smoke.mjs
+<baseUrl>` needs the same static server. Both use a global or local Playwright install.
 
 ## Fonts
 

@@ -116,6 +116,11 @@ kbd { font-family: var(--mono); font-size: 11px; font-weight: 700; background: r
 .icon-btn:hover { transform: translateY(-1px); background: #fff; }
 .icon-btn:active { transform: translateY(1px) scale(0.97); }
 #btn-sound[aria-pressed="true"] .ico-sound-off, #btn-sound[aria-pressed="false"] .ico-sound-on { display: none; }
+/* big-screen mode toggle: a "TV" wordmark chip; lit gold while on */
+.tv-btn { font-family: var(--ui); font-weight: 900; font-size: 12px; letter-spacing: .08em; color: var(--ink); }
+.tv-btn[aria-pressed="true"] { background: linear-gradient(180deg, #FFEA96, #FFD23F); color: #3b2400; border-color: rgba(120,80,0,.25); box-shadow: 0 4px 14px rgba(184,128,0,.35), inset 0 -2px 0 rgba(0,0,0,.12); }
+.tv-btn[aria-pressed="true"]:hover { background: linear-gradient(180deg, #FFF0A8, #FFDA55); }
+.topbar { transition: transform .35s ease, opacity .35s ease; }
 .badge {
   font-family: var(--mono); font-size: 12px; font-weight: 700;
   padding: 7px 10px; border-radius: 10px; background: rgba(13,27,46,0.55); color: #fff; letter-spacing: 0.06em;
@@ -282,7 +287,7 @@ kbd { font-family: var(--mono); font-size: 11px; font-weight: 700; background: r
   max-height: calc(100vh - var(--topbar-h) - var(--sat) - 70px); /* the list itself is sized to the field by main.js (sizeStandings) */
   display: flex; flex-direction: column; gap: 8px;
   background: var(--glass-72); color: #fff; border: 1px solid rgba(255,255,255,0.18);
-  border-radius: 18px; padding: 10px 10px 10px; backdrop-filter: blur(14px) saturate(1.3); -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border-radius: 18px; padding: 10px 7px; backdrop-filter: blur(14px) saturate(1.3); -webkit-backdrop-filter: blur(14px) saturate(1.3);
   box-shadow: var(--glass-hi), 0 16px 40px rgba(0,0,0,0.25); animation: panel-in .4s ease both; outline: none;
 }
 .hud-head {
@@ -301,47 +306,69 @@ kbd { font-family: var(--mono); font-size: 11px; font-weight: 700; background: r
   min-width: 3.6ch; text-align: right; padding: 4px 8px 3px; border-radius: 8px;
   background: rgba(0,0,0,0.42); border: 1px solid rgba(255,255,255,0.10); box-shadow: inset 0 2px 5px rgba(0,0,0,0.45);
 }
-.standings { list-style: none; margin: 0; padding: 0; position: relative; flex: 1 1 auto; overflow: hidden; }
-.standings li {
-  position: absolute; left: 0; right: 0; top: 0; height: var(--row-h, 32px);
-  display: grid; grid-template-columns: 20px 22px minmax(0, 1fr) auto 10px; align-items: center; gap: 6px; padding: 0 6px 0 6px;
-  border-radius: 9px; transition: transform .3s cubic-bezier(.2,.8,.2,1), background .3s ease, opacity .3s ease; will-change: transform;
-  font-size: 13px;
+/* The board. Rows sit at translateY(rank × pitch); a change of order is ONE move pass (main.js movePass): climbing rows
+   ride above as lifted opaque cards (.mv.up), rows giving way slide below them slightly dimmed (.mv.dn) — z-order is set
+   inline per row (biggest gain highest) — so names never print through names. At rest a row has no plate: the glass
+   shows through, and state tints (leader / done / 1.01) are background-IMAGES so the plate colour underneath stays free. */
+.standings {
+  list-style: none; margin: 0; padding: 0; position: relative; flex: 1 1 auto; overflow: hidden; overflow: clip; overflow-clip-margin: 12px;
+  --row-move: .28s; --row-ease: cubic-bezier(.2,.8,.2,1); --gap-w: 50px;
+  --plate: #1d3d62; --plate-up: #275384; --plate-dn: #163150; /* moving-row cards: about the glass over water, a shade up for climbers, down for the rows giving way */
 }
-.standings li.leader { background: linear-gradient(90deg, rgba(255,210,63,.38), rgba(255,210,63,.06)); box-shadow: inset 0 0 0 1px rgba(255,210,63,.55); }
-.standings li.done { background: linear-gradient(90deg, rgba(28,140,60,0.34), rgba(28,140,60,0.10)); }
-/* a climbing row is opaque and lifted above the row it passes; the one giving way dips, so two names never blend mid-glide */
-.standings li.mv { z-index: 1; background-color: rgba(21,50,86,0.96); transition: transform .3s cubic-bezier(.2,.8,.2,1), opacity .3s ease; }
-.standings li.mv:not(.up) { opacity: .6; }
-.standings li.mv.up { z-index: 2; box-shadow: 0 4px 12px rgba(0,0,0,.35); }
-.standings li.rise { z-index: 3; background-color: rgba(24,40,66,0.96); box-shadow: 0 4px 14px rgba(0,0,0,.3); animation: rise-pop .48s ease-out; }
+.standings li {
+  position: absolute; left: 3px; right: 3px; top: 0; height: var(--row-h, 32px); isolation: isolate;
+  display: grid; grid-template-columns: 20px 22px minmax(0, 1fr) var(--gap-w); align-items: center; gap: 6px; padding: 0 6px 0 6px;
+  border-radius: 9px; background-color: transparent; font-size: 13px; cursor: pointer;
+  transition: transform var(--row-move) var(--row-ease), scale .18s ease, background-color .25s ease; will-change: transform;
+}
+/* two layers under the text: ::before carries the lift shadow (drawn outside the card only), ::after the gold / red flashes */
+.standings li::before, .standings li::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1; }
+.standings li::before { box-shadow: 0 6px 16px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4); opacity: 0; transition: opacity .18s ease; }
+.standings li > * { transition: opacity .3s ease; }
+.standings li.mv { background-color: var(--plate); transition: transform var(--row-move) var(--row-ease), scale .14s ease-out; } /* the plate snaps on, fades off */
+.standings li.up { background-color: var(--plate-up); scale: 1.02; }
+.standings li.up::before { opacity: 1; }
+.standings li.dn { background-color: var(--plate-dn); }
+.standings li.dn > * { opacity: .7; }
+.standings li.leader { background-image: linear-gradient(90deg, rgba(255,210,63,.38), rgba(255,210,63,.06)); box-shadow: inset 0 0 0 1px rgba(255,210,63,.55); }
+.standings li.done { background-image: linear-gradient(90deg, rgba(28,140,60,0.34), rgba(28,140,60,0.10)); }
 /* last place picks first: the bottom unfinished row sits on the 1.01 (gold); the leader is merely outlined */
-.standings li.pick1 { background: linear-gradient(90deg, rgba(255,210,63,.32), rgba(255,210,63,.10)); box-shadow: inset 3px 0 0 #FFD23F; }
+.standings li.pick1 { background-image: linear-gradient(90deg, rgba(255,210,63,.32), rgba(255,210,63,.10)); box-shadow: inset 3px 0 0 #FFD23F; }
 .standings .gap.pick1 { color: #FFD23F; font-family: var(--ui); font-weight: 900; font-size: 11px; letter-spacing: .06em; opacity: 1; }
-.hud.rule-last .standings li.leader { background: rgba(255,255,255,.08); box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); }
-/* final stretch: the also-rans recede so the water owns the eye (leader, finishers, the pick-1 row and "my duck" stay bright) */
-.hud.recede .standings li:not(.leader):not(.done):not(.me):not(.pick1) { opacity: .66; }
+.hud.rule-last .standings li.leader { background-image: linear-gradient(rgba(255,255,255,.08), rgba(255,255,255,.08)); box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); }
+/* final stretch: the also-rans recede so the water owns the eye (leader, finishers, the pick-1 row, "my duck" and a
+   row on the climb stay bright) — the words dim, never the card, so a receding row on the move is still opaque */
+.hud.recede .standings li:not(.leader):not(.done):not(.me):not(.pick1):not(.up) > :not(.delta) { opacity: .66; }
+.hud.recede .standings li:not(.leader):not(.done):not(.me):not(.pick1):not(.up) > .gap:not(.delta) { opacity: .55; }
 /* "my duck": followed on the water and starred here (click a row to follow; remembered by name) */
-.standings li { cursor: pointer; }
 .standings li.me { box-shadow: inset 0 0 0 2px #fff; }
 .standings li.me .name::before { content: '★ '; color: #FFD23F; }
 .hud .standings li.me .num { outline: 2px solid #fff; outline-offset: 1px; }
 .standings li:focus-visible { box-shadow: inset 0 0 0 2px var(--accent-2); outline: none; }
-.hud.recede .standings .gap:not(.lead):not(.fin):not(.pick1) { opacity: .55; }
+.standings li.rise { animation: rise-pop .48s ease-out; }
 @keyframes rise-pop { 0% { scale: 1; } 35% { scale: 1.035; } 100% { scale: 1; } }
-.standings li.newlead { animation: rowflash-gold .9s ease-out; }
-.standings li.hit { animation: rowflash-red .9s ease-out; }
-@keyframes rowflash-gold { 0% { background-color: rgba(255,210,63,.85); box-shadow: 0 0 18px rgba(255,210,63,.8); } 100% { background-color: rgba(255,210,63,0); box-shadow: none; } }
-@keyframes rowflash-red { 0%, 30% { background-color: rgba(215,38,61,.85); box-shadow: 0 0 16px rgba(255,80,80,.7); } 100% { background-color: rgba(215,38,61,0); box-shadow: none; } }
+.standings li.newlead::after { animation: rowflash-gold .9s ease-out; }
+.standings li.hit::after { animation: rowflash-red .9s ease-out; }
+@keyframes rowflash-gold { 0% { background-color: rgba(255,210,63,.85); box-shadow: 0 0 18px rgba(255,210,63,.8); } 100% { background-color: rgba(255,210,63,0); box-shadow: 0 0 18px rgba(255,210,63,0); } }
+@keyframes rowflash-red { 0%, 30% { background-color: rgba(215,38,61,.85); box-shadow: 0 0 16px rgba(255,80,80,.7); } 100% { background-color: rgba(215,38,61,0); box-shadow: 0 0 16px rgba(255,80,80,0); } }
 .standings .pos { font-weight: 900; opacity: .8; font-variant-numeric: tabular-nums; text-align: right; font-size: 12px; }
 .standings .num { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; font-weight: 900; font-size: 12px; border: 1px solid rgba(255,255,255,0.25); }
 .standings .name { font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.standings .gap { font-family: var(--mono); font-size: 12px; font-weight: 700; opacity: .8; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+/* the gap cell: fixed width and tabular figures (no reflow as the numbers tick), and a stack — the live gap (.gv) and
+   the places-gained badge (.dl) cross-fade in place */
+.standings .gap { display: grid; align-items: center; justify-items: end; font-family: var(--mono); font-size: 12px; font-weight: 700; opacity: .8; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; min-width: 0; }
+.standings .gap > * { grid-area: 1 / 1; font-style: normal; }
+.standings .gap .gv { max-width: 100%; transition: opacity .2s ease .18s; } /* the gap returns once the badge has faded, never through it */
 .standings .gap.lead { color: var(--accent-2); opacity: 1; font-family: var(--ui); font-weight: 900; font-size: 11px; letter-spacing: .06em; }
 .standings .gap.fin { color: #7dff9a; opacity: 1; }
-.standings .arrow { font-size: 10px; line-height: 1; text-align: center; font-weight: 900; }
-.standings .arrow.up { color: #7dff9a; }
-.standings .arrow.down { color: #ff8a8a; }
+.standings .gap .dl { opacity: 0; transition: opacity .18s ease; font-family: var(--ui); font-weight: 900; font-size: 11px; letter-spacing: .02em; line-height: 1; padding: 3px 6px 2px 5px; border-radius: 6px; }
+.standings .gap .dl.up { color: #8dffa6; background: rgba(46,170,80,.30); box-shadow: inset 0 0 0 1px rgba(125,255,154,.35); }
+.standings .gap .dl.down { color: #ff9c9c; background: rgba(200,50,60,.30); box-shadow: inset 0 0 0 1px rgba(255,138,138,.30); }
+.standings .gap.delta { opacity: 1; }
+.standings .gap.delta .gv { opacity: 0; transition: opacity .1s ease; }
+.standings .gap.delta .dl { opacity: 1; animation: badge-in .24s cubic-bezier(.2,.8,.2,1); }
+@keyframes badge-in { from { scale: .6; opacity: 0; } to { scale: 1; opacity: 1; } }
+.pick-pin { display: none; } /* compact rule-last only (see the compact block) */
 .hud-foot { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; }
 .hud-foot #btn-names { grid-column: 1; }
 .hud-foot #btn-skip { grid-column: 2; min-width: 0; }
@@ -409,13 +436,15 @@ body.paused .ticker .tally b { opacity: .7; }
   font-family: var(--display); font-weight: 400; font-synthesis: none; color: #fff; text-align: center;
 }
 body.phase-setup .callout, body.phase-results .callout { display: none; }
-/* the countdown owns the screen: a big digit parked over open water (--count-x, set by main.js: right of the start-list pills,
-   left of the live-order panel) on a soft navy disc, with a ring that wipes away over the beat */
+/* the countdown owns the water, not the window: a big digit parked over open water (--count-x, set by main.js: right of the
+   start-list pills, left of the live-order panel; --water-mid: the middle of the water above the ticker) on a soft navy
+   disc, with a ring that wipes away over the beat — the ring (1.7em across) is capped at min(32vh, 300px) so a tablet or
+   a small laptop window keeps its lanes and ticker clear of it */
 @property --p { syntax: '<percentage>'; inherits: false; initial-value: 100%; }
 .callout .big {
   position: absolute; left: var(--count-x, 50%); top: var(--water-mid, calc(var(--sky-h, 28vh) + (100vh - var(--sky-h, 28vh)) / 2));
   translate: -50% -50%; margin: 0; white-space: nowrap; isolation: isolate;
-  font-size: clamp(84px, min(24vw, 36vh), 240px); line-height: 1; letter-spacing: 0.02em;
+  font-size: clamp(84px, min(24vw, calc(min(32vh, 300px) / 1.7)), 240px); line-height: 1; letter-spacing: 0.02em;
   -webkit-text-stroke: 4px var(--digit-edge, rgba(0,0,0,0.22)); paint-order: stroke fill;
   text-shadow: 0 6px 0 rgba(0,0,0,0.25), 0 18px 40px rgba(0,0,0,0.35);
   animation: digit var(--ttl, 920ms) cubic-bezier(.2,.9,.2,1) both;
@@ -528,7 +557,7 @@ body.paused .title-card { visibility: hidden; } /* the PAUSED card owns that ban
 /* ---------- results ---------- */
 .results {
   top: calc(var(--topbar-h) + var(--sat) + 8px); bottom: 18px; left: 50%; transform: translateX(-50%);
-  width: min(980px, calc(100vw - 48px)); /* wide enough that the action row never wraps >= 1000 px */
+  width: min(1040px, calc(100vw - 48px)); /* wide enough that the action row (nine actions) stays on one line >= 1090 px */
   animation: results-in .6s cubic-bezier(.2,.8,.2,1) both;
 }
 .results.results--wide { width: min(1180px, calc(100vw - 28px)); }
@@ -738,13 +767,16 @@ body.paused .title-card { visibility: hidden; } /* the PAUSED card owns that ban
 .results--wide.results--dense:not(.rule-last) .podium .place-3 .pl-place { font-size: 18px; }
 .results--wide.results--dense:not(.rule-last) .podium .pl-plaque { padding: 3px 8px 2px; }
 
-.results-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; position: relative; }
+.results-actions { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; position: relative; }
 .results-actions .quiet-group { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; min-width: 0; }
 .results-actions .copy-link { font-size: 12px; padding: 6px 4px; }
 .sec-btn { border: 1.5px solid rgba(13,27,46,0.15); background: #fff; border-radius: 12px; padding: 10px 12px; font-weight: 800; font-size: 13px; min-height: 40px; white-space: nowrap; }
 @media (hover: hover) { .sec-btn:hover { border-color: var(--blue); color: var(--blue); } } /* no sticky blue button after a tap on phones */
 .quiet-group .sec-btn { background: rgba(255,255,255,0.6); font-size: 12.5px; padding: 9px 10px; }
 .results-actions.confirming > :not(.confirm-sheet) { display: none; }
+/* "More" (very short screens only, see the 600 px block below): opens the quiet actions as a sheet over the footer's top edge */
+.more-btn { display: none; }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .confirm-sheet { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; width: 100%; animation: row-in .25s ease both; }
 .confirm-sheet p { margin: 0; flex: 1 1 260px; font-size: 14px; line-height: 1.35; color: var(--ink-2); }
 .confirm-sheet p strong { color: var(--ink); }
@@ -766,6 +798,9 @@ body.paused .title-card { visibility: hidden; } /* the PAUSED card owns that ban
   transition: opacity .25s ease, transform .25s ease; display: flex; align-items: center; gap: 12px; box-shadow: var(--glass-hi), 0 10px 30px rgba(0,0,0,.3);
 }
 .toast.show { opacity: 1; transform: none; }
+/* clip recording: a thin gold progress bar along the bubble's bottom edge (--p set by main.js) */
+.toast.progress { padding-bottom: 13px; overflow: hidden; }
+.toast.progress::after { content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: var(--p, 0%); background: var(--accent-2); transition: width .25s linear; }
 /* while racing the commentary ticker owns the bottom edge: toasts ride above it */
 body:is(.phase-intro, .phase-countdown, .phase-race, .phase-finish) .toast { bottom: calc(var(--ticker-h, 42px) + 30px + var(--sab)); }
 /* only the Undo button takes clicks: the bubble itself never shields a control underneath it */
@@ -782,6 +817,67 @@ body:is(.phase-intro, .phase-countdown, .phase-race, .phase-finish) .toast { bot
 /* phase-driven visibility tweaks */
 body.phase-race .topbar .badge, body.phase-finish .topbar .badge { opacity: .85; }
 
+/* ---------- instant replay (phase-replay): the scene owns the screen; letterbox, REPLAY bug and winner card are drawn
+   in-canvas (so a saved clip carries them) — the DOM adds only the Skip pill, bottom-right on the lower letterbox bar ---------- */
+.replay-skip {
+  position: fixed; z-index: 26; right: calc(16px + var(--sar)); bottom: calc(10px + var(--sab)); min-height: 36px; padding: 8px 14px;
+  background: var(--glass); border-color: rgba(255,255,255,.28); font-size: 13px; box-shadow: var(--glass-hi), 0 8px 24px rgba(0,0,0,.35);
+  animation: skip-in .35s ease .35s both;
+}
+.replay-skip:hover { background: rgba(30,52,86,.95); }
+@keyframes skip-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+/* a replay started from the board keeps the board in the DOM: hidden here (no re-run of its reveal), and its own entry
+   animation plays again when the phase returns to results */
+body.phase-replay .results { visibility: hidden; pointer-events: none; animation: none; }
+body.phase-replay .results * { animation-play-state: paused; }
+body.phase-replay .callout, body.phase-replay .title-card { display: none; }
+body.phase-replay .topbar .badge { opacity: .85; }
+/* "Replay finish": the TV replay glyph rides in the button */
+.instant-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.instant-btn .ico-rp { width: 14px; height: 14px; flex: none; color: #D7263D; }
+.instant-btn > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- big-screen / cast mode (body.tv — the "TV" button, key T, &tv=1): a board and captions you can read from
+   the couch, and chrome that hides itself: after 2 s without input the top bar slides away and the cursor goes
+   (body.tv-idle, set by main.js; never on the setup screen). Wide screens only — phones keep their strip. ---------- */
+@media (min-width: 861px) and (min-height: 560px) {
+  body.tv.tv-idle:not(.phase-setup) .topbar { transform: translateY(calc(-100% - 12px)); opacity: 0; pointer-events: none; }
+  body.tv.tv-idle:not(.phase-setup) .topbar > * { pointer-events: none; }
+  body.tv.tv-idle:not(.phase-setup), body.tv.tv-idle:not(.phase-setup) * { cursor: none !important; }
+  body.tv { --hud-w: clamp(300px, 27vw, 470px); }
+  body.tv .hud { padding: 12px 9px; gap: 10px; border-radius: 20px; }
+  body.tv .hud-head { padding: 7px 8px 7px 12px; }
+  body.tv .hud-title { font-size: 15px; }
+  body.tv .hud-league { font-size: 13px; }
+  body.tv .live-dot { width: 11px; height: 11px; }
+  body.tv .race-clock { font-size: 24px; }
+  body.tv .standings { --gap-w: 68px; }
+  body.tv .standings li { font-size: 18px; grid-template-columns: 26px 30px minmax(0, 1fr) var(--gap-w); gap: 8px; padding: 0 8px; border-radius: 11px; }
+  body.tv .standings .pos { font-size: 16px; }
+  body.tv .standings .num { width: 30px; height: 30px; font-size: 15px; border-radius: 9px; }
+  body.tv .standings .name { font-size: 19px; }
+  body.tv .standings .gap { font-size: 15px; }
+  body.tv .standings .gap.lead, body.tv .standings .gap.pick1 { font-size: 13px; }
+  body.tv .standings .gap .dl { font-size: 13px; padding: 4px 7px 3px 6px; }
+  body.tv .hud .ghost-btn { font-size: 14px; padding: 9px 12px; border-radius: 12px; }
+  body.tv .progress { height: 18px; border-radius: 9px; }
+  body.tv .progress-dots i { top: 3px; width: 12px; height: 12px; margin-left: -6px; }
+  body.tv .ticker { font-size: 22px; min-height: 58px; padding: 11px 22px; gap: 14px; border-radius: 18px; }
+  body.tv .ticker .sub, body.tv .ticker .tip { font-size: 17px; }
+  body.tv .ticker .tally b { font-size: 12px; }
+  body.tv .ticker .tally .dot { width: 10px; height: 10px; }
+  body.tv .ticker .headline { border-left-width: 5px; padding-left: 12px; }
+  body.tv .callout .big { font-size: clamp(84px, min(24vw, calc(min(40vh, 400px) / 1.7)), 240px); } /* the couch is further away: a bigger count */
+  body.tv .callout .wide { font-size: clamp(22px, min(4.6vw, calc(var(--sky-h0, var(--sky-h, 28vh)) * 0.26), calc((100vw - var(--hud-w, 0px) - 120px) / (var(--chars, 12) * 0.72 + 1.9))), 56px); }
+  body.tv .title-card { font-size: 15px; padding: 13px 22px; max-width: min(720px, calc(100vw - var(--hud-w, 0px) - 44px)); }
+  body.tv .title-card .tc-1 { font-size: 30px; }
+  body.tv .title-card .tc-3 { font-size: 14px; }
+  body.tv .title-card.tc-tight .tc-2, body.tv .title-card.tc-tight .tc-3 { font-size: 12px; }
+  body.tv .topbar .badge { font-size: 14px; padding: 8px 12px; }
+  body.tv .toast { font-size: 17px; padding: 12px 20px; }
+  body.tv .replay-skip { font-size: 15px; padding: 10px 16px; }
+}
+
 /* ---------- responsive ---------- */
 @media (min-width: 1400px) {
   .results-head h2 { font-size: 44px; }
@@ -796,6 +892,7 @@ body.phase-race .topbar .badge, body.phase-finish .topbar .badge { opacity: .85;
 @media (max-width: 720px), (max-height: 500px) {
   :root { --topbar-h: 50px; }
   .brand-tag { display: none; }
+  .tv-btn { display: none; } /* big-screen mode is a wide-screen affair (a &tv=1 link still applies what a phone can use of it) */
   .brand-text { font-size: 21px; }
   .topbar .badge { display: none; }
   .panel, .hud, .ticker, .icon-btn, .badge { backdrop-filter: none; -webkit-backdrop-filter: none; }
@@ -820,33 +917,66 @@ body.phase-race .topbar .badge, body.phase-finish .topbar .badge { opacity: .85;
   #btn-pause { grid-column: 2; grid-row: 1; width: 30px; height: 30px; padding: 0; }
   #btn-pause .lbl { display: none; }
   #btn-pause .ico-pp { margin: 0; }
-  .hud .standings { grid-column: 3; grid-row: 1; height: 30px; flex: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  /* the chip strip swipes: momentum scrolling, and it comes to rest on a chip slot (main.js snapStrip — CSS scroll-snap
+     would re-snap to a chip ELEMENT when it changes slot and drag the strip along with every reorder) */
+  .hud .standings { grid-column: 3; grid-row: 1; height: 30px; flex: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
   .hud .standings::-webkit-scrollbar { display: none; }
-  /* more chips than fit (16 ducks on a narrow phone): a right-edge fade instead of a silent cut */
-  .hud .standings.overflow { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
+  /* more chips than fit: a short edge fade on the side(s) they continue on — it clears once the strip is swiped to that end */
+  .hud .standings.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 18px), rgba(0,0,0,.2)); mask-image: linear-gradient(90deg, #000 calc(100% - 18px), rgba(0,0,0,.2)); }
+  .hud .standings.more-l { -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,.2), #000 18px); mask-image: linear-gradient(90deg, rgba(0,0,0,.2), #000 18px); }
+  .hud .standings.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,.2), #000 18px, #000 calc(100% - 18px), rgba(0,0,0,.2)); mask-image: linear-gradient(90deg, rgba(0,0,0,.2), #000 18px, #000 calc(100% - 18px), rgba(0,0,0,.2)); }
   .progress { grid-column: 1 / -1; grid-row: 2; height: 8px; border-radius: 4px; }
   .progress-dots i { top: -1px; }
   .hud-foot #btn-skip { grid-column: 4; grid-row: 1; width: auto; min-width: 56px; height: 30px; padding: 0 8px; }
   #btn-skip .lbl { font-size: 11px; }
   #btn-names { display: none; }
   .ghost-btn .glyph { font-size: 14px; }
+  /* chips: one 28 px slot each (main.js CHIP_PITCH), same move pass as the desktop rows — a climbing chip slides over
+     the ones giving way (inline z-order), discs are opaque, and the one chip with words (the leader's) is always an
+     opaque card, so nothing ever reads through anything; no lift in a 30 px strip */
+  .hud .standings { --plate: #203b5c; --plate-up: #294a72; --plate-dn: #1a314d; --row-move: .3s; }
   .hud .standings li {
-    width: 26px; height: 28px; top: 1px; right: auto; padding: 0; gap: 0; grid-template-columns: 26px; justify-items: center; border-radius: 8px;
-    transition: transform .32s cubic-bezier(.2,.8,.2,1), width .3s ease;
+    width: 26px; height: 28px; top: 1px; left: 0; right: auto; padding: 0; gap: 0; grid-template-columns: 26px; justify-items: center; border-radius: 8px;
+    transition: transform var(--row-move) var(--row-ease), width .3s ease, background-color .25s ease;
   }
-  .hud .standings li.mv:not(.up) { opacity: 1; }
-  .hud .standings li :is(.pos, .gap, .name, .arrow) { display: none; }
+  .hud .standings li.mv { transition: transform var(--row-move) var(--row-ease), width .3s ease; background-color: transparent; } /* a disc needs no card */
+  .hud .standings li.up { scale: 1; }
+  .hud .standings li::before { display: none; }
+  .hud .standings li.dn > * { opacity: 1; }
+  .hud .standings li.dn .num { filter: brightness(.78); } /* dimmed but still opaque: a disc giving way may slide across a parked one */
+  .hud .standings li :is(.pos, .gap, .name) { display: none; }
   .hud .standings li .num { width: 24px; height: 24px; font-size: 11px; }
   /* the leader chip's width is the one source of truth: main.js reads --lead-w to park chip #2 right behind it */
   .hud .standings { --lead-w: 132px; }
-  .hud .standings li.rank-0 { width: var(--lead-w); grid-template-columns: 14px 24px minmax(0, 1fr); gap: 5px; padding: 0 6px 0 5px; justify-items: start; }
+  .hud .standings li.rank-0 { width: var(--lead-w); grid-template-columns: 14px 24px minmax(0, 1fr); gap: 5px; padding: 0 6px 0 5px; justify-items: start; background-color: var(--plate); }
   .hud .standings li.rank-0 :is(.pos, .name) { display: block; }
   .hud .standings li.rank-0 .pos { font-size: 11px; }
   .hud .standings li.rank-0 .name { font-size: 12px; max-width: 100%; }
   .hud .standings li.leader { box-shadow: inset 0 0 0 1px rgba(255,210,63,.55); }
   .hud .standings li.pick1 { box-shadow: none; outline: 2px solid #FFD23F; outline-offset: -2px; }
   .hud.rule-last .standings li.leader { box-shadow: inset 0 0 0 1px rgba(255,255,255,.45); }
-  .standings li.rise { box-shadow: none; }
+  /* last takes 1.01 on a phone: the leader chip gives up a little width, and the duck on the first pick is pinned at the
+     strip's right end ([disc] → 1.01, main.js syncPickPin) — its own chip in the strip stays plain */
+  .hud.rule-last { grid-template-columns: auto auto minmax(0, 1fr) auto auto; }
+  .hud.rule-last .standings { --lead-w: 108px; }
+  .hud.rule-last.tight .standings { --lead-w: 45px; } /* no room for a name beside the pin (main.js measureStrip): the leader chip keeps its "1" and disc */
+  .hud.rule-last.tight .standings li.rank-0 { grid-template-columns: 12px 24px; gap: 3px; padding: 0 3px; }
+  .hud.rule-last.tight .standings li.rank-0 .name { display: none; }
+  .hud.rule-last .standings li.pick1 { outline: none; }
+  .hud.rule-last .hud-foot #btn-skip { grid-column: 5; }
+  .hud.rule-last .pick-pin:not([hidden]) {
+    grid-column: 4; grid-row: 1; align-self: center; display: grid; grid-template-columns: 24px auto; align-items: center; gap: 4px;
+    height: 28px; margin: 0 0 0 -2px; padding: 0 6px 0 2px; border: 0; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(90deg, rgba(255,210,63,.30), rgba(255,210,63,.12)) var(--plate, #203b5c); color: #FFD23F;
+    box-shadow: inset 0 0 0 2px #FFD23F, -6px 0 10px -6px rgba(0,0,0,.6);
+    font: 900 10.5px/1 var(--ui); letter-spacing: .04em; white-space: nowrap; isolation: isolate; position: relative;
+    transition: opacity .3s ease;
+  }
+  .hud.rule-last .pick-pin.idle { opacity: .35; pointer-events: none; } /* before the off: the slot is held, nobody is on the pick yet */
+  .pick-pin .num { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; font-weight: 900; font-size: 11px; border: 1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,.12); color: #fff; letter-spacing: 0; }
+  .pick-pin::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1; }
+  .pick-pin.newpick::after { animation: rowflash-gold .9s ease-out; }
+  body.ribbon-live .pick-pin { visibility: hidden; }
 
   /* phones: one tier, two lines (chatter shares it; JS pre-empts it for story beats) */
   .ticker { left: calc(8px + var(--sal)); right: calc(8px + var(--sar)); bottom: calc(8px + var(--sab)); font-size: 13px; min-height: 38px; padding: 5px 12px; gap: 8px; }
@@ -929,7 +1059,7 @@ body.phase-race .topbar .badge, body.phase-finish .topbar .badge { opacity: .85;
   .results-actions #btn-share { grid-column: 1 / -1; width: 100%; }
   .results.from-share .results-actions > #btn-replay { grid-column: 1; order: 0; width: 100%; padding: 8px 10px; }
   .results.from-share .results-actions #btn-share { grid-column: 2; padding: 8px 10px; }
-  .results-actions .quiet-group, .results.from-share .quiet-group { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(98px, 1fr)); gap: 5px 6px; margin: 0; min-height: 0; }
+  .results-actions .quiet-group, .results.from-share .quiet-group { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 5px 6px; margin: 0; min-height: 0; }
   .results-actions .quiet-group > * { min-width: 0; min-height: 34px; }
   .quiet-group .sec-btn { padding: 6px 7px; font-size: 12px; min-height: 34px; overflow: hidden; text-overflow: ellipsis; }
   .results-actions .copy-link { display: none; }
@@ -1032,19 +1162,21 @@ body.phase-race .topbar .badge, body.phase-finish .topbar .badge { opacity: .85;
   .results.results--short { bottom: 4px; max-height: none; }
   /* landscape phones: one row — primary action(s) then the chips beside them (a scrollable strip with a fade only if even that overflows) */
   .results-actions { padding: 6px 12px calc(6px + var(--sab)); gap: 4px 6px; grid-template-columns: auto minmax(0, 1fr); }
-  .results-actions #btn-share { grid-column: 1; width: auto; }
+  .results-actions #btn-share { grid-column: 1; width: auto; padding: 6px 14px; }
   .results.from-share .results-actions { grid-template-columns: auto auto minmax(0, 1fr); }
   .results.from-share .results-actions > #btn-replay { grid-column: 1; width: auto; padding: 6px 14px; }
   .results.from-share .results-actions #btn-share { grid-column: 2; padding: 6px 14px; }
   .results-actions .quiet-group, .results.from-share .quiet-group {
     grid-column: auto; align-self: center; display: flex; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory;
   }
+  /* …unless they don't fit beside the button(s) (main.js arrangeActions): then a second row of their own, +40 px of footer */
+  .results-actions.stacked .quiet-group, .results.from-share .results-actions.stacked .quiet-group { grid-column: 1 / -1; }
   .results-actions .quiet-group::-webkit-scrollbar { display: none; }
   .results-actions .quiet-group > * { flex: none; scroll-snap-align: start; }
   .results-actions .quiet-group.overflow { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
   .results-actions .quiet-group.overflow::after { content: ""; flex: none; width: 28px; height: 1px; }
   .quiet-group .sec-btn { padding: 6px 8px; }
-  .results-actions > *, .results-actions .quiet-group > * { min-height: 36px; }
+  .results .results-actions > *, .results-actions .quiet-group > * { min-height: 36px; } /* one 36 px row height for buttons and chips alike (outranks the coarse-pointer .sec-btn 44 px, which used to make "Watch again" the odd one out) */
   /* landscape phones have no sky to speak of: the card sits bottom-right over open water for the intro — clear of the start-list
      pills down the left — and leaves when the countdown starts (main.js) */
   .title-card { top: auto; left: auto; right: calc(12px + var(--sar)); translate: none; bottom: calc(var(--ticker-h, 28px) + 14px + var(--sab)); max-width: min(300px, 40vw); padding: 6px 12px; }
@@ -1080,6 +1212,41 @@ body.phase-race .topbar .badge, body.phase-finish .topbar .badge { opacity: .85;
   .rule-chips .chip { font-size: 12.5px; padding: 5px 8px; }
   .hud .standings { --lead-w: 112px; }
   .draft-board .who { font-size: 14px; }
+}
+
+/* very short portrait screens (320 x 480-class, iPhone SE): the results footer is ONE row — the primary action(s) plus a
+   "More" button that opens the quiet actions as a sheet above it — so the podium and the board get the height back; while
+   rows sit below the fold the panel's bottom fades harder and the footer's top edge carries a shadow */
+@media (max-width: 559px) and (max-height: 600px) {
+  .results-actions { grid-template-columns: minmax(0, 1fr) auto; }
+  .results-actions #btn-share { grid-column: 1; }
+  .results.from-share .results-actions { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+  .results.from-share .results-actions > #btn-replay { grid-column: 1; white-space: normal; line-height: 1.05; font-size: 14px; padding: 6px 8px; } /* "WATCH / AGAIN" may take two lines like "SHARE / RESULT" beside it */
+  .results.from-share .results-actions #btn-share { grid-column: 2; padding: 6px 8px; }
+  .results.from-share #btn-share .cta-main { font-size: 14px; }
+  .results-actions .more-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; grid-column: -2 / -1; min-height: 44px; padding: 6px 11px 6px 12px; background: rgba(255,255,255,0.7); }
+  .more-btn::after { content: ""; width: 6px; height: 6px; border: solid currentColor; border-width: 2px 0 0 2px; transform: translateY(2px) rotate(45deg); transition: transform .15s ease; opacity: .8; }
+  .results-actions.more-open .more-btn { border-color: var(--blue); color: var(--blue); }
+  .results-actions.more-open .more-btn::after { transform: translateY(-1px) rotate(225deg); }
+  .results .results-actions .quiet-group { display: none; }
+  .results .results-actions.more-open .quiet-group {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; position: absolute; left: 8px; right: 8px; bottom: calc(100% - 2px); z-index: 5;
+    margin: 0; padding: 8px; border-radius: 14px; background: #fff; box-shadow: 0 12px 32px rgba(13,27,46,0.3), 0 0 0 1px rgba(13,27,46,0.08); animation: sheet-in .16s ease-out both;
+  }
+  .results .results-actions.more-open .quiet-group > * { min-height: 40px; }
+  .results-actions.more-open .quiet-group .sec-btn { background: #F3F6FA; font-size: 12.5px; }
+  .results .panel-scroll[data-overflow="more"] { -webkit-mask-image: linear-gradient(#000 calc(100% - 46px), rgba(0,0,0,.35) calc(100% - 14px), transparent); mask-image: linear-gradient(#000 calc(100% - 46px), rgba(0,0,0,.35) calc(100% - 14px), transparent); }
+  .results .panel-scroll[data-overflow="more"] + .results-actions { box-shadow: 0 -1px 0 rgba(13,27,46,0.1), 0 -12px 18px -12px rgba(13,27,46,0.5); }
+  /* a slightly smaller podium so all three plinths and their plaques sit above the fold at 320 x 480 */
+  .results-head h2 { font-size: 21px; }
+  .podium, .results.rule-last .podium { margin: 2px auto 8px; }
+  .podium canvas, .results.rule-last .podium canvas { width: 62px; height: 57px; }
+  .podium .place-1 canvas, .results.rule-last .podium .place-1 canvas { width: 76px; height: 70px; }
+  .podium .place-1::before { top: 30px; width: 124px; height: 124px; }
+  .podium .plinth, .results.rule-last .podium .plinth { min-height: 64px; }
+  .podium .place-1 .plinth, .results.rule-last .podium .place-1 .plinth { min-height: 84px; }
+  .podium .place-3 .plinth, .results.rule-last .podium .place-3 .plinth { min-height: 50px; }
+  .podium .place-1 .pl-place, .results.rule-last .podium .place-1 .pl-place { font-size: 24px; }
 }
 
 @media (pointer: coarse) {
@@ -1190,6 +1357,7 @@ body.phase-race .topbar .badge, body.phase-finish .topbar .badge { opacity: .85;
 
 /* ---------- low-fx path (quality tier >= 1): no backdrop blur, near-opaque glass ---------- */
 body.lowfx .hud, body.lowfx .ticker, body.lowfx .toast, body.lowfx .badge, body.lowfx .icon-btn { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--glass-solid); }
+body.lowfx .hud .standings { --plate: #172f4c; --plate-up: #21456f; --plate-dn: #12273f; } /* the near-opaque panel is darker than the blurred glass: so are its moving cards */
 body.lowfx .icon-btn { background: rgba(255,255,255,0.92); }
 body.lowfx .panel { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(255,255,255,0.97); }
 

@@ -1,6 +1,6 @@
 // End-to-end smoke test: drives the real app through the flows people (and QA) actually use and fails loudly.
 // usage: node tools/smoke.mjs <baseUrl>      (exit 1 on any page error, console error, failed expectation or timeout)
-// Needs Playwright (global install is fine) and a static server on baseUrl; ~2 min.
+// Needs Playwright (global install is fine) and a static server on baseUrl; ~2.5 min (11 flows).
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
 
@@ -222,6 +222,86 @@ await flow('touch', async (page, expect, { S, phase }) => {
   await page.tap('#btn-skip');
   await phase('results', 5000);
 }, { viewport: { width: 390, height: 844 }, hasTouch: true, query: shareQuery(ten.slice(0, 8)) });
+
+// 8. instant replay: the finish hold hands over to it before the board; "Replay finish" on the board plays it again and
+//    comes back to the SAME board (no rebuild, no second ceremony); Space skips it; "Save clip" records it (Chromium can)
+await flow('instant-replay', async (page, expect, { S, phase }) => {
+  await page.click('#btn-start');
+  if (!(await phase('race', 12000))) return;
+  const lastT = await page.evaluate(() => Math.max(...window.__duckDerby.state.sim.finishTimes));
+  await page.evaluate((t) => window.__duckDerby.jump(t), lastT - 0.3);
+  if (!(await phase('replay', 8000))) return; // finish hold (2.2 s) -> replay
+  const r = await page.evaluate(() => { const s = window.__duckDerby; return { kind: s.state.replay.kind, hud: !document.querySelector('#hud').hidden, skip: !document.querySelector('#btn-replay-skip').hidden, cam: s.scene.camMode, sceneReplay: !!s.scene.replay }; });
+  expect(r.kind === 'win' && !r.hud && r.skip && r.cam === 'line' && r.sceneReplay, `replay state ${JSON.stringify(r)}`);
+  const tA = Date.now();
+  if (!(await phase('results', 8000))) return; // plays out by itself: <= 4 s
+  expect(Date.now() - tA < 4600, `replay ran ${Date.now() - tA} ms before the board`);
+  expect(await page.evaluate(() => !window.__duckDerby.scene.replay && window.__duckDerby.scene.camMode === ''), 'scene left replay mode');
+  await page.evaluate(() => document.querySelector('#btn-reveal-all')?.click());
+  await page.waitForTimeout(300);
+  const rows0 = await page.$$eval('#draft-board li.in:not(.board-head)', (els) => els.length);
+  // from the board: Replay finish -> replay -> back to the same board
+  await page.click('#btn-instant');
+  if (!(await phase('replay', 3000))) return;
+  expect(await page.evaluate(() => !document.querySelector('#results').hidden && getComputedStyle(document.querySelector('#results')).visibility === 'hidden'), 'board kept in the DOM but hidden during its replay');
+  await page.waitForTimeout(600);
+  await page.keyboard.press('Space'); // skippable
+  if (!(await phase('results', 3000))) return;
+  const rows1 = await page.$$eval('#draft-board li.in:not(.board-head)', (els) => els.length);
+  expect(rows0 === 10 && rows1 === rows0, `board intact after the replay (${rows0} -> ${rows1} open rows)`);
+  expect(!(await page.evaluate(() => window.__duckDerby.state.revealTimers.length)), 'no second ceremony');
+  // Esc during a replay from the board also lands back on the board (not a new race, not setup)
+  await page.click('#btn-instant');
+  if (!(await phase('replay', 3000))) return;
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  expect((await S()).phase === 'results', 'Esc ends the replay on the board');
+  // clip export where the browser can record a canvas (headless Chromium: webm)
+  const clip = await page.evaluate(() => { const b = document.querySelector('#btn-clip'); return { offered: !!b && !b.hidden, canRecord: !!(HTMLCanvasElement.prototype.captureStream && window.MediaRecorder) }; });
+  expect(clip.offered === clip.canRecord, `Save clip offered=${clip.offered} vs recordable=${clip.canRecord}`);
+  if (clip.offered) {
+    const dl = page.waitForEvent('download', { timeout: 15000 }).catch(() => null);
+    await page.click('#btn-clip');
+    if (!(await phase('replay', 3000))) return;
+    expect(await page.evaluate(() => !!window.__duckDerby.state.replay.job), 'replay is recording');
+    const file = await dl;
+    expect(!!file && /^duck-derby-3GQ-M2XD\.(webm|mp4)$/.test(file.suggestedFilename()), `clip download ${file && file.suggestedFilename()}`);
+    if (!(await phase('results', 8000))) return;
+    expect(await page.evaluate(() => window.__duckDerby.scene.forceDpr === 0 && !window.__duckDerby.state.replay), 'recording state cleaned up');
+  }
+}, { query: shareQuery(ten) });
+
+// 9. big-screen mode: &tv=1 lands with body.tv, a couch-readable board at 1080p, chrome that hides when idle and
+//    returns on mouse move; T toggles it off and the lanes take the width back
+await flow('tv-mode', async (page, expect, { S, phase }) => {
+  expect(await page.evaluate(() => document.body.classList.contains('tv') && document.querySelector('#btn-tv').getAttribute('aria-pressed') === 'true'), 'tv=1 -> body.tv + pressed button');
+  await page.click('#btn-start');
+  if (!(await phase('race', 12000))) return;
+  await page.evaluate(() => window.__duckDerby.jump(12));
+  await page.mouse.move(400, 400);
+  await page.waitForTimeout(300);
+  const on = await page.evaluate(() => {
+    const name = document.querySelector('.standings .name');
+    const li = document.querySelector('.standings li');
+    return { fs: parseFloat(getComputedStyle(name).fontSize), rowH: li.getBoundingClientRect().height, ticker: parseFloat(getComputedStyle(document.querySelector('#ticker')).fontSize), idle: document.body.classList.contains('tv-idle'), insetR: window.__duckDerby.scene.insets.right, hudLeft: document.querySelector('#hud').getBoundingClientRect().left };
+  });
+  expect(on.fs >= 18 && on.rowH >= 36, `TV board type ${on.fs}px / rows ${on.rowH}px`);
+  expect(on.ticker >= 20, `TV ticker ${on.ticker}px`);
+  expect(!on.idle, 'awake right after a mouse move');
+  expect(Math.abs(on.insetR - (1920 - on.hudLeft + 6)) < 3, `lanes end at the wider board (inset ${on.insetR}, hud at ${on.hudLeft})`);
+  await page.waitForTimeout(2600);
+  const idle = await page.evaluate(() => ({ idle: document.body.classList.contains('tv-idle'), top: document.querySelector('.topbar').getBoundingClientRect().bottom, cursor: getComputedStyle(document.querySelector('#scene')).cursor }));
+  expect(idle.idle && idle.top <= 0 && idle.cursor === 'none', `idle chrome hidden ${JSON.stringify(idle)}`);
+  await page.mouse.move(500, 420);
+  await page.waitForTimeout(450);
+  expect(await page.evaluate(() => !document.body.classList.contains('tv-idle') && document.querySelector('.topbar').getBoundingClientRect().bottom > 40), 'mouse move brings the bar back');
+  await page.keyboard.press('t');
+  await page.waitForTimeout(400);
+  const off = await page.evaluate(() => ({ tv: document.body.classList.contains('tv'), fs: parseFloat(getComputedStyle(document.querySelector('.standings .name')).fontSize), insetR: window.__duckDerby.scene.insets.right, stored: JSON.parse(localStorage.getItem('duckderby:v1') || '{}').tv }));
+  expect(!off.tv && off.fs < 18 && off.insetR < on.insetR && !off.stored, `T turns it off and the lanes widen ${JSON.stringify(off)}`);
+  await page.keyboard.press('Escape');
+  await phase('results', 5000);
+}, { viewport: { width: 1920, height: 1080 }, query: shareQuery(ten, '&tv=1') });
 
 await browser.close();
 console.log(`smoke: ${problems.length ? problems.length + ' problem(s)' : 'all flows passed'} in ${((Date.now() - t00) / 1000).toFixed(0)}s`);

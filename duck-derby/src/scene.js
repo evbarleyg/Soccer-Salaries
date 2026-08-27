@@ -9,10 +9,13 @@
 // scene sets it, main.js polls + clears), labelMode ('smart'|'all'|'off'),
 // focusDuck, tailStakes, tailPair, onPhotoDone, sim (nulling it), slowmo, cheer,
 // flash, shake (setter), projectiles.length, topBarH (bottom of the floating top
-// bar, from updateInsets); and it CALLS setLooks / setRace / setInsets / layout /
-// resize / setCalm / setQualityTier / resetPresentation / snapCamera / beginIntro /
-// zoomTo / zoomCap / punch / onEvent / launchHotdog / telegraphHotdog /
-// confettiBurst / duckX / duckScreen / sx / zoomState.
+// bar, from updateInsets), bigScreen (TV mode: larger name pills), forceDpr (clip
+// recording pins the backing-store ratio); and it CALLS setLooks / setRace /
+// setInsets / layout / resize / setCalm / setQualityTier / resetPresentation /
+// snapCamera / beginIntro / zoomTo / zoomCap / punch / onEvent / launchHotdog /
+// telegraphHotdog / confettiBurst / duckX / duckScreen / sx / zoomState, and the
+// instant replay: beginReplay / setReplayCard / endReplay (this.replay is the
+// scene's while one runs; the director drives the replay clock through update()).
 // It also READS zoom (baseTarget/bcy), skyH, waterTop, lanes, ropeYs, ui,
 // qualityTier, reduceMotion, timeScale and _dprDirty. Probes may read fgGap,
 // _pillRects (name pills drawn last frame), photo.stamp and duckFx[i].mood/drawScale.
@@ -29,6 +32,7 @@ const FLOAT_COLS = ['#E23D4E', '#EEF3F7', '#FFD23F']; // run codes 0 RED, 1 WHIT
 const NO_DASH = [];
 const AIM_DASH = [2, 7];
 const THROWER_S = 1.7; // hot-dog thrower figure scale vs. the seated crowd
+const TAG_NAME_MAX = 18; // code points a name tag shows whole when the water has room (longer names go to 'First L.')
 const UI_FONT = 'ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif';
 const MONO_FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 const CROWD_COLS = ['#E23D4E', '#1F5BD8', '#FFD23F', '#FFFFFF', '#16B8A6', '#FF7A2F', '#8E5BD9', '#2B2B2B'];
@@ -125,7 +129,7 @@ export class RaceScene {
     else this.rmq?.addListener?.(onRmq);
     // Director hooks written by main.js each race (playback-side only):
     //   introDur     seconds the 'intro' phase lasts (camera dolly budget)
-    //   camMode      '' | 'stretch' | 'tail' — framing hint from the race director
+    //   camMode      '' | 'stretch' | 'tail' — framing hint from the race director ('line' while an instant replay runs: beginReplay sets it, endReplay clears it)
     //   startLights  0 off, 1..3 red lights during the countdown, 4 = green/GO
     //   pendingHoldMs  set by the scene to request a wall-clock hold; main.js polls + clears it
     this.introDur = 2.2;
@@ -163,10 +167,14 @@ export class RaceScene {
     this.onPhotoDone = null; // hook (main.js plays the shutter + roar): called when a still lifts
     this.tailStakes = ''; // '' | 'last' | 'pick1' — arms a freeze-frame for a tight finish at the back (set by the director)
     this.tailPair = null; // [i, j] ids of the race-for-last duel (set by the director); framed by the 'tail' camera, tagged
-    this.camTarget = null; // final camera target this frame (probe/debug)
     this.strobe = 0; // vertical strobe band at the line on the first finish
     this.waterFlash = 0; // 90 ms white blink over the water band on the winner's touch
     this._lightsWall = -9; // wall time the start lights last changed
+    // instant replay (beginReplay / endReplay): {t0, t1, kind, ducks, label, sub, wall0, wipe, card, bars, zoomPending}
+    this.replay = null;
+    this._lineSet = null; // ids the 'line' camera frames during a replay
+    this.bigScreen = false; // TV / cast mode: name pills a size up (main.js toggles it)
+    this.forceDpr = 0; // > 0 pins the backing-store pixel ratio (clip recording); 0 = quality tier / device decide
     this._seedDecor(1234);
   }
 
@@ -295,7 +303,8 @@ export class RaceScene {
       tagWant: false,
       tagOnAt: -99,
       tagOffAt: -99,
-      finishSeenAt: -99,
+      sideTag: tagState(), // name tags: the form each pill shows and its no-clear-water fade (see _drawNameTags / _tagClear)
+      topTag: tagState(),
       prevRank: -1, // faces: rank last frame (a lost lead reads as shock)
       shockT: 0,
       shockPri: false, // a shock that outranks joy (toilet-bowl rules: the winner learns they pick last)
@@ -304,14 +313,13 @@ export class RaceScene {
       gaze: { dx: 0, dy: 0 },
       ringT: (i / Math.max(1, n)) * 0.9,
       hx: 0,
-      hy: 0,
       topY: 0,
       bx: 0,
       by: 0,
       sc: 1,
       visible: false,
     }));
-    for (const l of this.looks) if (l) l._short = l._shortKey = undefined; // pill names re-derive (a roster edit may reuse the object)
+    for (const l of this.looks) if (l) l._tagForms = undefined; // name-tag forms re-derive (a roster edit may reuse the object)
     this._chat = { i: -1, at: -99 }; // the one 'splash' story tag slot
     this.labelSide = this.looks.map(() => 0);
     this.labelTop = this.looks.map(() => 0);
@@ -362,6 +370,7 @@ export class RaceScene {
     this.throwers.length = 0;
     this.tailStakes = '';
     this.tailPair = null;
+    if (this.replay) this.endReplay();
     Object.assign(this.zoom, { base: 1, baseTarget: 1, baseV: 0, punch: 0, punchV: 0, holdUntil: 0, reason: '' });
     if (!keepParticles) this.particles.length = 0;
   }
@@ -370,7 +379,7 @@ export class RaceScene {
     const cssW = this.canvas.clientWidth || 800;
     const cssH = this.canvas.clientHeight || 500;
     // pixel budget: never back more than ~9.5 MP (4K screens render at a lower ratio)
-    const dpr = Math.min(this.quality.dprCap || 2, 2, window.devicePixelRatio || 1, Math.sqrt(9.5e6 / (cssW * cssH)));
+    const dpr = Math.min(this.forceDpr > 0 ? this.forceDpr : Infinity, this.quality.dprCap || 2, 2, window.devicePixelRatio || 1, Math.sqrt(9.5e6 / (cssW * cssH)));
     this._dprDirty = false;
     if (this.tiles && cssW === this.W && cssH === this.H && Math.abs(dpr - this.dpr) < 1e-6) {
       this.layout(); // nothing to re-allocate (resize storms, no-op events): a clear + up-to-9.5 MP realloc avoided
@@ -413,8 +422,12 @@ export class RaceScene {
       return { usableTop, usableBottom, avail: usableBottom - usableTop };
     };
     let g = place(skyFrac);
+    if (g.avail / n < 26 && skyFrac > 0.24) {
+      skyFrac = 0.24; // big fields on short laptops / tablets: lower the horizon a step before thinning the lanes…
+      g = place(skyFrac);
+    }
     if (g.avail / n < 22 && skyFrac > 0.17) {
-      skyFrac = 0.17; // short screens: shrink the sky (the HUD then overlays sky, not water)
+      skyFrac = 0.17; // …and on short screens shrink the sky outright (the HUD then overlays sky, not water)
       g = place(skyFrac);
     }
     const { usableTop, usableBottom, avail } = g;
@@ -459,6 +472,7 @@ export class RaceScene {
   /** Tightest framing the director allows: FINAL STRETCH and the race for last punch in (TV-style tighten). */
   ppuMax() {
     const we = this.effectiveW();
+    if (this.camMode === 'line') return we < 500 ? clamp(we / 62, 3.4, 10) : clamp(we / 82, 3.2, 19 * this.ui); // instant replay: ~80 units across, the wall and its chasers
     const k = this.camMode === 'stretch' ? 130 : this.camMode === 'tail' ? 120 : this.looks.length <= 4 ? 130 : 170;
     return we < 500 ? clamp(we / (this.camMode ? 105 : 140), 3.4, 8.5) : clamp(we / k, 3.2, 8.5 * this.ui);
   }
@@ -518,7 +532,6 @@ export class RaceScene {
     this._blend = null;
     const target = this._cameraTarget(t);
     this._lastTarget = target;
-    this.camTarget = target;
     this.cam.x = target.x;
     this.cam.vx = 0;
     this.cam.ppu = target.ppu;
@@ -537,7 +550,8 @@ export class RaceScene {
       // 'tail' frames a fixed set (B's tailPair, else whoever was unfinished when the mode began): duckX coasts
       // smoothly past the line, so nothing jumps when one of them finishes
       if (mode === 'tail' && !this._tailSet) this._tailSet = this._captureTailSet(t);
-      const set = mode === 'tail' ? this._tailSet : null;
+      // 'line' (instant replay) frames a fixed set too: the winner + chasers, or the pair racing for last
+      const set = mode === 'tail' ? this._tailSet : mode === 'line' && this._lineSet && this._lineSet.length ? this._lineSet : null;
       const xs = this._camXs || (this._camXs = []);
       xs.length = 0;
       leadAll = -Infinity;
@@ -546,8 +560,8 @@ export class RaceScene {
         const x = this.duckX(i, t);
         if (x > leadAll) leadAll = x; // the true max (tape snap, 'late' tags) — never the framing cap below
         if (set && !set.includes(i)) continue;
-        // finishers coast up to ~50 units past the line; framing only follows them 12, so the win holds still
-        xs.push(fts[i] !== null && t > fts[i] ? Math.min(x, TRACK_LENGTH + 12) : x);
+        // finishers coast up to ~50 units past the line; framing only follows them 12 (6 in a replay), so the win holds still
+        xs.push(fts[i] !== null && t > fts[i] ? Math.min(x, TRACK_LENGTH + (mode === 'line' ? 6 : 12)) : x);
       }
       if (!xs.length) for (let i = 0; i < n; i++) xs.push(Math.min(this.duckX(i, t), TRACK_LENGTH + 12));
       xs.sort((a, b) => a - b);
@@ -558,7 +572,7 @@ export class RaceScene {
     }
     this._leadX = leadAll;
     const span = Math.max(lead - tail, 1);
-    let ppu = (Weff * 0.56) / Math.max(span + 14, 48);
+    let ppu = mode === 'line' ? (Weff * 0.5) / Math.max(span + 12, 26) : (Weff * 0.56) / Math.max(span + 14, 48);
     ppu = clamp(ppu, this.ppuMin(), this.ppuMax());
     // the leader drifts from 70% to 62% of the frame through the last quarter (no step at FINAL STRETCH)
     const prog = leadAll / TRACK_LENGTH;
@@ -568,6 +582,7 @@ export class RaceScene {
     const maxX = TRACK_LENGTH + (0.5 - 0.34) * (Weff / ppu); // finish line no further left than 34%
     x = clamp(x, minX, maxX);
     if (mode === 'tail') x = clamp(Math.max(x, TRACK_LENGTH - 0.32 * (Weff / ppu)), minX, maxX); // keep the line in view (<= 82%)
+    else if (mode === 'line') x = clamp(x, TRACK_LENGTH - 0.16 * (Weff / ppu), TRACK_LENGTH + 0.04 * (Weff / ppu)); // the wall sits between 46% and 66%: a line camera, not a follow
     return { x, ppu };
   }
 
@@ -680,14 +695,15 @@ export class RaceScene {
     // World time follows the race clock while racing: slow-mo and hit-stops slow paddling, bob, foam,
     // splashes, tape and water too (8% floor keeps the water alive while paused; fast-forward is capped
     // at 1.3x so strokes never look frantic). UI-ish things (labels, reticle, shakes, zoom) stay on dt.
-    const jumped = this._lastT === undefined || Math.abs(t - this._lastT) > 1;
+    const forced = !!this._forceCut; // an instant replay begins/ends: a cut whatever the size of the jump
+    this._forceCut = false;
+    const jumped = this._lastT === undefined || Math.abs(t - this._lastT) > 1 || forced;
     const dRace = jumped ? dt : clamp(t - this._lastT, 0, dt * 1.3);
     this.timeScale = racing && dt > 1e-5 ? dRace / dt : 1;
     const dtW = racing ? Math.max(dRace, dt * 0.08) : dt;
     this.wallW += dtW;
-    this._dtW = dtW;
     // a jump()/skip moved the race clock: snap anything that would otherwise animate from stale state
-    this._cut = this._lastT !== undefined && jumped;
+    this._cut = (this._lastT !== undefined && jumped) || forced;
     this._lastT = t;
     if (this._cut) {
       const lm = this.leaderMark;
@@ -721,6 +737,18 @@ export class RaceScene {
         fx.tagWant = false;
         fx.tagOnAt = -99;
         fx.tagOffAt = -99;
+        resetTagState(fx.sideTag);
+        resetTagState(fx.topTag);
+      }
+    }
+
+    // ---- instant replay: the cut above reset the zoom; the line camera's held push-in goes on after it ----
+    const rp = this.replay;
+    if (rp && rp.zoomPending && this.W) {
+      rp.zoomPending = false;
+      if (!rm) {
+        this.zoomTo(Math.min(rp.kind === 'tail' ? 1.06 : 1.1, this.zoomCap()), this.sx(TRACK_LENGTH) - 30 * this.ui, this._zoomFloorY(), 0);
+        this.zoom.reason = 'replay';
       }
     }
 
@@ -760,7 +788,6 @@ export class RaceScene {
         if (e >= 1) this._blend = null;
       }
       this._lastTarget = raw;
-      this.camTarget = target;
       if (Math.abs(target.x - this.cam.x) * this.cam.ppu > 1.5 * this.W) {
         this.cam.x = target.x; // a jump()/skip moved the race: cut, don't pan
         this.cam.ppu = target.ppu;
@@ -1319,6 +1346,10 @@ export class RaceScene {
     const lane = this.lanes[ev.duck];
     const scale = lane ? lane.duckScale : 1;
     const rm = this.reduceMotion;
+    const replaying = !!this.replay;
+    // an instant replay re-drives past events through here: splashes, the touch and the tape play again; the gag props
+    // (no hot dog was thrown on this timeline) and the director's framing cue do not
+    if (replaying && (ev.type === 'hotdog' || ev.type === 'stretch')) return;
     if (t - ev.t > 0.75) {
       // replayed by a time jump (testing hook / skip): keep lasting state, skip the theatrics
       if (ev.type === 'finish') {
@@ -1351,7 +1382,6 @@ export class RaceScene {
     } else if (ev.type === 'finish') {
       const first = !this._firstFinishSeen;
       if (fx.place === 0) fx.place = first ? 1 : 2;
-      fx.finishSeenAt = t;
       this._spawnRing(ev.duck, t, 0.8);
       // place from the sim's finish order (events arrive in order, but be exact)
       const n = this.looks.length;
@@ -1383,8 +1413,8 @@ export class RaceScene {
             wfx.shockPri = true;
           }
         }
-        // race for last / first pick: freeze-frame a tight finish at the back (the director arms tailStakes)
-        if (place === n && n >= 3 && this.tailStakes && !rm && this.W && this.sim) {
+        // race for last / first pick: freeze-frame a tight finish at the back (the director arms tailStakes) — live only
+        if (place === n && n >= 3 && this.tailStakes && !rm && this.W && this.sim && !replaying) {
           const o = this.sim.order;
           const f = this.sim.finishTimes;
           if (f[o[n - 1]] - f[o[n - 2]] < 0.25) this._capturePhoto(ev.duck, this.tailStakes === 'pick1' ? 'FIRST PICK DECIDED' : 'PHOTO FOR LAST', 0.9);
@@ -1398,8 +1428,9 @@ export class RaceScene {
         // the live celebration (tape snap, cannons, strobe, shake, hero push-in, crown, wings-up V) plays when it lifts
         const margin = sim ? sim.margin : Infinity;
         const isPhoto = !!(sim && sim.photoFinish);
-        if (!rm && margin < 0.6 && this.W) this._capturePhoto(ev.duck, isPhoto ? 'PHOTO FINISH' : 'AT THE LINE', isPhoto ? 1.1 : 0.65);
-        else this.pendingHoldMs = Math.max(this.pendingHoldMs, 90);
+        // (a replay IS the slow look: no still, no hit-stop request — the touch plays straight through)
+        if (!rm && margin < 0.6 && this.W && !replaying) this._capturePhoto(ev.duck, isPhoto ? 'PHOTO FINISH' : 'AT THE LINE', isPhoto ? 1.1 : 0.65);
+        else if (!replaying) this.pendingHoldMs = Math.max(this.pendingHoldMs, 90);
         // hero framing on a clear winner (skip for photo finishes: the pack tells that story)
         let hero = false;
         if (!this._heroDone && sim) {
@@ -1417,10 +1448,10 @@ export class RaceScene {
           this._snapTape();
           if (!this.reduceMotion) {
             const wp = this._winPalette(winner);
-            this._cannons(120, wp);
-            this._crowdConfetti(30, wp);
-            this.strobe = 1;
-            this._shakeNative(8, 0.7071, 0.7071);
+            this._cannons(this.replay ? 70 : 120, wp);
+            this._crowdConfetti(this.replay ? 16 : 30, wp);
+            this.strobe = this.replay ? 0.6 : 1;
+            if (!this.replay) this._shakeNative(8, 0.7071, 0.7071); // a replay camera sits on sticks
           }
           if (hero) this.zoomTo(Math.min(1.22, this.zoomCap()), this.sx(TRACK_LENGTH) - 40 * this.ui, this._zoomFloorY(), 1400);
           this.cheer = 1;
@@ -1579,14 +1610,7 @@ export class RaceScene {
   _confettiPiece(palette, k, o) {
     const ui = this.ui;
     const color = palette[k % palette.length];
-    let shade = SHADE_COLS.get(color);
-    if (!shade) {
-      if (/^#[0-9a-f]{6}$/i.test(color)) {
-        const [r, gg, b] = hexToRgb(color);
-        shade = `rgb(${Math.round(r * 0.7)},${Math.round(gg * 0.7)},${Math.round(b * 0.7)})`;
-      } else shade = color;
-      SHADE_COLS.set(color, shade);
-    }
+    const shade = confettiShade(color);
     o.kind = 'confetti';
     o.streamer = Math.random() < 0.25;
     o.w = (9 + Math.random() * 3) * ui;
@@ -1602,32 +1626,28 @@ export class RaceScene {
   }
 
   /**
-   * Winner-coloured confetti palette: body ×3, head/wing ×2, lane (towel) ×2, highlight, white, gold — minus anything
-   * that would read as debris in the air (near-black, dull mid browns/greys), so a mallard throws tan, green and gold.
+   * Winner-coloured confetti palette: body ×3, head/wing ×2, team (towel) colour ×2, highlight, accent, white, gold — every
+   * piece bright enough to read as confetti beside the gold (see festiveHex): whites fly as white, greys and blacks never
+   * fly, a dark or muted hue is lifted to full value (plumage only when it has a real hue, the team colour whenever it has
+   * one), and tan / khaki / cream never fly as themselves — they read as debris in the air (a khaki towel lifts to gold, a
+   * cocoa body to orange). A mallard throws its green, blue, lane colour, white and gold.
    */
   _winPalette(i) {
     const look = this.looks[i];
     if (!look || !look.palette) return CONFETTI_COLS;
     if (look._confetti) return look._confetti;
     const pal = look.palette;
-    const festive = (hex) => {
-      if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return false;
-      const [r, g, b] = hexToRgb(hex);
-      const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      const mx = Math.max(r, g, b);
-      const sat = mx > 0 ? (mx - Math.min(r, g, b)) / mx : 0;
-      return luma >= 60 && (sat >= 0.3 || luma >= 140);
-    };
     const out = [];
-    const add = (hex, w) => {
-      if (festive(hex)) for (let k = 0; k < w; k++) out.push(hex);
+    const add = (hex, w, liftFrom) => {
+      const c = festiveHex(hex, liftFrom);
+      if (c) for (let k = 0; k < w; k++) out.push(c);
     };
-    add(pal.body, 3);
-    add(pal.head || pal.wing, 2);
-    add(look.towel && look.towel.bg, 2);
-    add(pal.light, 1);
-    add(pal.accent, 1);
-    if (out.length < 3) add(pal.light || '#FFE884', 2);
+    add(pal.body, 3, 0.45);
+    add(pal.head || pal.wing, 2, 0.45);
+    add(look.towel && look.towel.bg, 2, 0.3);
+    add(pal.light, 1, 0.45);
+    add(pal.accent, 1, 0.45);
+    if (out.length < 3) out.push(CONFETTI_COLS[0], CONFETTI_COLS[1]); // a white or steel duck: the house colours fill in
     out.push('#FFFFFF', '#FFE066');
     look._confetti = out;
     return out;
@@ -1898,6 +1918,7 @@ export class RaceScene {
     }
     this._drawEdgeMarkers(t, phase);
     this._drawVignette();
+    if (this.replay) this._drawReplayOverlay();
 
     if (this.flash > 0) {
       // reduced motion: no full-screen white strobe, just a faint blink
@@ -3586,8 +3607,6 @@ export class RaceScene {
     const sx0 = this.sx(0);
     if (sx0 < -60 || sx0 > W + 60) return;
     const ui = this.ui;
-    const top = this.ropeYs[0];
-    const bottom = this.ropeYs[this.ropeYs.length - 1];
     const rm = this.reduceMotion;
     let pts;
     let alpha = 1;
@@ -3943,7 +3962,6 @@ export class RaceScene {
     fx.bx = x;
     fx.by = y;
     fx.hx = x + 17 * scale;
-    fx.hy = y - 21 * scale;
     fx.topY = y - (33 + hatH) * scale * (look.scale || 1);
     fx.beakX = x + NOSE * scale;
     fx.visible = !(x < -90 * scale || x > this.W + 90 * scale);
@@ -4334,6 +4352,7 @@ export class RaceScene {
         const crownB = lm.hover ? lm.hover.b : -1;
         const pair = Array.isArray(this.tailPair) && this.tailPair.length ? this.tailPair : null;
         const tailMode = this.camMode === 'tail';
+        const lineSet = this.replay && this._lineSet && this._lineSet.length ? this._lineSet : null;
         const chat = this._chat || (this._chat = { i: -1, at: -99 });
         if (chat.i >= 0 && !this.duckFx[chat.i]?.tagWant) chat.i = -1;
         let front0 = -1;
@@ -4372,6 +4391,7 @@ export class RaceScene {
           if (fx.tagWant) {
             if (wall - fx.tagOnAt < 1.5) p = Math.max(p, 95);
           } else if (p < 89 && wall - fx.tagOffAt < 1.0) p = -1; // (the crown holder / focus duck come straight back)
+          if (lineSet && i !== this.focusDuck && !lineSet.includes(i)) p = -1; // instant replay: only its protagonists (and my duck) are named
           pri[i] = p;
         }
         let slots = cap;
@@ -4404,10 +4424,13 @@ export class RaceScene {
     // --- ease alphas (250 ms in, 500 ms out for side pills), bookkeeping for the dwell rules ---
     const step = this._cut ? 1 : dt * 4;
     let any = false;
-    // where the lanes are barely taller than a pill (16 on a laptop, 12+ on a landscape phone) the whole start list goes
-    // at the gun: pills riding beside the beaks would pile onto the neighbours' hats and each other as the ducks fan out
+    const big = this.bigScreen && this.W > 860 ? 1.3 : 1; // TV mode: readable from the couch
+    const fsFor = (scale) => Math.round(clamp(11 * scale * big, 10, 14 * big));
+    // where the lanes can't hold a pill clear of the next lane's (16 on a laptop or a portrait phone, 12+ on a landscape
+    // phone) the whole start list goes at the gun: pills riding beside the beaks would pile onto the neighbours' hats and
+    // each other as the ducks fan out (a lifted pill needs its own height plus ~10 px of hat above the lane below)
     const lane0 = this.lanes[0]; // the far lane is the tightest
-    const dense = !!lane0 && lane0.h < Math.round(clamp(11 * lane0.duckScale, 10, 14)) + 14;
+    const dense = !!lane0 && lane0.h < fsFor(lane0.duckScale) + 8 + 10;
     for (let i = 0; i < n; i++) {
       const fx = this.duckFx[i];
       const rank = this.ranks[i] ?? i;
@@ -4433,8 +4456,7 @@ export class RaceScene {
     const effW = this.effectiveW();
     const xMin = (this.insets.left || 0) + 4;
     const xMaxR = this.W - (this.insets.right || 0) - 4; // right edge limit (pill's right side)
-    const nb = effW < 500 ? 12 : 16; // name budget in code points by track width (the pixel fit below does the rest)
-    const maxPw = 0.46 * effW;
+    const maxPw = 0.46 * effW; // no tag is ever wider than this, whatever the room
     const rects = this._pillRects || (this._pillRects = []);
     let nRect = 0;
     const early = racing && t < 3.2 + 0.12 * n; // the start-list pills are leaving: ducks have fanned out, test the lane below
@@ -4447,26 +4469,11 @@ export class RaceScene {
       const aTop = this.labelTop[i];
       if (aSide <= 0.01 && aTop <= 0.01) continue;
       const scale = lane.duckScale;
-      const fs = Math.round(clamp(11 * scale, 10, 14));
+      const fs = fsFor(scale);
       const font = `800 ${fs}px ${this.uiFont}`;
       const numW = fs + 4;
       const ph = fs + 8;
-      // name: shortened to the budget, then ellipsized until the pill fits 46% of the track width (cached per budget/font/width)
-      const fitKey = `${nb}|${fs}|${Math.round(maxPw)}`;
-      if (look._short === undefined || look._shortKey !== fitKey) {
-        let name = shortName(look.name || `Duck ${i + 1}`, nb);
-        let cps = Array.from(name);
-        while (cps.length > 2 && this._measure(name, font) + numW + 20 > maxPw) {
-          cps = cps.slice(0, cps[cps.length - 1] === '…' ? -2 : -1);
-          cps.push('…');
-          name = cps.join('');
-        }
-        look._short = name;
-        look._shortKey = fitKey;
-      }
-      const name = look._short;
-      const tw = this._measure(name, font);
-      const pw = tw + numW + 20;
+      const chrome = numW + 20; // pill width = name width + number block + padding
       // hazard: the duck one lane down (its hat pokes up into this lane); B spans its tail..beak, hat top..waterline
       const fj = i + 1 < n ? this.duckFx[i + 1] : null;
       const hz = fj && fj.visible ? fj : null;
@@ -4474,42 +4481,110 @@ export class RaceScene {
       const bx1 = hz ? hz.beakX + 4 * hz.sc : 0;
       const by0 = hz ? hz.topY - 2 : 0;
       const by1 = hz ? hz.by : 0;
-      const hits = (x, y, w, h) => hz && x < bx1 && x + w > bx0 && y < by1 && y + h > by0;
+      // `pad` grows the hazard (a hidden tag wants 2 px of clear water before it returns) or shrinks it (a shown one rides
+      // out a 2 px graze of a bobbing hat tip): no flicker either way
+      const hits = (x, y, w, h, pad) => hz && x < bx1 + pad && x + w > bx0 - pad && y < by1 + pad && y + h > by0 - pad;
+      const ahead = fx.beakX + 10 * scale; // a tag ahead of the beak starts here
       if (aSide > 0.01) {
-        let px = clamp(fx.beakX + 10 * scale, xMin, Math.max(xMin, xMaxR - pw));
+        const tag = fx.sideTag;
+        const pad = tag.hide > 0.5 ? 2 : -2;
+        // name: the longest form the free track right of the beak holds (whole name, 'First L.', ellipsis) — chosen as the
+        // pill appears, re-cut only if the room shrinks under it (a riding tag never flickers between forms)
+        const room = Math.min(maxPw, xMaxR - ahead) - chrome;
+        const name = (tag.name = this._tagName(look, i, font, room, aSide < 0.05 ? null : tag.name));
+        const pw = this._measure(name, font) + chrome;
+        const px = clamp(ahead, xMin, Math.max(xMin, xMaxR - pw));
         let py = Math.max(minY, fx.by - 6 * scale - ph / 2);
-        let a = smoothstep(0, 1, aSide);
-        // idle: everyone sits at x = 0 in a column, the start list reads as one stack — no test; leaving: lift over a neighbour's hat, else ghost
-        if (early && hits(px, py, pw, ph)) {
+        // idle: everyone sits at x = 0 in a column, the start list reads as one stack — no test; leaving: lift over a
+        // neighbour's hat, else out of the way entirely (a 120 ms fade, back once the lane below has been clear 0.25 s)
+        let blocked = false;
+        if (early && hits(px, py, pw, ph, pad)) {
           const py2 = Math.max(minY, by0 - 2 - ph);
-          if (!hits(px, py2, pw, ph)) py = py2;
-          else a *= 0.35;
+          if (!hits(px, py2, pw, ph, pad)) py = py2;
+          else blocked = true;
         }
-        this._pill(px, py, pw, ph, numW, look, name, a, fs);
-        rects[nRect] = Object.assign(rects[nRect] || {}, { i, kind: 'side', x: px, y: py, w: pw, h: ph, a });
-        nRect++;
-      }
+        const a = smoothstep(0, 1, aSide) * this._tagClear(tag, blocked, dt);
+        if (a > 0.01) {
+          this._pill(px, py, pw, ph, numW, look, name, a, fs);
+          rects[nRect] = Object.assign(rects[nRect] || {}, { i, kind: 'side', x: px, y: py, w: pw, h: ph, a });
+          nRect++;
+        }
+      } else resetTagState(fx.sideTag);
       if (aTop > 0.01) {
-        // in-lane tag on the water behind the tail (swimming-broadcast style): never covers a neighbour
-        const ahead = fx.beakX + 10 * scale;
-        let px = fx.bx - 42 * scale - pw;
+        // in-lane tag on the water behind the tail (swimming-broadcast style): never covers a neighbour. The name is cut
+        // to the water there is — astern, or ahead of the beak when the tail is off the track's left edge
+        const astern = fx.bx - 42 * scale; // right edge of a tag astern
+        const room = Math.min(maxPw, Math.max(astern - xMin, xMaxR - ahead)) - chrome;
+        const tag = fx.topTag;
+        const name = (tag.name = this._tagName(look, i, font, room, aTop < 0.05 ? null : tag.name));
+        const pw = this._measure(name, font) + chrome;
+        let px = astern - pw;
         if (px < xMin) px = ahead; // no room astern: tag ahead
         px = clamp(px, xMin, Math.max(xMin, xMaxR - pw));
         const py = clamp(lane.y - ph / 2 + 1 * scale, minY, this.H - ph - 2);
-        let a = smoothstep(0, 1, aTop) * 0.95;
-        if (hits(px, py, pw, ph)) {
+        const pad = tag.hide > 0.5 ? 2 : -2;
+        let blocked = false;
+        if (hits(px, py, pw, ph, pad)) {
           const px2 = Math.min(px, bx0 - pw - 6); // further astern, clear of the neighbour's tail
           if (px2 >= xMin) px = px2;
-          else if (!hits(ahead, py, pw, ph) && ahead + pw <= xMaxR) px = ahead;
-          else a *= 0.35;
+          else if (!hits(ahead, py, pw, ph, pad) && ahead + pw <= xMaxR) px = ahead;
+          else blocked = true;
         }
-        this._pill(px, py, pw, ph, numW, look, name, a, fs);
-        rects[nRect] = Object.assign(rects[nRect] || {}, { i, kind: 'top', x: px, y: py, w: pw, h: ph, a });
-        nRect++;
-      }
+        const a = smoothstep(0, 1, aTop) * 0.95 * this._tagClear(tag, blocked, dt);
+        if (a > 0.01) {
+          this._pill(px, py, pw, ph, numW, look, name, a, fs);
+          rects[nRect] = Object.assign(rects[nRect] || {}, { i, kind: 'top', x: px, y: py, w: pw, h: ph, a });
+          nRect++;
+        }
+      } else resetTagState(fx.topTag);
     }
     rects.length = nRect;
     ctx.restore();
+  }
+
+  /**
+   * Visibility factor (1 shown … 0 hidden) of a pill that may have no clear water (`blocked`: every placement covers the
+   * duck one lane down). It never rides see-through: blocked for more than a few frames it fades out in 120 ms, and it
+   * comes back (250 ms) once its water has been clear for 0.25 s. A cut decides on the spot, without the hold.
+   */
+  _tagClear(tag, blocked, dt) {
+    const wall = this.wall;
+    if (this._cut) {
+      tag.since = blocked ? wall : -1;
+      tag.at = -99;
+      tag.hide = blocked ? 1 : 0;
+      return 1 - tag.hide;
+    }
+    if (!blocked) tag.since = -1;
+    else if (tag.since < 0) tag.since = wall;
+    const hiding = blocked && wall - tag.since >= 0.06; // a graze shorter than ~4 frames never starts a fade
+    if (hiding) tag.at = wall;
+    tag.hide = approach(tag.hide, hiding || wall - tag.at < 0.25 ? 1 : 0, hiding ? dt / 0.12 : dt * 4);
+    return 1 - tag.hide;
+  }
+
+  /**
+   * The name a tag can carry in `room` px of name width: the whole name if it fits, else "First L." on a word boundary
+   * ('Feather Locklear' -> 'Feather L.'), else an ellipsis cut to the room (never below two characters). `keep` is
+   * the form the tag already shows: it stays unless it no longer fits, so a tag whose water grows never re-letters
+   * itself mid-ride. Widths come from the measure cache; the ellipsis search runs once per (font, 8 px of room).
+   */
+  _tagName(look, i, font, room, keep) {
+    const forms = look._tagForms && look._tagForms.font === font ? look._tagForms : (look._tagForms = tagForms(look.name || `Duck ${i + 1}`, font));
+    if (keep && this._measure(keep, font) <= room) return keep;
+    for (const f of forms.list) if (this._measure(f, font) <= room) return f;
+    const q = Math.floor(room / 8) * 8; // quantised, so a tag squeezed by a zoom doesn't re-search every frame
+    if (forms.cutRoom === q) return forms.cut;
+    let cps = Array.from(forms.base);
+    if (cps[cps.length - 1] === '…') cps = cps.slice(0, -1);
+    let cut = `${cps.join('').trimEnd()}…`;
+    while (cps.length > 2 && this._measure(cut, font) > q) {
+      cps = cps.slice(0, -1);
+      cut = `${cps.join('').trimEnd()}…`;
+    }
+    forms.cutRoom = q;
+    forms.cut = cut;
+    return cut;
   }
 
   /** Broadcast lower-third pill: dark glass body, towel-coloured number block, white name. */
@@ -4877,7 +4952,7 @@ export class RaceScene {
   }
 
   _drawEdgeMarkers(t, phase) {
-    if (!this.sim || (phase !== 'race' && phase !== 'finish')) return;
+    if (!this.sim || (phase !== 'race' && phase !== 'finish') || this.replay) return; // a replay's tight shot leaves most of the field off screen on purpose
     const { ctx } = this;
     const ui = this.ui;
     const zs = this._zc || { zf: 1, cx: 0, cy: 0 };
@@ -4940,6 +5015,392 @@ export class RaceScene {
     ctx.fillRect(0, 0, W, H);
   }
 
+  // -------------------------------------------------------------------------
+  // Instant replay (the director re-drives the race clock over [t0, t1]; the sim is deterministic, so the past renders
+  // for free). beginReplay resets every transient channel so nothing animates on from the future we just left, re-arms
+  // the finish tape when the window opens before the winner's touch, frames the wall with the 'line' camera on `ducks`,
+  // and the overlay adds the TV furniture: letterbox bars, the REPLAY bug, the winner card, and a wipe off the frame we
+  // cut away from. onEvent() keeps the theatrics that belong to the live moment (stills, hit-stops, shakes) out of it.
+  // -------------------------------------------------------------------------
+
+  /**
+   * @param {{t0:number, t1:number, kind?:'win'|'tail', ducks?:number[], label?:string, sub?:string, wipe?:boolean}} o
+   *   ducks: ids the line camera frames (winner + chasers / the pair racing for last); sub: caption under REPLAY
+   */
+  beginReplay({ t0, t1, kind = 'win', ducks = [], label = 'REPLAY', sub = '', wipe = true } = {}) {
+    if (this.replay) this.endReplay();
+    let snap = null;
+    if (wipe && this.W && !this.reduceMotion) {
+      // the frame we are cutting away from, wiped off over the first 0.45 s (CSS resolution is plenty for a moving edge)
+      try {
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(this.W));
+        c.height = Math.max(1, Math.round(this.H));
+        c.getContext('2d').drawImage(this.canvas, 0, 0, c.width, c.height);
+        snap = { c, w: c.width, h: c.height };
+      } catch {
+        snap = null;
+      }
+    }
+    const sim = this.sim;
+    const winner = sim ? sim.order[0] : -1;
+    const winT = sim && winner >= 0 ? sim.finishTimes[winner] : null;
+    const beforeWin = winT !== null && t0 < winT;
+    this.replay = { t0, t1, kind, ducks: ducks.slice(), label, sub, wall0: this.wall, wipe: snap, card: null, zoomPending: true, prevFirstSeen: this._firstFinishSeen };
+    // transient channels: nothing carries over from the timeline we left (confetti included: it fell seconds from now)
+    this.particles.length = 0;
+    this.projectiles.length = 0;
+    this.throwers.length = 0;
+    this.photo = null;
+    this._afterPhoto = null;
+    this.pendingHoldMs = 0;
+    this.strobe = 0;
+    this.waterFlash = 0;
+    this.shakes.length = 0;
+    this._shakeLevel = 0;
+    this.startRope = null;
+    this._blend = null;
+    this._lastTarget = null;
+    Object.assign(this.zoom, { base: 1, baseTarget: 1, baseV: 0, punch: 0, punchV: 0, holdUntil: 0, reason: '' });
+    const lm = this.leaderMark;
+    lm.flight = null;
+    lm.toss = null;
+    lm.hover = null;
+    lm.hoverP = 0;
+    lm.holder = -1;
+    for (let i = 0; i < this.duckFx.length; i++) {
+      const fx = this.duckFx[i];
+      const ft = sim ? sim.finishTimes[i] : null;
+      const done = ft !== null && ft <= t0;
+      fx.victory = 0;
+      fx.celebrate = 0;
+      fx.place = done ? 2 : 0;
+      fx.spin = -1;
+      fx.stars = 0;
+      fx.dizzy = 0;
+      fx.sauce = 0;
+      fx.leadFlash = 0;
+      fx.boostGlow = 0;
+      fx.shockT = 0;
+      fx.shockPri = false;
+      fx.smugT = 0;
+      fx.prevRank = -1;
+      fx.kickT = 0;
+      fx.lastEvent = -99;
+      fx.tagEvent = -99;
+    }
+    // the tape: intact again if the window opens before the touch (update() snaps it off positions), else already gone
+    if (beforeWin) {
+      this.tape = { snapped: false, t: 0, chains: null };
+      this._firstFinishSeen = false; // the winner's beat (snap, cannons, wings-up V, crown) plays again — as a replay
+      this._winWall = -9;
+    } else this.tape = null;
+    this._heroDone = true; // no hero push-in: the line camera has the framing
+    this.tailPair = kind === 'tail' && ducks.length >= 2 ? ducks.slice(0, 2) : null; // the pair get their pills; a stale live pair would steal the chasers' slots
+    this._lineSet = ducks.length ? ducks.slice() : sim ? sim.order.slice(0, 2) : null;
+    this.camMode = 'line';
+    this._forceCut = true; // the next update() treats the jump as a cut whatever its size
+    this.snapCamera(t0);
+  }
+
+  /** Lower-third card over the replay (null clears): {kicker, name, meta, look, gold}. Drawn in-canvas, so a recorded clip carries it. */
+  setReplayCard(card) {
+    if (!this.replay) return;
+    this.replay.card = card ? { ...card, t0: this.wall } : null;
+  }
+
+  /** Clip coda: ease the line camera back out to the normal wide framing (the champion coasting on, confetti landing); the overlay stays. */
+  relaxReplayCamera() {
+    if (!this.replay || this.camMode !== 'line') return;
+    this.camMode = ''; // update() blends the framing target over 1 s
+    this.zoomTo(1);
+  }
+
+  /** Leave replay mode: normal framing, no overlay. Particles (the replayed win's confetti) may keep falling. */
+  endReplay() {
+    const rp = this.replay;
+    if (!rp) return;
+    this.replay = null;
+    this._firstFinishSeen = rp.prevFirstSeen || this._firstFinishSeen;
+    if (this._firstFinishSeen) this.tape = null;
+    this._lineSet = null;
+    if (rp.kind === 'tail') this.tailPair = null;
+    this.camMode = '';
+    this.photo = null;
+    this._afterPhoto = null;
+    this.pendingHoldMs = 0;
+    const z = this.zoom;
+    z.baseTarget = 1;
+    z.holdUntil = 0;
+    z.reason = '';
+    this._forceCut = true;
+  }
+
+  /** Letterbox bars, the REPLAY bug, the card and the entry wipe — screen space, unzoomed, under the white flash. */
+  _drawReplayOverlay() {
+    const rp = this.replay;
+    const { ctx, W, H } = this;
+    if (!rp || !W) return;
+    const ui = this.ui;
+    const rm = this.reduceMotion;
+    const age = this.wall - rp.wall0;
+    ctx.save();
+    try {
+      // letterbox: eases in with the wipe (the bottom bar is kept clear of the lanes by the director's insets)
+      const barH = replayBarH(H);
+      const bIn = rm ? 1 : easeOutCubic(clamp(age / 0.35, 0, 1));
+      rp.bars = barH * bIn;
+      ctx.fillStyle = '#06090f';
+      ctx.fillRect(-2, -2, W + 4, barH * bIn + 2);
+      ctx.fillRect(-2, H - barH * bIn, W + 4, barH * bIn + 2);
+      // thin gold keylines on the bars' inner edges
+      ctx.fillStyle = 'rgba(255,210,63,0.55)';
+      ctx.fillRect(0, barH * bIn - 1, W, 1);
+      ctx.fillRect(0, H - barH * bIn, W, 1);
+      this._drawReplayBug(rp, age, barH);
+      if (rp.card) this._drawReplayCard(rp, barH);
+      // the wipe: the frame we left, clipped to the right of a slanted edge sweeping left -> right, with a bright band on the edge
+      const wp = rp.wipe;
+      const WIPE = 0.45;
+      if (wp && age < WIPE) {
+        const p = easeInOut(clamp(age / WIPE, 0, 1));
+        const slant = H * 0.22;
+        const band = 46 * ui;
+        const xe = lerp(-slant - band, W + band, p); // edge x at the bottom of the screen
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(xe + slant, -2);
+        ctx.lineTo(W + 2, -2);
+        ctx.lineTo(W + 2, H + 2);
+        ctx.lineTo(xe, H + 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(wp.c, 0, 0, W, H);
+        ctx.restore();
+        // leading band: white core, gold trail, soft outer glow
+        ctx.save();
+        ctx.transform(1, 0, slant / H, 1, 0, 0); // shear so the band follows the slanted edge (x' = x + y*slant/H)
+        const g = ctx.createLinearGradient(xe - band * 1.6, 0, xe + band * 0.35, 0);
+        g.addColorStop(0, 'rgba(255,210,63,0)');
+        g.addColorStop(0.55, 'rgba(255,210,63,0.75)');
+        g.addColorStop(0.82, 'rgba(255,255,255,0.95)');
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(xe - band * 1.6, -2, band * 1.95, H + 4);
+        ctx.restore();
+      } else if (wp) rp.wipe = null; // done: drop the snapshot
+    } finally {
+      ctx.restore();
+    }
+  }
+
+  /** Where the bug row sits: under the letterbox bar, the floating top bar and any top inset; and its height. */
+  _replayBugRow(barH) {
+    const narrow = this.W < 560;
+    const h = Math.round((narrow ? 26 : 30) * this.ui);
+    const top = Math.max(barH, this.topBarH || 0, this.insets.top || 0);
+    return { y0: Math.round(top + 10 * this.ui), h, narrow };
+  }
+
+  /** Top-left TV tag: red block with the replay glyph, navy plate "REPLAY", a caption after a divider; slides in behind the wipe. */
+  _drawReplayBug(rp, age, barH) {
+    const { ctx } = this;
+    const ui = this.ui;
+    const rm = this.reduceMotion;
+    const tIn = rm ? 1 : easeOutCubic(clamp((age - 0.18) / 0.3, 0, 1));
+    if (tIn <= 0) return;
+    const { y0, h, narrow } = this._replayBugRow(barH);
+    const fs = Math.round(h * 0.56);
+    const font = `${fs}px ${this.displayFont}`;
+    const subFont = `800 ${Math.round(h * 0.4)}px ${this.uiFont}`;
+    const label = rp.label || 'REPLAY';
+    const sub = narrow ? '' : rp.sub || '';
+    const lw = this._measure(label, font);
+    const sw = sub ? this._measure(sub, subFont) : 0;
+    const padX = Math.round(h * 0.42);
+    const plateW = padX + lw + (sub ? padX * 0.8 + 1 + padX * 0.8 + sw : 0) + padX;
+    const x0 = Math.round((this.insets.left || 0) + 16 * ui - (1 - tIn) * (h + plateW + 40 * ui));
+    const skew = -0.2;
+    ctx.save();
+    ctx.globalAlpha = 0.98;
+    ctx.transform(1, 0, skew, 1, -skew * (y0 + h), 0); // shear about the plate's bottom edge (TV tags lean forward)
+    // drop shadow
+    ctx.fillStyle = 'rgba(0,8,24,0.35)';
+    ctx.fillRect(x0 + 3, y0 + 4, h + plateW, h);
+    // red glyph block
+    const rg = ctx.createLinearGradient(0, y0, 0, y0 + h);
+    rg.addColorStop(0, '#F04A5F');
+    rg.addColorStop(1, '#B51C31');
+    ctx.fillStyle = rg;
+    ctx.fillRect(x0, y0, h, h);
+    // navy plate
+    const ng = ctx.createLinearGradient(0, y0, 0, y0 + h);
+    ng.addColorStop(0, 'rgba(20,40,70,0.96)');
+    ng.addColorStop(1, 'rgba(10,22,40,0.96)');
+    ctx.fillStyle = ng;
+    ctx.fillRect(x0 + h, y0, plateW, h);
+    // top sheen + gold underline
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.fillRect(x0, y0, h + plateW, Math.max(1, h * 0.42));
+    ctx.fillStyle = '#FFD23F';
+    ctx.fillRect(x0 + h, y0 + h - Math.max(2, Math.round(2 * ui)), plateW, Math.max(2, Math.round(2 * ui)));
+    // a shimmer sweeps the plate every 1.6 s (none under reduced motion)
+    if (!rm) {
+      const ph = ((age + 0.4) % 1.6) / 1.6;
+      if (ph < 0.35) {
+        const sx0 = x0 + h + (plateW + 60 * ui) * (ph / 0.35) - 60 * ui;
+        const sg = ctx.createLinearGradient(sx0, 0, sx0 + 60 * ui, 0);
+        sg.addColorStop(0, 'rgba(255,255,255,0)');
+        sg.addColorStop(0.5, 'rgba(255,255,255,0.18)');
+        sg.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = sg;
+        ctx.fillRect(Math.max(x0 + h, sx0), y0, Math.min(60 * ui, x0 + h + plateW - Math.max(x0 + h, sx0)), h);
+      }
+    }
+    ctx.restore(); // text is drawn unsheared (crisper, and the display face is already italic-ish in spirit)
+    ctx.save();
+    // the replay glyph: an anticlockwise open circle with an arrowhead, drawn as a path (no font has to carry U+27F2)
+    const cx = x0 + h / 2 + skew * (-h / 2); // centre of the red block after the shear (shifted left by |skew|*h/2 at mid height)
+    const cy = y0 + h / 2;
+    const r = h * 0.27;
+    const spin = rm ? 0 : -((age * 1.2) % 1) * TAU * (age < 1.2 ? 1 : 0); // one anticlockwise turn as it lands, then still
+    ctx.translate(cx, cy);
+    ctx.rotate(spin);
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = Math.max(2, h * 0.1);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, -Math.PI * 0.62, Math.PI * 1.05, false); // gap at the upper left where the arrowhead sits
+    ctx.stroke();
+    // arrowhead at the gap's start (pointing anticlockwise)
+    const a0 = -Math.PI * 0.62;
+    const ax = Math.cos(a0) * r;
+    const ay = Math.sin(a0) * r;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.moveTo(ax - h * 0.17, ay - h * 0.02);
+    ctx.lineTo(ax + h * 0.06, ay - h * 0.15);
+    ctx.lineTo(ax + h * 0.05, ay + h * 0.12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.font = font;
+    ctx.fillStyle = '#FFFFFF';
+    const tx = x0 + h + padX + skew * (-h / 2);
+    ctx.fillText(label, tx, y0 + h / 2 + 1);
+    if (sub) {
+      const dx = tx + lw + padX * 0.8;
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.fillRect(dx, y0 + h * 0.24, 1, h * 0.52);
+      ctx.font = subFont;
+      ctx.fillStyle = '#FFE9A3';
+      ctx.fillText(sub, dx + 1 + padX * 0.8, y0 + h / 2 + 1);
+    }
+    ctx.restore();
+  }
+
+  /**
+   * The card, centred in the sky band where the live ribbons go (under the bug row; beside it on short landscape
+   * screens) — never over a lane: kicker block (1ST / LAST) in gold or the duck's towel colour, the name in the display
+   * face, a meta line. Drops in over 0.3 s.
+   */
+  _drawReplayCard(rp, barH) {
+    const card = rp.card;
+    const { ctx, W, H } = this;
+    const ui = this.ui;
+    const rm = this.reduceMotion;
+    const age = this.wall - card.t0;
+    const tIn = rm ? 1 : easeOutCubic(clamp(age / 0.3, 0, 1));
+    const row = this._replayBugRow(barH);
+    const narrow = row.narrow;
+    const beside = H < 500; // short landscape screens have no sky to spare: share the bug's row
+    const h = Math.round((narrow || beside ? 40 : 52) * ui);
+    const maxW = Math.min(W - 24 - (beside ? 2 * 230 * ui : 0), 620 * ui);
+    let nameFs = Math.round(h * 0.5);
+    const nameFloor = Math.round(h * 0.32);
+    const name = String(card.name || '');
+    let nameFont = `${nameFs}px ${this.displayFont}`;
+    const kickFont = `${Math.round(h * 0.36)}px ${this.displayFont}`;
+    const metaFont = `800 ${Math.round(h * 0.25)}px ${this.uiFont}`;
+    const kickW = Math.round(this._measure(card.kicker || '', kickFont) + h * 0.7);
+    const metaW = card.meta ? this._measure(card.meta, metaFont) : 0;
+    while (nameFs > nameFloor && this._measure(name, nameFont) > maxW - kickW - h * 0.9) {
+      nameFs -= 2;
+      nameFont = `${nameFs}px ${this.displayFont}`;
+    }
+    let shown = name;
+    if (this._measure(shown, nameFont) > maxW - kickW - h * 0.9) {
+      let cps = Array.from(shown);
+      while (cps.length > 2 && this._measure(`${cps.join('')}…`, nameFont) > maxW - kickW - h * 0.9) cps = cps.slice(0, -1);
+      shown = `${cps.join('').trimEnd()}…`;
+    }
+    const nameW = this._measure(shown, nameFont);
+    const bodyW = Math.round(Math.max(nameW, metaW) + h * 0.9);
+    const w = kickW + bodyW;
+    // centred in the sky; on a phone it stacks under the bug, left-aligned with it (one graphics package, clear of the clock)
+    const xLeft = (this.insets.left || 0) + 16 * ui;
+    const x0 = Math.round(narrow && !beside ? clamp(xLeft, 6, Math.max(6, W - w - 6)) : clamp((W - w) / 2, beside ? 230 * ui : 6, Math.max(6, W - w - 6)));
+    const yRest = beside ? row.y0 + Math.round((row.h - h) / 2) : row.y0 + row.h + Math.round(10 * ui);
+    const y0 = Math.round(yRest - (1 - tIn) * 14 * ui);
+    ctx.save();
+    ctx.globalAlpha = tIn;
+    // shadow
+    ctx.fillStyle = 'rgba(0,8,24,0.4)';
+    roundRectPath(ctx, x0 + 3, y0 + 5, w, h, 7 * ui);
+    ctx.fill();
+    // body: navy broadcast glass
+    const ng = ctx.createLinearGradient(0, y0, 0, y0 + h);
+    ng.addColorStop(0, 'rgba(22,44,76,0.97)');
+    ng.addColorStop(1, 'rgba(10,22,40,0.97)');
+    ctx.fillStyle = ng;
+    roundRectPath(ctx, x0, y0, w, h, 7 * ui);
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    // kicker block: gold (the result) or the duck's towel colour
+    if (card.gold) {
+      const gg = ctx.createLinearGradient(0, y0, 0, y0 + h);
+      gg.addColorStop(0, '#FFEA96');
+      gg.addColorStop(0.45, '#FFD23F');
+      gg.addColorStop(1, '#F0AE00');
+      ctx.fillStyle = gg;
+    } else ctx.fillStyle = card.look?.towel?.bg || '#1F5BD8';
+    ctx.fillRect(x0, y0, kickW, h);
+    // sheen
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(x0, y0, w, h * 0.45);
+    ctx.restore();
+    // gold keyline
+    ctx.strokeStyle = 'rgba(255,210,63,0.9)';
+    ctx.lineWidth = Math.max(1.5, 1.5 * ui);
+    roundRectPath(ctx, x0 + 0.75, y0 + 0.75, w - 1.5, h - 1.5, 7 * ui);
+    ctx.stroke();
+    // text
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.font = kickFont;
+    ctx.fillStyle = card.gold ? '#3b2400' : card.look?.towel?.text || '#fff';
+    ctx.fillText(card.kicker || '', x0 + kickW / 2, y0 + h / 2 + 1);
+    ctx.textAlign = 'left';
+    const tx = x0 + kickW + h * 0.45;
+    if (card.meta) {
+      ctx.font = nameFont;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(shown, tx, y0 + h * 0.4);
+      ctx.font = metaFont;
+      ctx.fillStyle = '#FFE9A3';
+      ctx.fillText(card.meta, tx, y0 + h * 0.77);
+    } else {
+      ctx.font = nameFont;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(shown, tx, y0 + h / 2 + 1);
+    }
+    ctx.restore();
+  }
+
   /** Screen-space anchor for duck i (for DOM labels / punch centres), zoom applied. */
   duckScreen(i, t, phase) {
     const lane = this.lanes[i];
@@ -4960,8 +5421,26 @@ export class RaceScene {
 // helpers
 // ---------------------------------------------------------------------------
 
+/** A confetti piece's back face: its colour 30% toward black (memoised per colour; shared with the DOM confetti in main.js). */
+export function confettiShade(color) {
+  let shade = SHADE_COLS.get(color);
+  if (shade === undefined) {
+    if (/^#[0-9a-f]{6}$/i.test(color)) {
+      const [r, g, b] = hexToRgb(color);
+      shade = `rgb(${Math.round(r * 0.7)},${Math.round(g * 0.7)},${Math.round(b * 0.7)})`;
+    } else shade = color;
+    SHADE_COLS.set(color, shade);
+  }
+  return shade;
+}
+
 function newLeaderMark() {
   return { holder: -1, x: 0, y: 0, flight: null, toss: null, popT: 9, pendingFrom: -1, hover: null, hoverP: 0 };
+}
+
+/** Letterbox bar height of the instant replay for a canvas of CSS height H (main.js reserves the bottom one as an inset). */
+export function replayBarH(H) {
+  return Math.round(clamp(H * 0.064, 16, 64));
 }
 
 /**
@@ -5070,19 +5549,68 @@ function approach(v, target, step) {
   return Math.max(target, v - step);
 }
 
-/** Pill name: whole if it fits, else "First L." on a word boundary ('Feather Locklear' -> 'Feather L.'), else truncated. */
-function shortName(name, max) {
+/**
+ * A confetti-safe version of `hex`, or null. Near-neutrals: white/silver fly as pure white, grey and black not at all.
+ * A hue passes as is when it is bright and saturated enough to read as a colour in the air — the yellow-orange wedge
+ * (where tan, khaki, cream and cocoa live) has to be nearly gold-bright, or it reads as debris next to the real gold.
+ * Anything duller is lifted to that floor (same hue) when its saturation is at least `liftFrom`, else dropped.
+ */
+function festiveHex(hex, liftFrom) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return null;
+  const [r, g, b] = hexToRgb(hex);
+  const mx = Math.max(r, g, b);
+  const mn = Math.min(r, g, b);
+  const v = mx / 255;
+  const sat = mx > 0 ? (mx - mn) / mx : 0;
+  if (sat < 0.18) return v >= 0.9 ? '#FFFFFF' : null;
+  const d = mx - mn;
+  let h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  h = (h * 60 + 360) % 360;
+  const warm = h >= 16 && h <= 64;
+  const sMin = warm ? 0.72 : 0.4;
+  const vMin = warm ? 0.9 : 0.72;
+  if (sat >= sMin && v >= vMin) return hex.toUpperCase();
+  if (sat < liftFrom) return null;
+  return hsvHex(h, Math.max(sat, sMin), Math.max(v, vMin));
+}
+
+function hsvHex(h, s, v) {
+  const c = v * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = v - c;
+  const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  const to = (u) => Math.round((u + m) * 255).toString(16).padStart(2, '0');
+  return `#${to(r)}${to(g)}${to(b)}`.toUpperCase();
+}
+
+/** Per-pill name-tag state: the form it shows (see _tagName) and its no-clear-water fade (see _tagClear). */
+function tagState() {
+  return { name: null, hide: 0, since: -1, at: -99 };
+}
+function resetTagState(tag) {
+  tag.hide = 0;
+  tag.since = -1;
+  tag.at = -99;
+}
+
+/**
+ * The forms a name tag may take, longest first: the whole name (up to TAG_NAME_MAX code points — a tag is a caption,
+ * not a banner) and "First L." on a word boundary ('Feather Locklear' -> 'Feather L.'). `base` (the first word) seeds
+ * the ellipsis cut _tagName makes when neither fits; `font` keys the cache (one per look).
+ */
+function tagForms(name, font) {
   const str = String(name).trim();
   const cps = Array.from(str);
-  if (cps.length <= max) return str;
+  const list = [];
+  if (cps.length <= TAG_NAME_MAX) list.push(str);
   const sp = str.indexOf(' ');
   if (sp > 0) {
-    const first = str.slice(0, sp);
     const ini = Array.from(str.slice(str.lastIndexOf(' ') + 1))[0];
-    const cand = ini ? `${first} ${ini}.` : first;
-    if (Array.from(cand).length <= max) return cand;
+    const cand = ini ? `${str.slice(0, sp)} ${ini}.` : str.slice(0, sp);
+    if (Array.from(cand).length < cps.length) list.push(cand);
   }
-  return cps.slice(0, max - 1).join('') + '…';
+  if (!list.length) list.push(`${cps.slice(0, TAG_NAME_MAX - 1).join('')}…`);
+  return { font, list, base: sp > 0 ? str.slice(0, sp) : list[list.length - 1], cutRoom: NaN, cut: '' };
 }
 
 function hash01(n) {

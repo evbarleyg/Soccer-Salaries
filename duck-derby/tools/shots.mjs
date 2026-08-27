@@ -1,7 +1,11 @@
 // Drive the app through its phases and capture screenshots for review.
-// usage: node tools/shots.mjs <baseUrl> <outDir> [seed] [--only=desktop12,fin390,…]
+// usage: node tools/shots.mjs <baseUrl> <outDir> [seed] [--only=desktop12,fin390,…] [--settle=ms]
 //   sessions: desktop12 mobile8 hotdog laptop10 land12 w320 two1280 rulel1440 rulel390 land16 fin1440 fin390 tiny
 //             calm1440 longnames390 len55n16 fonts   (a full run takes ~5 min; --only re-shoots a subset)
+//   --settle: how long to wait after a jump() before its screenshot (default 350 ms). The live-order board animates a
+//             move for ~350 ms after whatever changed, so a capture taken sooner can catch a row mid-glide; 700 gives a
+//             settled board at the cost of the race clock reading ~0.35 s later in those frames. The frames taken are
+//             the same either way (same sessions, same jumps, same files).
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -15,6 +19,8 @@ async function loadPlaywright() {
 const argv = process.argv.slice(2);
 const onlyArg = argv.find((a) => a.startsWith('--only='));
 const only = onlyArg ? new Set(onlyArg.slice(7).split(',').map((s) => s.trim()).filter(Boolean)) : null;
+const settleArg = argv.find((a) => a.startsWith('--settle='));
+const SETTLE_MS = settleArg ? Math.max(0, Number.parseInt(settleArg.slice(9), 10) || 0) : 350;
 const pos = argv.filter((a) => !a.startsWith('--'));
 // NB: race codes are 7 Crockford chars whose first char is 0-3 (32-bit seed); anything
 // else is rejected by the app and it would silently race a random seed instead.
@@ -24,7 +30,7 @@ if (!/^[0-3][0-9A-HJKMNP-TV-Z]{2}-?[0-9A-HJKMNP-TV-Z]{4}$/i.test(seedCode)) {
   process.exit(2);
 }
 mkdirSync(outDir, { recursive: true });
-console.log('seed', seedCode.toUpperCase(), only ? `(only: ${[...only].join(', ')})` : '');
+console.log('seed', seedCode.toUpperCase(), only ? `(only: ${[...only].join(', ')})` : '', settleArg ? `(settle ${SETTLE_MS} ms)` : '');
 const { chromium } = await loadPlaywright();
 const browser = await chromium.launch();
 const issues = [];
@@ -71,7 +77,8 @@ const startRace = async (page) => {
   await page.waitForFunction(() => window.__duckDerby.state.phase === 'race', null, { timeout: 15000 });
 };
 const winTime = (page) => page.evaluate(() => Math.min(...window.__duckDerby.state.sim.finishTimes));
-const jump = async (page, t, settle = 350) => {
+/** Put the race clock at `t`, then give the page `settle` ms (default --settle, else 350) before the caller shoots. */
+const jump = async (page, t, settle = SETTLE_MS) => {
   await page.evaluate((tt) => window.__duckDerby.jump(tt), t);
   await page.waitForTimeout(settle);
 };
@@ -147,7 +154,7 @@ await session('hotdog', { width: 1440, height: 900 }, twelve, async (page, snap)
 await session('laptop10', { width: 1280, height: 720 }, twelve.slice(0, 10), async (page, snap) => {
   await page.click('#btn-start');
   await page.waitForTimeout(4300);
-  await jump(page, 30, 300);
+  await jump(page, 30, Math.max(300, SETTLE_MS - 50));
   await snap('4-mid');
 });
 // landscape phone: compact strip HUD, two-column setup/results

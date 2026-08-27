@@ -679,6 +679,36 @@ export class DuckAudio {
     }
   }
 
+  /**
+   * Instant-replay wipe: a broadcast "swoosh" — band-passed noise sweeping up (in) or down (out) under a soft sine
+   * glide. `out` reverses the sweep so the pair brackets the replay.
+   */
+  replaySwoosh(out = false) {
+    if (!this._canPlay()) return;
+    const t = this.now;
+    const dur = 0.42;
+    const src = this._noise(t, dur + 0.05);
+    const bp = this.ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 2.2;
+    const [f0, f1] = out ? [2400, 380] : [380, 2400];
+    bp.frequency.setValueAtTime(f0, t);
+    bp.frequency.exponentialRampToValueAtTime(f1, t + dur * 0.9);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.34, t + dur * 0.35);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(bp);
+    bp.connect(g);
+    g.connect(this.master);
+    const { o, g: sg } = this._osc('sine', out ? 640 : 220, t, dur, 0.1);
+    o.frequency.setValueAtTime(out ? 640 : 220, t);
+    o.frequency.exponentialRampToValueAtTime(out ? 220 : 640, t + dur * 0.8);
+    sg.gain.setValueAtTime(0.0001, t);
+    sg.gain.exponentialRampToValueAtTime(0.08, t + dur * 0.3);
+    sg.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  }
+
   // ---------------------------------------------------------------------------
   // run-in tension: drone + accelerating heartbeat, cut by a cymbal on the win
   // ---------------------------------------------------------------------------
