@@ -72,7 +72,13 @@ const state = {
 
 // --------------------------------------------------------------------------- three setup
 const canvas = $('#world');
-const renderer = createRenderer(canvas, Q);
+let renderer;
+try {
+  renderer = createRenderer(canvas, Q);
+} catch (err) {
+  $('#boot-msg').textContent = 'WebGL is not available on this device/browser — try the 2D Duck Derby (index.html).';
+  throw err;
+}
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(PAL.fog, 140, 560);
 const camera = new THREE.PerspectiveCamera(62, 1, 0.3, 1800);
