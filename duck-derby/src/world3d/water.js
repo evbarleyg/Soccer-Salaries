@@ -27,7 +27,7 @@ const NOISE_GLSL = /* glsl */ `
 
 const NO_BANK = 1e4; // aBank value for open water (no shoreline on that side)
 
-export function makeWaterMaterial() {
+export function makeWaterMaterial(opts = {}) {
   const F = getCourse().features;
   const uniforms = THREE.UniformsUtils.merge([
     THREE.UniformsLib.fog,
@@ -46,6 +46,7 @@ export function makeWaterMaterial() {
     },
   ]);
   const mat = new THREE.ShaderMaterial({
+    defines: opts.low ? { LOWQ: 1 } : {},
     uniforms,
     fog: true,
     extensions: { derivatives: true }, // fwidth() on WebGL1; built in on WebGL2
@@ -110,10 +111,14 @@ export function makeWaterMaterial() {
         float line2 = (1.0 - smoothstep(0.018, 0.03 + a2, abs(n2 - 0.55))) * clamp(0.05 / (a2 + 1e-4), 0.0, 1.0);
         float lines = line1 * 0.16 + line2 * 0.07;
         // fake normal from the fine octave's gradient for fresnel / glints
+        #ifdef LOWQ
+        vec3 nrm = normalize(vec3((n2 - 0.5) * (0.3 + 0.6 * chop), 1.0, (n1 - 0.5) * (0.3 + 0.6 * chop)));
+        #else
         float e = 0.4;
         float gx = vnoise((q + vec2(e, 0.0)) * f2 + drift) - n2;
         float gz = vnoise((q + vec2(0.0, e)) * f2 + drift) - n2;
         vec3 nrm = normalize(vec3(gx * (0.3 + 0.6 * chop), 1.0, gz * (0.3 + 0.6 * chop)));
+        #endif
         // base colour: turquoise band along the banks, deep blue mid-channel
         float shallowMix = 1.0 - smoothstep(0.0, 6.5, edge);
         vec3 col = mix(deep, shallow, 0.08 + 0.6 * shallowMix + 0.1 * n1);
@@ -129,12 +134,21 @@ export function makeWaterMaterial() {
         float l1 = 1.0 - smoothstep(0.1, 0.14 + ea, abs(edge - w1));
         float l2 = 1.0 - smoothstep(0.08, 0.12 + ea, abs(edge - w2));
         float b1 = smoothstep(0.28, 0.5, vnoise(vec2(s * 0.6 - time * 0.5, lat * 0.25)));
+        #ifdef LOWQ
+        float b2 = b1;
+        #else
         float b2 = smoothstep(0.4, 0.68, vnoise(vec2(s * 0.33 + time * 0.35, lat * 0.25 + 3.0)));
+        #endif
         float shore = max(l1 * b1, l2 * b2 * 0.7) * (1.0 - tun);
         // churned white water: streaks stretched along the flow, two layers at different speeds, clumped
         float c1 = vnoise(vec2(s * 0.36 - flow * 0.8, lat * 2.2));
+        #ifdef LOWQ
+        float c2 = c1;
+        float clump = 1.0;
+        #else
         float c2 = vnoise(vec2(s * 0.62 - flow * 1.3 + 9.0, lat * 3.1 + 4.0));
         float clump = 0.75 + 0.5 * vnoise(vec2(s * 0.12 - flow * 0.25, lat * 0.35));
+        #endif
         float cn = (c1 * 0.6 + c2 * 0.52) * clump;
         float ca = fwidth(cn);
         float churn = smoothstep(1.0 - foamAmt, 1.1 - foamAmt + ca, cn) * step(0.02, foamAmt);

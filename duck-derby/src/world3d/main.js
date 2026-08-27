@@ -132,7 +132,7 @@ async function boot() {
     rig.terrainHeight = terrain.heightAt;
   });
   await bootStep(40, 'Filling the river…', () => {
-    waterMat = makeWaterMaterial();
+    waterMat = makeWaterMaterial({ low: Q.tier === 'low' });
     fallMat = makeFallMaterial();
     scene.add(buildRiver(course, waterMat));
     const b = terrain.bounds;
