@@ -68,6 +68,40 @@ Hazards/items (drive them from your sim's timed events so replays match):
 - Photo finish: slow-mo 0.3× for the leader's last ~3%,
   freeze-frame flash at the line.
 
+## Items & autonomous item use (Mario Kart style)
+
+Item boxes float at fixed points on the course (after the first S-bend, before
+the Drop, mid-rapids). Passing through one grants an item chosen by a seeded,
+position-weighted table — catch-up logic like Mario Kart: the further back a
+duck is, the better its odds of a strong item. Each duck has a small seeded
+"brain" that decides *when* to fire (e.g. hold a shield while leading, fire a
+homing item when within N metres of the duck ahead, boost on corner exit).
+All of it runs inside the seeded simulation so a replay shows the same item
+rolls and the same decisions, and fairness holds because tables/brains are
+identical for every duck and keyed only on race position. Suggested set:
+
+- **Bread Boost** (mushroom): short burst; commonest item.
+- **Triple Bread**: three boosts the brain spaces out.
+- **Homing Hornet** (red shell): flies up the course to the duck directly
+  ahead → spin-out. Blockable by a held shield.
+- **Skipping Stone** (green shell): fired straight; hits the first duck in its
+  path or skips off harmlessly.
+- **Bubble Shield**: absorbs one hit; held behind the duck visibly.
+- **Squid Ink... er, Mud Splat**: brief muddy screen for the ducks *ahead*
+  (visual on their chase cams; tiny slowdown).
+- **Golden Goose Feather** (star): rare, back-of-pack only; invulnerable +
+  fast for a few seconds, plows through others (they wobble, no big loss).
+- **Thundercloud / Seagull Strike** (blue shell): very rare, only rolls for
+  the last third of the field; a seagull dive-bombs whoever is leading.
+- Crowd **hot dog** stays as a non-item ambient hazard aimed at the leader.
+
+Show item state in the HUD (slot with icon, roulette spin on pickup), over
+each duck (small held-item icon), and announce big hits in the commentary.
+Tune so items create 2–4 meaningful swings per race without making the last
+10% pure chaos (e.g. no new blue-shell rolls once the leader passes 90%).
+Cover with tests: item distribution by position is symmetric across ducks,
+brains are deterministic for a seed, win-rate chi-square still passes.
+
 ## Ducks
 
 Rebuild the 2D ducks in 3D from primitives (ellipsoid body, sphere head,
