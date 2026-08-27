@@ -55,7 +55,7 @@ export class CameraRig {
     if (this.mode !== 'tv' || this.reducedMotion) return;
     if (this.tvOverride && t < this.tvOverride.until - 0.3) return; // don't stack
     if (kind === 'lead') this.tvOverride = { shot: { id: 'ev-lead-' + t.toFixed(1), pair: [data.a, data.b], fov: 52 }, until: t + 3.2 };
-    else if (kind === 'hit') this.tvOverride = { shot: { id: 'ev-hit-' + t.toFixed(1), dollyOn: data.duck, ahead: 7, h: 0.6, fov: 70, stiff: 8 }, until: t + 1.9 };
+    else if (kind === 'hit') this.tvOverride = { shot: { id: 'ev-hit-' + t.toFixed(1), dollyOn: data.duck, ahead: 7, h: 0.7, fov: 68, stiff: 8 }, until: t + 2.9 };
     else if (kind === 'drop') this.tvOverride = { shot: null, until: t }; // handled by position logic
   }
 

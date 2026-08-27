@@ -465,6 +465,16 @@ function buildTimeline() {
   const cues = [];
   for (const e of race.events) {
     if (e.type === 'hotdog') cues.push({ t: e.t - 0.72, type: 'cue-hotdog', duck: e.duck });
+    if (e.type === 'hit') {
+      const w = e.item === 'seagull' ? 5 : e.item === 'hotdog' ? 4 : e.rank <= 2 ? 3 : e.rank <= 5 ? 1.5 : 0.7;
+      cues.push({ t: e.t - 1.1, type: 'cue-hit', duck: e.duck, by: e.by, item: e.item, w });
+      const win = race.windows[e.duck].find((x) => x.kind === 'spin' && Math.abs(x.t0 - e.t) < 1e-6);
+      if (win) {
+        const before = standingsAt(race, e.t).findIndex((r) => r.i === e.duck);
+        const after = standingsAt(race, win.t1 + 0.4).findIndex((r) => r.i === e.duck);
+        cues.push({ t: win.t1 + 0.4, type: 'cue-spun', duck: e.duck, before, after });
+      }
+    }
   }
   for (const p of race.projectiles) if (p.type === 'seagull' && p.diveT) cues.push({ t: p.diveT, type: 'cue-dive', duck: p.target });
   state.timeline = race.events.concat(cues).sort((a, b) => a.t - b.t);
@@ -726,20 +736,31 @@ function handleEvent(ev) {
       else if (ev.item === 'mud') { audio.splash(0.3); if (ev.victims && ev.victims.includes(state.target)) hud.callout('MUD!', ITEMS.mud.color); }
       else if (ev.item === 'stone') { audio.itemUse(); }
       break;
-    case 'hit':
+    case 'hit': {
       fx.splash(tmpV.copy(duckPos(i)), 1.2);
       if (ev.item === 'hotdog') fx.mustard(tmpV.copy(duckPos(i)).setY(duckPos(i).y + 0.8));
-      if (isT) { rig.kick(1.0); audio.bonk(); buzz([50, 40, 50]); hud.callout(ev.item === 'hornet' ? 'STUNG!' : ev.item === 'seagull' ? 'DIVE-BOMBED!' : ev.item === 'stone' ? 'BONK!' : 'HOT-DOGGED!', '#ff6f61'); flash(0.25); }
+      const byName = ev.by >= 0 ? state.raceNames[ev.by] : '';
+      const what = ev.item === 'hornet' ? 'STUNG' : ev.item === 'seagull' ? 'DIVE-BOMBED' : ev.item === 'stone' ? 'BONK' : 'HOT-DOGGED';
+      if (isT) { rig.kick(1.0); rig.fovPunch(4); audio.bonk(); buzz([50, 40, 50]); hud.callout(byName ? `${what}! ← ${byName}` : `${what}!`, '#ff6f61'); flash(0.25); }
+      else if (ev.by === state.target) { hud.callout(`HIT ${name}!`, ITEMS[ev.item] ? ITEMS[ev.item].color : '#ffd23f'); audio.blip(true); buzz(30); }
       else if (nearCam(i)) audio.bonk();
       if (ev.rank <= 2) audio.ooh();
-      if (ev.rank <= 3 && nearCam(i, 70)) rig.tvEvent('hit', { duck: i }, state.t);
       break;
+    }
     case 'hotdog':
       if (ev.result !== 'hit') { fx.mustard(tmpV.copy(duckPos(i)).setY(duckPos(i).y + 1.5)); audio.pop(); }
       break;
     case 'cue-hotdog':
       audio.whistle(0.7);
-      if (i === state.target) hud.popup('INCOMING!', '#ffd23f');
+      if (i === state.target) hud.callout('INCOMING!', '#ffd23f');
+      rig.tvEvent('hit', { duck: i }, state.t);
+      break;
+    case 'cue-hit':
+      if (ev.w >= 3) rig.tvEvent('hit', { duck: i }, state.t); // pre-roll so the impact and the roll are on screen
+      break;
+    case 'cue-spun':
+      if (isT && ev.after > ev.before) hud.callout(`−${ev.after - ev.before}  ${ordinal(ev.before + 1)} → ${ordinal(ev.after + 1)}`, '#ff6f61');
+      else if (isT) hud.callout('Held position!', '#7dff8a');
       break;
     case 'cue-dive':
       audio.screech();
@@ -747,6 +768,7 @@ function handleEvent(ev) {
     case 'blocked':
       audio.pop();
       if (isT) hud.callout(ev.reason === 'shield' ? 'BLOCKED!' : 'NO EFFECT!', ITEMS.shield.color);
+      else if (ev.by === state.target) hud.callout(`DENIED — ${name}'s ${ev.reason === 'shield' ? 'bubble' : 'feather'}`, ITEMS.shield.color);
       fx.sparkle(tmpV.copy(duckPos(i)).setY(duckPos(i).y + 0.6), 0xbdf0ff, 4);
       break;
     case 'plow':
@@ -1217,7 +1239,8 @@ function step(dt) {
         state.t += dt;
         if (Q.reducedMotion && state.phaseTime > 5) { state.podium = true; setPhase('results'); rig.setMode(state.view === 'free' ? 'free' : 'podium'); }
       } else if (!state.replay) {
-        state.replay = { t0: state.firstFinishT - 1.6 };
+        const lastLead = race.events.filter((e) => e.type === 'lead' && e.t < state.firstFinishT).pop();
+        state.replay = { t0: lastLead && lastLead.t > state.firstFinishT - 4 ? Math.max(state.firstFinishT - 4, lastLead.t - 1.2) : state.firstFinishT - 1.6 };
         state.t = state.replay.t0;
         for (const d of state.ducks) d.anim.prevLat = null;
         if (state.view !== 'free') rig.setMode('finish');
