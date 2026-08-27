@@ -1600,13 +1600,13 @@ function step(dt) {
     for (let i = 0; i < state.ducks.length; i++) {
       const d = state.ducks[i];
       const ds = state.duckStates[i];
-      const dist = d.duck.group.position.distanceTo(camP);
+      const dist = ds.pos.distanceTo(camP); // sim position for this frame (the mesh may not have been placed yet right after a seek)
       ctx.near = dist < 60;
       ctx.lens = dist < 5 || d.ghosted;
       if (ds.podiumSpot) {
         // stand on the podium, face the camera, idle bob (fully visible even if it was ghosted a moment ago)
         d.duck.group.visible = true;
-        if (d.ghost !== 1) { d.ghost = 1; d.ghosted = false; for (const mt of d.duck.glowMats) { mt.transparent = false; mt.opacity = 1; } }
+        if (d.ghost !== 1) { d.ghost = 1; d.ghosted = false; for (const mt of d.duck.glowMats) { if (mt.transparent) { mt.transparent = false; mt.needsUpdate = true; } mt.opacity = 1; } if (d.extras) for (const o of d.extras) o.visible = true; }
         d.duck.group.position.copy(ds.podiumSpot);
         d.duck.group.position.y += 0.05 + Math.abs(Math.sin(state.realTime * 3 + i)) * 0.08;
         d.duck.group.rotation.set(0, scenery.podium.yaw, 0);
@@ -1622,17 +1622,28 @@ function step(dt) {
       }
       d.duck.shadow.visible = true;
       // ducks between the camera and my duck are ghosted so they never blank the frame (hidden when right on the lens)
-      let ghost = 1;
-      if (rig.mode === 'chase' && i !== state.target && state.phase === 'race' && dist < 7) ghost = dist < 4.6 ? 0 : clamp((dist - 4.6) / 2.4, 0, 1);
+      let ghostWant = 1;
+      if (rig.mode === 'chase' && i !== state.target && state.phase === 'race' && dist < 8) ghostWant = dist < 5.2 ? 0 : clamp((dist - 5.2) / 2.8, 0, 1);
+      // ease toward the wanted fade (no popping as pack-mates hover around the threshold); snap right after a seek
+      d.ghostV = d.ghostV === undefined || state.snapGhost ? ghostWant : d.ghostV + (ghostWant - d.ghostV) * Math.min(1, dt * 8);
+      const ghost = d.ghostV < 0.04 ? 0 : d.ghostV;
       d.duck.group.visible = ghost > 0;
-      d.ghosted = ghost < 1;
+      d.ghosted = ghost < 0.99;
       if (ghost > 0) {
         const q = Math.round(ghost * 10) / 10; // quantised so materials only change on real steps
         if (d.ghost !== q) {
           for (const mt of d.duck.glowMats) {
-            mt.transparent = q < 1; // depth-writing fade: no x-ray insides, no dither noise
+            const tr = q < 1;
+            if (mt.transparent !== tr) { mt.transparent = tr; mt.needsUpdate = true; } // OPAQUE is a compile-time define: switch program
             mt.opacity = q;
           }
+          // parts with shared/unfadeable materials (hat spinners etc.) simply hide while the duck is ghosted
+          if (!d.extras) {
+            const faded = new Set(d.duck.glowMats);
+            d.extras = [];
+            d.duck.group.traverse((o) => { if (o.isMesh && o !== d.duck.shadow && o !== d.duck.wake && o !== d.duck.foam && !(d.duck.lod && d.duck.lod.far.includes(o)) && o.material && !faded.has(o.material)) d.extras.push(o); });
+          }
+          for (const o of d.extras) o.visible = q >= 0.99;
           d.ghost = q;
         }
       }
@@ -1667,6 +1678,7 @@ function step(dt) {
     separateDucks();
     declutterTags();
     updateYouMarker();
+    state.snapGhost = false;
   }
 
   // ---- world updates
@@ -1938,9 +1950,13 @@ function jump(t) {
   hud.lastTarget = state.target;
   for (const d of state.ducks) d.anim.prevLat = null;
   state.envSnap = true; // lighting mood (golden hour) jumps with the seek instead of easing
+  state.snapGhost = true;
   rig.cut();
-  // settle springs, then refresh the HUD so a seek is immediately consistent
+  // settle springs, then run one whole frame (dt 0) so the very next paint is consistent (ducks placed, ghosts, HUD)
   for (let k = 0; k < 3; k++) rig.update(0.5, frameCtx(0.5));
+  const keepRate = state.rate;
+  step(0);
+  state.rate = keepRate;
   hud.update(frameCtx(0));
   state.jumping = false;
 }
