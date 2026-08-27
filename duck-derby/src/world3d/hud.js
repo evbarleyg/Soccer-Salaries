@@ -202,7 +202,7 @@ export class Hud {
       // mud + speed lines (chase view only)
       const muddy = view === 'chase' && !!d.win.mud;
       if (muddy !== !!this._muddy) { this._muddy = muddy; this.el.mud.classList.remove('show'); if (muddy) { void this.el.mud.offsetWidth; this.el.mud.classList.add('show'); } }
-      this.el.speed.classList.toggle('show', view === 'chase' && (!!d.win.boost || !!d.win.star || (d.section === 'tunnel' && d.v > 20)));
+      this.el.speed.classList.toggle('show', view === 'chase' && (!!d.win.boost || !!d.win.star));
     }
     if (this.sectionUntil && realTime > this.sectionUntil) { this.el.section.classList.remove('show'); this.sectionUntil = 0; }
     this._pumpQueue(realTime);

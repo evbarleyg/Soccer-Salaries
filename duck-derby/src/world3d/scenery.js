@@ -1362,7 +1362,16 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
     }
     // light shafts from roof holes + glow pools on the water
     const shaftMat = basic(0xfff1c4, { transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false });
-    const poolMat = basic(0xfff1c4, { transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    // soft-edged glow pool (radial gradient) so it reads as light on the water, not a disc
+    const poolTex = canvasTexture(128, 128, (c, w, h) => {
+      const grd = c.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+      grd.addColorStop(0, 'rgba(255,241,196,1)');
+      grd.addColorStop(0.45, 'rgba(255,241,196,0.55)');
+      grd.addColorStop(1, 'rgba(255,241,196,0)');
+      c.fillStyle = grd;
+      c.fillRect(0, 0, w, h);
+    });
+    const poolMat = basic(0xffffff, { map: poolTex, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
     const shafts = [];
     for (let s = s0 + 16; s < s1 - 10; s += 19) {
       const lat = rng.range(-2.5, 2.5);
@@ -1372,7 +1381,7 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
       shaft.rotation.z = rng.range(-0.12, 0.12);
       shaft.renderOrder = 6;
       g.add(shaft);
-      const pool = new THREE.Mesh(new THREE.CircleGeometry(2.1, 18), poolMat);
+      const pool = new THREE.Mesh(new THREE.PlaneGeometry(5.2, 5.2), poolMat);
       pool.rotation.x = -Math.PI / 2;
       P(s, lat, 0.15, pool.position);
       pool.renderOrder = 5;
