@@ -1212,9 +1212,9 @@ function updateYouMarker() {
     const lk = state.looks[state.target];
     mk.userData.paint({ ...lk.towel, number: lk.number }, state.follow === 'leader' ? 'LEADER' : 'YOU');
   }
-  const dist = d.dist || 10;
+  const dist = d.duck.group.position.distanceTo(camera.position);
   const chase = rig.mode === 'chase' && state.phase === 'race';
-  const k = clamp(dist * (chase ? 0.07 : 0.085), 0.45, 4.5);
+  const k = clamp(dist * (chase ? 0.07 : 0.085), 0.45, 3.2);
   mk.scale.set(1.2 * k, 1.2 * k, 1);
   mk.position.copy(d.duck.group.position);
   mk.position.y += (chase ? 1.45 : 2.3) + k * 0.6 + Math.sin(state.realTime * 3.8) * 0.05 * k;
