@@ -892,7 +892,7 @@ function showResults() {
   $('#res-seed').textContent = 'seed ' + seedToCode(state.seed);
   const minePlace = state.follow === 'fixed' ? order.indexOf(state.target) + 1 : 0;
   const minePick = minePlace ? picks.indexOf(state.target) + 1 : 0;
-  els.resSub.textContent = (minePlace ? `You: Pick ${minePick} · ${state.raceNames[state.target]} · ${ordinal(minePlace)}.  ` : '') + `${winner} ${race.photoFinish ? 'won a photo finish' : `won by ${race.margin.toFixed(2)} s`} · ${race.count} ducks · ${race.leadChanges} lead change${race.leadChanges === 1 ? '' : 's'}`;
+  els.resSub.textContent = (minePlace ? `You: pick ${minePick} (${ordinal(minePlace)}) · ` : '') + `${winner} ${race.photoFinish ? 'won a photo finish' : `won by ${race.margin.toFixed(2)} s`} · ${race.leadChanges} lead change${race.leadChanges === 1 ? '' : 's'}`;
   els.resBoard.innerHTML = '';
   const mine = state.follow === 'fixed' ? state.target : -1;
   let myRow = null;
@@ -941,7 +941,7 @@ function raceHighlights(race) {
   const lateHit = race.events.filter((e) => e.type === 'hit' && e.rank === 0).pop();
   if (lateHit) out.push({ title: 'Ouch', text: `${names[lateHit.duck]} was leading when the ${lateHit.item === 'hotdog' ? 'hot dog' : ITEMS[lateHit.item]?.name.toLowerCase() || lateHit.item} landed (${fmtTime(lateHit.t)}).` });
   if (n >= 2) out.push({ title: 'Spread', text: `${(race.finishTimes[race.order[n - 1]] - race.finishTimes[race.order[0]]).toFixed(1)} s from first to last · ${race.leadChanges} lead changes.` });
-  return out.slice(0, 4);
+  return out.slice(0, Q.mobile || window.innerWidth < 500 ? 2 : 4);
 }
 
 function shareQuery(withCam = false) {

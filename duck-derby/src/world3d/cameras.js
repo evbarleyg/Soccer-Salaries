@@ -305,12 +305,12 @@ export class CameraRig {
           desiredPos.x += Math.cos(a) * 2 - 2;
           desiredPos.z += Math.sin(a) * 2;
           desiredLook.copy(this.podiumSpot.look);
-          // keep the podium clear of the results panel: right half on landscape, upper half on portrait
+          // keep the podium clear of the results panel: right half on landscape, upper half (and wider) on portrait
           const f = this._v3.subVectors(this.podiumSpot.look, this.podiumSpot.pos).setY(0).normalize();
-          if (this.portrait) desiredLook.y -= 2.6;
+          if (this.portrait) { desiredPos.addScaledVector(f, -7); desiredPos.y += 2.2; desiredLook.y -= 7.5; }
           else desiredLook.addScaledVector(this._v3.set(f.z, 0, -f.x), 4.8);
         }
-        wantFov = baseFov - 4;
+        wantFov = this.portrait ? baseFov + 6 : baseFov - 4;
         stiffness = 3;
         break;
       }

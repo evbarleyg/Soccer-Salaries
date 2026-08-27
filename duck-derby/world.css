@@ -378,7 +378,9 @@ body.phase-lobby #hud-tl, body.phase-lobby #hud-item, body.phase-lobby #hud-ladd
   #hud-item canvas { width: 62px; height: 62px; border-radius: 14px; }
   .cta { position: sticky; bottom: -12px; background: linear-gradient(180deg, rgba(20,36,58,0), var(--panel-solid) 30%); padding: 14px 0 6px; margin-top: 0.4rem; z-index: 2; }
   #results.panel { align-items: end; justify-items: center; background: linear-gradient(0deg, rgba(8,16,28,0.7), rgba(8,16,28,0) 80%); }
-  #results .panel-inner { max-height: 64vh; max-height: 64dvh; }
+  #results .panel-inner { max-height: 58vh; max-height: 58dvh; padding: 14px; }
+  .res-head h2 { font-size: 1.35rem; }
+  #res-notes { font-size: 0.74rem; }
   #res-board li { font-size: 0.85rem; padding: 5px 6px; }
 }
 @media (max-height: 500px) and (orientation: landscape) {
