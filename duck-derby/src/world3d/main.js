@@ -1254,6 +1254,11 @@ async function shareResultImage(btn) {
 }
 function draftText(withUrl = true) {
   const race = state.race;
+  if (state.trial) {
+    const me = state.trial.playerIndex;
+    const lines = race.order.map((i, k) => `${ordinal(k + 1)} — ${state.raceNames[i]} (${fmtTime(race.finishTimes[i])})${i === me ? ' ← me' : ''}`);
+    return `Duck Derby World — Tilt Trial: I steered ${state.raceNames[me]} to ${ordinal(race.order.indexOf(me) + 1)} in ${fmtTime(race.finishTimes[me])}\n${lines.join('\n')}${withUrl ? '\n' + location.origin + location.pathname : ''}`;
+  }
   const picks = draftOrder(race.order, state.rule);
   const lines = picks.map((i, k) => `Pick ${k + 1} — ${state.raceNames[i]} (${ordinal(race.order.indexOf(i) + 1)}, ${fmtTime(race.finishTimes[i])})`);
   return `Duck Derby World draft order (${state.rule === 'l' ? 'last place picks first, ' : ''}seed ${seedToCode(state.seed)})\n${lines.join('\n')}${withUrl ? '\n' + shareUrl() : ''}`;
