@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Duck Derby — Fantasy Draft Order Race</title>
+    <meta name="description" content="Race a flock of gloriously animated ducks to decide your fantasy football draft order. Fair, seeded, replayable, shareable." />
+    <meta property="og:title" content="Duck Derby — Fantasy Draft Order Race" />
+    <meta property="og:description" content="Race a flock of ducks to decide your fantasy draft order. Fair, replayable, shareable." />
+    <meta name="theme-color" content="#1560A8" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <canvas id="scene" aria-hidden="true"></canvas>
+
+    <header class="topbar">
+      <div class="brand" aria-label="Duck Derby">
+        <span class="brand-duck" aria-hidden="true">🦆</span>
+        <span class="brand-text">DUCK<em>DERBY</em></span>
+        <span class="brand-tag">Draft Order Decider</span>
+      </div>
+      <div class="top-actions">
+        <span id="seed-badge" class="badge" hidden title="Race seed — same names + same seed = same race"></span>
+        <button id="btn-sound" class="icon-btn" type="button" aria-pressed="true" title="Sound on/off">
+          <span class="ico-sound-on" aria-hidden="true">🔊</span><span class="ico-sound-off" aria-hidden="true">🔇</span>
+          <span class="sr-only">Toggle sound</span>
+        </button>
+        <button id="btn-fullscreen" class="icon-btn" type="button" title="Fullscreen">⛶<span class="sr-only">Fullscreen</span></button>
+      </div>
+    </header>
+
+    <!-- SETUP -->
+    <section id="setup" class="panel setup" aria-labelledby="setup-title">
+      <div class="panel-scroll">
+        <h1 id="setup-title">Race for your <span>draft order</span></h1>
+        <p class="lede">Name your ducks. We'll race them down the pond — fair, seeded and replayable — and hand you a draft board.</p>
+
+        <div id="share-banner" class="share-banner" hidden>
+          <strong>Shared race loaded.</strong> Same ducks + same seed = the exact same race. Hit <em>Replay</em> to watch it.
+        </div>
+
+        <div class="field">
+          <div class="field-label">League size</div>
+          <div class="size-row">
+            <div class="chips" role="group" aria-label="League size presets">
+              <button type="button" class="chip" data-size="8">8</button>
+              <button type="button" class="chip" data-size="10">10</button>
+              <button type="button" class="chip" data-size="12">12</button>
+              <button type="button" class="chip" data-size="14">14</button>
+            </div>
+            <div class="stepper" aria-label="Custom size">
+              <button type="button" id="size-minus" class="step" aria-label="Remove a duck">−</button>
+              <output id="size-out">12</output>
+              <button type="button" id="size-plus" class="step" aria-label="Add a duck">+</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label row-between">
+            <span>Ducks <small>(one per manager)</small></span>
+            <span class="mini-actions">
+              <button type="button" id="btn-sample" class="link-btn">Fill sample names</button>
+              <button type="button" id="btn-shuffle-looks" class="link-btn" title="Re-roll colours and hats">Restyle</button>
+              <button type="button" id="btn-clear" class="link-btn">Clear</button>
+            </span>
+          </div>
+          <ol id="roster" class="roster"></ol>
+        </div>
+
+        <details class="advanced">
+          <summary>Race options</summary>
+          <div class="opt-grid">
+            <label class="opt">
+              <span>Race length</span>
+              <select id="opt-length">
+                <option value="24">Sprint · ~25s</option>
+                <option value="38" selected>Classic · ~40s</option>
+                <option value="55">Epic · ~60s</option>
+              </select>
+            </label>
+            <label class="opt">
+              <span>Draft rule</span>
+              <select id="opt-rule">
+                <option value="winner-first" selected>Winner picks 1st</option>
+                <option value="last-first">Last place picks 1st</option>
+              </select>
+            </label>
+            <label class="opt">
+              <span>Crowd hazards</span>
+              <select id="opt-hazards">
+                <option value="on" selected>Hot dogs fly at the leader</option>
+                <option value="off">Off (pure racing)</option>
+              </select>
+            </label>
+            <label class="opt">
+              <span>Seed <small>(blank = random)</small></span>
+              <input id="opt-seed" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="e.g. 7GQ-M2XD" maxlength="12" />
+            </label>
+          </div>
+          <p class="fine">Every duck draws its speed, stamina and luck from identical distributions, so each name has exactly the same chance. The seed makes a race reproducible: share the link and anyone can re-watch the identical race.</p>
+        </details>
+      </div>
+      <div class="panel-footer">
+        <button id="btn-start" class="cta" type="button">
+          <span class="cta-main">Start the Derby</span>
+          <span class="cta-sub" id="cta-sub">12 ducks · classic distance</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- HUD -->
+    <aside id="hud" class="hud" hidden>
+      <div class="hud-head">
+        <span class="live-dot" aria-hidden="true"></span>
+        <span class="hud-title">LIVE ORDER</span>
+        <span id="race-clock" class="race-clock">0.0</span>
+      </div>
+      <ol id="standings" class="standings"></ol>
+      <div class="hud-foot">
+        <div class="progress"><div id="progress-bar" class="progress-bar"></div><div id="progress-dots" class="progress-dots"></div></div>
+        <button id="btn-skip" class="ghost-btn" type="button">Skip to results ⏭</button>
+      </div>
+    </aside>
+
+    <div id="ticker" class="ticker" hidden aria-live="polite"></div>
+    <div id="callout" class="callout" aria-live="assertive"></div>
+
+    <!-- RESULTS -->
+    <section id="results" class="panel results" hidden aria-labelledby="results-title">
+      <div class="panel-scroll">
+        <div class="results-head">
+          <h2 id="results-title">Official Draft Order</h2>
+          <p id="results-sub" class="lede"></p>
+        </div>
+        <div id="podium" class="podium"></div>
+        <ol id="draft-board" class="draft-board"></ol>
+      </div>
+      <div class="panel-footer results-actions">
+        <button id="btn-again" class="cta small" type="button"><span class="cta-main">Race again</span><span class="cta-sub">new seed</span></button>
+        <button id="btn-replay" class="sec-btn" type="button">Instant replay</button>
+        <button id="btn-edit" class="sec-btn" type="button">Edit ducks</button>
+        <button id="btn-copy" class="sec-btn" type="button">Copy order</button>
+        <button id="btn-share" class="sec-btn" type="button">Copy share link</button>
+        <button id="btn-save" class="sec-btn" type="button">Save image</button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <noscript><p style="padding:2rem;color:#fff">Duck Derby needs JavaScript to race.</p></noscript>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

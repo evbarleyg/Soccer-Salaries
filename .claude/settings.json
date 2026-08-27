@@ -17,19 +17,19 @@
       "Bash(npm run build)",
       "Bash(npm run ci)",
       "Bash(node --check *)",
-      "Bash(python3 -m py_compile *)"
-    ],
-    "ask": [
+      "Bash(python3 -m py_compile *)",
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push *)",
-      "Bash(gh *)",
       "Bash(npm install *)",
       "Bash(npm ci)",
       "Bash(curl *)",
       "Bash(wget *)",
       "Bash(rm *)",
-      "Bash(open *)",
+      "Bash(open *)"
+    ],
+    "ask": [
+      "Bash(gh *)",
       "Bash(python3 scripts/update_pl_data.py *)"
     ],
     "deny": [
