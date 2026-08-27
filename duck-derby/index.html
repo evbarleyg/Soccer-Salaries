@@ -14,62 +14,80 @@
     <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
+  <body class="phase-setup">
     <canvas id="scene" aria-hidden="true"></canvas>
 
     <header class="topbar">
       <div class="brand" aria-label="Duck Derby">
         <span class="brand-duck" aria-hidden="true">🦆</span>
         <span class="brand-text">DUCK<em>DERBY</em></span>
-        <span class="brand-tag">Draft Order Decider</span>
+        <span id="brand-tag" class="brand-tag">Draft Order Decider</span>
       </div>
       <div class="top-actions">
-        <span id="seed-badge" class="badge" hidden title="Race seed — same names + same seed = same race"></span>
-        <button id="btn-sound" class="icon-btn" type="button" aria-pressed="true" title="Sound on/off">
+        <span id="seed-badge" class="badge" hidden title="Race code — same names + same code = same race"></span>
+        <button id="btn-sound" class="icon-btn" type="button" aria-pressed="true" title="Sound (M)">
           <span class="ico-sound-on" aria-hidden="true">🔊</span><span class="ico-sound-off" aria-hidden="true">🔇</span>
           <span class="sr-only">Toggle sound</span>
         </button>
-        <button id="btn-fullscreen" class="icon-btn" type="button" title="Fullscreen">⛶<span class="sr-only">Fullscreen</span></button>
+        <button id="btn-fullscreen" class="icon-btn" type="button" title="Fullscreen (F)"><span aria-hidden="true">⛶</span><span class="sr-only">Fullscreen</span></button>
       </div>
     </header>
 
     <!-- SETUP -->
     <section id="setup" class="panel setup" aria-labelledby="setup-title">
       <div class="panel-scroll">
-        <h1 id="setup-title">Race for your <span>draft order</span></h1>
-        <p class="lede">Name your ducks. We'll race them down the pond — fair, seeded and replayable — and hand you a draft board.</p>
-
-        <div id="share-banner" class="share-banner" hidden>
-          <strong>Shared race loaded.</strong> Same ducks + same seed = the exact same race. Hit <em>Replay</em> to watch it.
+        <div class="setup-head">
+          <h1 id="setup-title">Race for your <span>draft order</span></h1>
+          <p class="lede">Name your ducks. We'll race them down the pond — fair, seeded and replayable — and hand you a draft board.</p>
         </div>
 
-        <div class="field">
-          <div class="field-label">League size</div>
+        <div id="share-banner" class="share-banner" hidden>
+          <strong>Shared race loaded.</strong> Same ducks + same code = the exact same race. Hit <em>Replay</em> to watch it.
+        </div>
+
+        <div class="field field-league">
+          <label class="field-label" for="opt-league">League name <small>(optional)</small></label>
+          <input id="opt-league" class="text-input" type="text" maxlength="40" placeholder="e.g. Sunday Scaries — 2026 Draft" autocomplete="off" spellcheck="false" />
+        </div>
+
+        <div class="field field-size">
+          <div class="field-label" id="size-label">League size</div>
           <div class="size-row">
-            <div class="chips" role="group" aria-label="League size presets">
-              <button type="button" class="chip" data-size="8">8</button>
-              <button type="button" class="chip" data-size="10">10</button>
-              <button type="button" class="chip" data-size="12">12</button>
-              <button type="button" class="chip" data-size="14">14</button>
+            <div class="chips" role="group" aria-labelledby="size-label">
+              <button type="button" class="chip" data-size="8" aria-pressed="false">8</button>
+              <button type="button" class="chip" data-size="10" aria-pressed="false">10</button>
+              <button type="button" class="chip" data-size="12" aria-pressed="false">12</button>
+              <button type="button" class="chip" data-size="14" aria-pressed="false">14</button>
             </div>
-            <div class="stepper" aria-label="Custom size">
+            <div class="stepper" role="group" aria-label="Custom size">
               <button type="button" id="size-minus" class="step" aria-label="Remove a duck">−</button>
-              <output id="size-out">12</output>
+              <output id="size-out" aria-live="polite">12</output>
               <button type="button" id="size-plus" class="step" aria-label="Add a duck">+</button>
             </div>
           </div>
         </div>
 
-        <div class="field">
+        <div class="field field-rule">
+          <div class="field-label" id="rule-label">The race decides…</div>
+          <div role="radiogroup" class="chips rule-chips" aria-labelledby="rule-label" aria-describedby="rule-help">
+            <button type="button" class="chip" role="radio" data-rule="winner-first" aria-checked="true">Winner gets pick 1</button>
+            <button type="button" class="chip" role="radio" data-rule="winner-choice" aria-checked="false" tabindex="-1">Winner chooses first</button>
+            <button type="button" class="chip" role="radio" data-rule="last-first" aria-checked="false" tabindex="-1">Last place gets pick 1</button>
+          </div>
+          <p id="rule-help" class="fine rule-help">1st across the line drafts 1.01, 2nd drafts 1.02…</p>
+        </div>
+
+        <div class="field field-roster">
           <div class="field-label row-between">
-            <span>Ducks <small>(one per manager)</small></span>
+            <span id="roster-label">Ducks <small>(one per manager)</small></span>
             <span class="mini-actions">
-              <button type="button" id="btn-sample" class="link-btn">Fill sample names</button>
+              <button type="button" id="btn-sample" class="link-btn" title="Fill the empty rows with sample names">Sample names</button>
               <button type="button" id="btn-shuffle-looks" class="link-btn" title="Re-roll colours and hats">Restyle</button>
               <button type="button" id="btn-clear" class="link-btn">Clear</button>
             </span>
           </div>
-          <ol id="roster" class="roster"></ol>
+          <ol id="roster" class="roster" aria-labelledby="roster-label"></ol>
+          <p class="fine roster-tip">Tip: paste a whole list of names into any row.</p>
         </div>
 
         <details class="advanced">
@@ -84,13 +102,6 @@
               </select>
             </label>
             <label class="opt">
-              <span>Draft rule</span>
-              <select id="opt-rule">
-                <option value="winner-first" selected>Winner picks 1st</option>
-                <option value="last-first">Last place picks 1st</option>
-              </select>
-            </label>
-            <label class="opt">
               <span>Crowd hazards</span>
               <select id="opt-hazards">
                 <option value="on" selected>Hot dogs fly at the leader</option>
@@ -98,15 +109,23 @@
               </select>
             </label>
             <label class="opt">
-              <span>Seed <small>(blank = random)</small></span>
-              <input id="opt-seed" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="e.g. 7GQ-M2XD" maxlength="12" />
+              <span>Effects</span>
+              <select id="opt-motion">
+                <option value="full" selected>Full effects</option>
+                <option value="calm">Calm (reduced motion)</option>
+              </select>
+            </label>
+            <label class="opt">
+              <span>Race code <small>(blank = random)</small></span>
+              <input id="opt-seed" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="e.g. 3GQ-M2XD" maxlength="10" />
             </label>
           </div>
-          <p class="fine">Every duck draws its speed, stamina and luck from identical distributions, so each name has exactly the same chance. The seed makes a race reproducible: share the link and anyone can re-watch the identical race.</p>
+          <p class="fine">Every duck draws its speed, stamina and luck from identical distributions, so each name has exactly the same chance. The code makes a race reproducible: share the link and anyone can re-watch the identical race.</p>
+          <p class="fine keys-help"><kbd>Space</kbd>/<kbd>P</kbd> pause · <kbd>M</kbd> mute · <kbd>F</kbd> fullscreen · <kbd>Esc</kbd> skip · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> start</p>
         </details>
       </div>
       <div class="panel-footer">
-        <button id="btn-start" class="cta" type="button">
+        <button id="btn-start" class="cta" type="button" aria-describedby="cta-sub">
           <span class="cta-main">Start the Derby</span>
           <span class="cta-sub" id="cta-sub">12 ducks · classic distance</span>
         </button>
@@ -114,43 +133,62 @@
     </section>
 
     <!-- HUD -->
-    <aside id="hud" class="hud" hidden>
+    <aside id="hud" class="hud" hidden aria-label="Live race order" tabindex="-1">
       <div class="hud-head">
         <span class="live-dot" aria-hidden="true"></span>
         <span class="hud-title">LIVE ORDER</span>
-        <span id="race-clock" class="race-clock">0.0</span>
+        <span id="hud-league" class="hud-league" hidden></span>
+        <span id="race-clock" class="race-clock" aria-hidden="true">0.0</span>
       </div>
-      <ol id="standings" class="standings"></ol>
+      <ol id="standings" class="standings" aria-hidden="true"></ol>
       <div class="hud-foot">
-        <div class="progress"><div id="progress-bar" class="progress-bar"></div><div id="progress-dots" class="progress-dots"></div></div>
-        <button id="btn-skip" class="ghost-btn" type="button">Skip to results ⏭</button>
+        <button id="btn-pause" class="ghost-btn" type="button" aria-pressed="false" title="Pause (P)"><span class="ico-pp" aria-hidden="true"></span><span class="lbl">Pause</span></button>
+        <div class="progress" aria-hidden="true"><div id="progress-bar" class="progress-bar"></div><div id="progress-dots" class="progress-dots" aria-hidden="true"></div></div>
+        <button id="btn-skip" class="ghost-btn" type="button" title="Skip to results (Esc)" aria-label="Skip to results"><span class="lbl">Skip to results</span> <span class="glyph" aria-hidden="true">⏭</span></button>
       </div>
     </aside>
 
-    <div id="ticker" class="ticker" hidden aria-live="polite"></div>
-    <div id="callout" class="callout" aria-live="assertive"></div>
+    <div id="ticker" class="ticker" hidden></div>
+    <div id="callout" class="callout" aria-hidden="true"></div>
+    <p id="sr-live" class="sr-only" aria-live="polite" aria-atomic="true"></p>
 
     <!-- RESULTS -->
     <section id="results" class="panel results" hidden aria-labelledby="results-title">
       <div class="panel-scroll">
         <div class="results-head">
-          <h2 id="results-title">Official Draft Order</h2>
+          <span class="stamp" aria-hidden="true">Official result</span>
+          <p id="results-overline" class="overline" hidden>Official draft order</p>
+          <h2 id="results-title" tabindex="-1">Official Draft Order</h2>
           <p id="results-sub" class="lede"></p>
+          <button id="btn-reveal-all" class="link-btn reveal-all" type="button" hidden>Reveal all</button>
         </div>
+        <div id="hero" class="hero-card" hidden></div>
+        <p id="podium-cap" class="podium-cap" hidden>Race podium (bragging rights only)</p>
         <div id="podium" class="podium"></div>
         <ol id="draft-board" class="draft-board"></ol>
       </div>
       <div class="panel-footer results-actions">
-        <button id="btn-again" class="cta small" type="button"><span class="cta-main">Race again</span><span class="cta-sub">new seed</span></button>
-        <button id="btn-replay" class="sec-btn" type="button">Instant replay</button>
-        <button id="btn-edit" class="sec-btn" type="button">Edit ducks</button>
-        <button id="btn-copy" class="sec-btn" type="button">Copy order</button>
-        <button id="btn-share" class="sec-btn" type="button">Copy share link</button>
+        <button id="btn-share" class="cta small" type="button"><span class="cta-main">Share result</span><span class="cta-sub">link replays this exact race</span></button>
+        <button id="btn-copylink" class="link-btn copy-link" type="button">Copy link</button>
         <button id="btn-save" class="sec-btn" type="button">Save image</button>
+        <button id="btn-copy" class="sec-btn" type="button">Copy as text</button>
+        <span class="quiet-group">
+          <button id="btn-replay" class="sec-btn" type="button">Watch replay</button>
+          <button id="btn-edit" class="sec-btn" type="button">Edit ducks</button>
+          <button id="btn-again" class="sec-btn" type="button" title="Draws a fresh code — this result stays in your share link">New race</button>
+        </span>
+        <div id="confirm-new" class="confirm-sheet" role="alertdialog" aria-labelledby="confirm-new-text" hidden>
+          <p id="confirm-new-text"><strong>Start a brand-new race?</strong> This draws a fresh code — tonight's result stays in the link you shared.</p>
+          <div class="confirm-actions">
+            <button id="btn-confirm-new" class="cta small" type="button"><span class="cta-main">New race</span></button>
+            <button id="btn-cancel-new" class="sec-btn" type="button">Cancel</button>
+          </div>
+        </div>
       </div>
     </section>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="safe-probe" class="safe-probe" aria-hidden="true"></div>
 
     <noscript><p style="padding:2rem;color:#fff">Duck Derby needs JavaScript to race.</p></noscript>
     <script type="module" src="src/main.js"></script>

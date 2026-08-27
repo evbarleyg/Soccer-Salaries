@@ -10,8 +10,15 @@ async function loadPlaywright() {
     return createRequire(import.meta.url)(root + '/playwright');
   }
 }
-const [baseUrl = 'http://localhost:8080/duck-derby/', outDir = 'shots', seedCode = '7GQ-M2XD'] = process.argv.slice(2);
+// NB: race codes are 7 Crockford chars whose first char is 0-3 (32-bit seed); anything
+// else is rejected by the app and it would silently race a random seed instead.
+const [baseUrl = 'http://localhost:8080/duck-derby/', outDir = 'shots', seedCode = '3GQ-M2XD'] = process.argv.slice(2);
+if (!/^[0-3][0-9A-HJKMNP-TV-Z]{2}-?[0-9A-HJKMNP-TV-Z]{4}$/i.test(seedCode)) {
+  console.error(`seed code "${seedCode}" is not a canonical race code (e.g. 3GQ-M2XD)`);
+  process.exit(2);
+}
 mkdirSync(outDir, { recursive: true });
+console.log('seed', seedCode.toUpperCase());
 const { chromium } = await loadPlaywright();
 const browser = await chromium.launch();
 const issues = [];
@@ -21,7 +28,9 @@ async function session(name, viewport, names, steps) {
   const page = await ctx.newPage();
   page.on('pageerror', (e) => issues.push(`[${name}] pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') issues.push(`[${name}] console: ${m.text()}`); });
-  const url = `${baseUrl}?names=${encodeURIComponent(names.join('~'))}&seed=${seedCode}&len=38&rule=w`;
+  // legacy `names=` form on purpose: exercises the share decoder's '~' fallback
+  // fx=0 pins the top quality tier (headless boxes report few cores and would otherwise start on the low-fx path)
+  const url = `${baseUrl}?names=${encodeURIComponent(names.join('~'))}&seed=${seedCode}&len=38&rule=w&fx=0`;
   await page.goto(url, { waitUntil: 'networkidle' });
   await page.waitForTimeout(400);
   await steps(page, (file) => page.screenshot({ path: `${outDir}/${name}-${file}.png` }));
@@ -34,9 +43,11 @@ const eight = twelve.slice(0, 8);
 const flow = async (page, snap) => {
   await snap('1-setup');
   await page.click('#btn-start');
-  await page.waitForTimeout(2600); // intro + part of countdown
+  // intro (2.2 s, sim is built meanwhile) then countdown: snap when the "2" has popped in
+  await page.waitForFunction(() => document.querySelector('#callout .big')?.textContent === '2', null, { timeout: 8000 });
+  await page.waitForTimeout(250);
   await snap('2-countdown');
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(750);
   await page.evaluate(() => window.__duckDerby.jump(7));
   await page.waitForTimeout(350);
   await snap('3-early');
@@ -50,7 +61,10 @@ const flow = async (page, snap) => {
   await page.waitForTimeout(1600);
   await snap('6-line');
   await page.evaluate(() => window.__duckDerby.skipToResults());
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(1250);
+  await snap('7a-ceremony'); // mid-reveal: plinths up, board rows landing from the last pick
+  await page.evaluate(() => document.querySelector('#btn-reveal-all')?.click()); // completes the ceremony instantly
+  await page.waitForTimeout(500);
   await snap('7-results');
 };
 
@@ -77,6 +91,28 @@ await session('laptop10', { width: 1280, height: 720 }, twelve.slice(0, 10), asy
   await page.waitForTimeout(4300);
   await page.evaluate(() => window.__duckDerby.jump(30));
   await page.waitForTimeout(300);
+  await snap('4-mid');
+});
+// landscape phone: compact strip HUD, two-column setup/results
+await session('land12', { width: 844, height: 390 }, twelve, async (page, snap) => {
+  await snap('1-setup');
+  await page.click('#btn-start');
+  await page.waitForTimeout(4300);
+  await page.evaluate(() => window.__duckDerby.jump(21));
+  await page.waitForTimeout(350);
+  await snap('4-mid');
+  await page.evaluate(() => window.__duckDerby.skipToResults());
+  await page.waitForTimeout(600);
+  await page.evaluate(() => document.querySelector('#btn-reveal-all')?.click());
+  await page.waitForTimeout(500);
+  await snap('7-results');
+});
+// very narrow phone
+await session('w320', { width: 320, height: 568 }, eight, async (page, snap) => {
+  await page.click('#btn-start');
+  await page.waitForTimeout(4300);
+  await page.evaluate(() => window.__duckDerby.jump(21));
+  await page.waitForTimeout(350);
   await snap('4-mid');
 });
 await browser.close();

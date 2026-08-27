@@ -5,6 +5,29 @@
 
 const TAU = Math.PI * 2;
 
+/** Local units each hat rises above the crown of the head (clearance for overhead markers). */
+export const HAT_HEIGHT = {
+  tophat: 20,
+  wizard: 34,
+  party: 26,
+  chef: 22,
+  crown: 13,
+  cowboy: 14,
+  viking: 16,
+  propeller: 14,
+  bow: 10,
+  flower: 8,
+  headphones: 8,
+  helmet: 10,
+  pirate: 6,
+  shades: 0,
+  headband: 4,
+  snorkel: 12,
+};
+
+const MUSTARD = '#F5C400';
+const KETCHUP = '#D7263D';
+
 /**
  * @param {CanvasRenderingContext2D} ctx
  * @param {object} look   from assignLooks()
@@ -19,6 +42,16 @@ const TAU = Math.PI * 2;
  *   standing draw legs and skip water clipping (podium pose)
  *   alpha    opacity
  *   dizzy    0..1 stumble wobble
+ *   --- race-mode extras (all default to the legacy portrait behaviour) ---
+ *   pad      paddle phase in cycles; when given, head pump + lean follow the stroke
+ *   squash   -1..1 squash/stretch about the waterline
+ *   tailWag  radians of tail rotation
+ *   sauce    0..1 mustard/ketchup splats (hot-dog victim)
+ *   crown    draw a small floating crown above the headgear
+ *   noStroke skip silhouette outlines and the roundel numeral (cheap passes)
+ *   leadGlow 0..1 golden contact ripple for the race leader
+ *   wingLift static wing raise in radians (start-line "revving" pose), added under any flap
+ *   simpleClip clip the hull with a straight waterline instead of the wavy path (low-fx tier)
  */
 export function drawDuck(ctx, look, o = {}) {
   const {
@@ -35,19 +68,39 @@ export function drawDuck(ctx, look, o = {}) {
     dizzy = 0,
     faceLeft = false,
     airborne = false,
+    pad,
+    squash = 0,
+    tailWag = 0,
+    sauce = 0,
+    crown = false,
+    noStroke = false,
+    leadGlow = 0,
+    wingLift = 0,
+    simpleClip = false,
   } = o;
+  const racing = pad !== undefined && pad !== null;
   const pal = look.palette;
-  const outline = pal.outline || shadeOf(pal.shade);
+  const pc = paletteCache(ctx, pal);
+  const outline = pc.outline;
 
   ctx.save();
   ctx.globalAlpha *= alpha;
   ctx.translate(x, y);
   const s = scale * (look.scale || 1);
   ctx.scale(faceLeft ? -s : s, s);
-  const lean = -0.06 * Math.min(effort, 1.4) + Math.sin(t * 3.1 * (look.bobRate || 1) + (look.bobPhase || 0)) * 0.025;
+  const sway = Math.sin(t * 3.1 * (look.bobRate || 1) + (look.bobPhase || 0));
+  const lean = racing ? -0.03 - 0.07 * Math.min(effort, 1.35) + sway * 0.015 : -0.06 * Math.min(effort, 1.4) + sway * 0.025;
   ctx.rotate(tilt + lean + Math.sin(t * 13) * 0.12 * dizzy);
+  if (squash) {
+    // squash & stretch about the waterline pivot so the hull stays planted
+    ctx.translate(0, 8);
+    ctx.scale(1 + 0.16 * squash, 1 - 0.12 * squash);
+    ctx.translate(0, -8);
+  }
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
+  // silhouette strokes never drop below ~1.9 screen px at race size
+  const lw = (base) => Math.max(base, 1.9 / Math.max(s, 0.05));
 
   const clipWater = !standing && !airborne;
   if (clipWater) {
@@ -55,79 +108,99 @@ export function drawDuck(ctx, look, o = {}) {
     ctx.save();
     ctx.beginPath();
     const wl = 8 + Math.sin(t * 4 + (look.bobPhase || 0)) * 0.8;
-    ctx.moveTo(-80, -120);
-    ctx.lineTo(80, -120);
-    ctx.lineTo(80, wl);
-    for (let px = 80; px >= -80; px -= 8) ctx.lineTo(px, wl + Math.sin(px * 0.18 + t * 6) * 1.1);
-    ctx.closePath();
+    if (simpleClip) ctx.rect(-80, -120, 160, 120 + wl);
+    else {
+      ctx.moveTo(-80, -120);
+      ctx.lineTo(80, -120);
+      ctx.lineTo(80, wl);
+      for (let px = 80; px >= -80; px -= 8) ctx.lineTo(px, wl + Math.sin(px * 0.18 + t * 6) * 1.1);
+      ctx.closePath();
+    }
     ctx.clip();
   } else if (standing) {
     drawLegs(ctx, pal, t);
   }
 
+  const flapHz = 7 * (look.flapRate || 1);
+  const flapAngle = (flap > 0.01 ? -flap * (0.55 + 0.45 * Math.sin(t * flapHz * TAU)) * 1.05 : Math.sin(t * 2 + (look.bobPhase || 0)) * 0.04) - wingLift;
+
   // --- tail feathers ---
-  ctx.beginPath();
-  ctx.moveTo(-26, -4);
-  ctx.quadraticCurveTo(-36, -8, -40, -17);
-  ctx.quadraticCurveTo(-31, -13, -29, -9);
-  ctx.quadraticCurveTo(-33, -16, -35, -22);
-  ctx.quadraticCurveTo(-26, -14, -22, -8);
-  ctx.closePath();
+  ctx.save();
+  if (tailWag) {
+    ctx.translate(-26, -4);
+    ctx.rotate(tailWag);
+    ctx.translate(26, 4);
+  }
+  tailPath(ctx);
   ctx.fillStyle = pal.wing;
   ctx.fill();
-  ctx.lineWidth = 1.4;
-  ctx.strokeStyle = outline;
-  ctx.stroke();
+  if (!noStroke) {
+    ctx.lineWidth = lw(1.4);
+    ctx.strokeStyle = outline;
+    ctx.stroke();
+  }
+  ctx.restore();
 
   // --- body ---
   bodyPath(ctx);
-  const g = ctx.createLinearGradient(0, -18, 0, 16);
-  g.addColorStop(0, pal.light || pal.body);
-  g.addColorStop(0.45, pal.body);
-  g.addColorStop(1, pal.shade);
-  ctx.fillStyle = g;
+  ctx.fillStyle = pc.body;
   ctx.fill();
-  ctx.lineWidth = 1.6;
-  ctx.strokeStyle = outline;
-  ctx.stroke();
-
-  if (pal.metallic) sheen(ctx, t);
+  // decorations clipped to the body silhouette
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = pal.outline ? 'rgba(255,255,255,0.13)' : 'rgba(255,255,255,0.26)';
+  ctx.beginPath();
+  ctx.ellipse(-4, -12, 20, 5, -0.1, 0, TAU);
+  ctx.fill();
   if (pal.accent) {
     // mallard speculum flash on the flank
-    ctx.save();
-    bodyPath(ctx);
-    ctx.clip();
+    const ga = ctx.globalAlpha;
     ctx.fillStyle = pal.accent;
-    ctx.globalAlpha *= 0.9;
+    ctx.globalAlpha = ga * 0.9;
     ctx.beginPath();
     ctx.ellipse(-12, 4, 9, 4, -0.2, 0, TAU);
     ctx.fill();
-    ctx.restore();
+    ctx.globalAlpha = ga;
+  }
+  if (pal.metallic) sheen(ctx, t);
+  // wing contact shadow so the wing reads inside same-hue bodies
+  ctx.save();
+  ctx.translate(4.5, -4.5);
+  ctx.rotate(flapAngle);
+  wingPath(ctx);
+  ctx.fillStyle = 'rgba(0,0,0,0.14)';
+  ctx.fill();
+  ctx.restore();
+  if (sauce > 0.05) sauceSplats(ctx, look, sauce, 'body');
+  if (pal.outline) {
+    bodyPath(ctx);
+    ctx.lineWidth = lw(1.6) + 2.2;
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.stroke();
+  }
+  ctx.restore();
+  if (!noStroke) {
+    bodyPath(ctx);
+    ctx.lineWidth = lw(1.6);
+    ctx.strokeStyle = outline;
+    ctx.stroke();
   }
 
   // --- number roundel on the chest ---
-  roundel(ctx, look, faceLeft);
+  roundel(ctx, look, faceLeft, noStroke);
 
   // --- wing ---
-  const flapHz = 7 * (look.flapRate || 1);
-  const flapAngle = flap > 0.01 ? -flap * (0.55 + 0.45 * Math.sin(t * flapHz * TAU)) * 1.05 : Math.sin(t * 2 + (look.bobPhase || 0)) * 0.04;
   ctx.save();
   ctx.translate(3, -7);
   ctx.rotate(flapAngle);
-  ctx.beginPath();
-  ctx.moveTo(3, -2);
-  ctx.bezierCurveTo(-4, -12, -20, -10, -29, 2);
-  ctx.bezierCurveTo(-22, 6, -12, 12, 2, 8);
-  ctx.quadraticCurveTo(7, 4, 3, -2);
-  ctx.closePath();
-  const wg = ctx.createLinearGradient(0, -10, 0, 12);
-  wg.addColorStop(0, pal.wing);
-  wg.addColorStop(1, pal.wingShade);
-  ctx.fillStyle = wg;
+  wingPath(ctx);
+  ctx.fillStyle = pc.wing;
   ctx.fill();
-  ctx.lineWidth = 1.4;
-  ctx.strokeStyle = outline;
-  ctx.stroke();
+  if (!noStroke) {
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = pc.wingStroke;
+    ctx.stroke();
+  }
   // feather lines
   ctx.beginPath();
   ctx.moveTo(-6, 3);
@@ -140,9 +213,11 @@ export function drawDuck(ctx, look, o = {}) {
   ctx.restore();
 
   // --- head ---
-  const pump = Math.sin(t * 5 * (look.bobRate || 1) + (look.bobPhase || 0)) * 0.9 * Math.min(effort, 1.2);
+  let pump;
+  if (racing) pump = Math.sin(TAU * pad + Math.PI / 2) * (0.8 + 2.2 * Math.min(effort, 1.2));
+  else pump = Math.sin(t * 5 * (look.bobRate || 1) + (look.bobPhase || 0)) * 0.9 * Math.min(effort, 1.2);
   const hx = 16 + pump;
-  const hy = -21 - Math.abs(pump) * 0.3;
+  const hy = -21 - Math.abs(pump) * (racing ? 0.35 : 0.3);
   const hr = 11.5;
 
   // neck ring (mallard)
@@ -162,16 +237,31 @@ export function drawDuck(ctx, look, o = {}) {
 
   ctx.beginPath();
   ctx.arc(hx, hy, hr, 0, TAU);
-  const hg = ctx.createRadialGradient(hx + 3, hy - 5, 2, hx, hy, hr + 2);
-  const headBase = pal.head || pal.body;
-  hg.addColorStop(0, pal.headLight || pal.light || headBase);
-  hg.addColorStop(0.7, headBase);
-  hg.addColorStop(1, pal.head ? shadeOf(pal.head) : pal.shade);
-  ctx.fillStyle = hg;
+  ctx.save();
+  ctx.translate(hx, hy); // cached gradient is defined about the head centre
+  ctx.fillStyle = pc.head;
   ctx.fill();
-  ctx.lineWidth = 1.6;
-  ctx.strokeStyle = outline;
-  ctx.stroke();
+  ctx.restore();
+  if (sauce > 0.05 || pal.outline) {
+    ctx.save();
+    ctx.clip();
+    if (sauce > 0.05) sauceSplats(ctx, look, sauce, 'head', hx, hy);
+    if (pal.outline) {
+      ctx.beginPath();
+      ctx.arc(hx, hy, hr, 0, TAU);
+      ctx.lineWidth = lw(1.6) + 2.2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  if (!noStroke) {
+    ctx.beginPath();
+    ctx.arc(hx, hy, hr, 0, TAU);
+    ctx.lineWidth = lw(1.6);
+    ctx.strokeStyle = outline;
+    ctx.stroke();
+  }
 
   // cheeks
   if (look.cheeks) {
@@ -182,7 +272,7 @@ export function drawDuck(ctx, look, o = {}) {
   }
 
   // --- beak ---
-  drawBeak(ctx, pal, hx, hy, beakOpen, outline);
+  drawBeak(ctx, pal, hx, hy, beakOpen, outline, noStroke ? 0 : lw(1.1));
 
   // --- eye ---
   const blinkPhase = (t + (look.blinkOffset || 0)) % 4.2;
@@ -192,21 +282,70 @@ export function drawDuck(ctx, look, o = {}) {
   // hats in front
   drawHat(ctx, look, t, hx, hy, hr, 'front');
 
+  if (crown) drawCrownGlyph(ctx, hx - 1, hy - hr - (HAT_HEIGHT[look.hat] || 0) - 8, 7, { t });
+
   if (clipWater) {
     ctx.restore(); // end clip
     // ripple where body meets water
-    ctx.lineWidth = 1.3;
-    ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+    ctx.lineWidth = leadGlow > 0.01 ? 1.8 : 1.3;
+    ctx.strokeStyle = leadGlow > 0.01 ? `rgba(255,210,63,${0.45 + 0.4 * Math.min(1, leadGlow)})` : 'rgba(255,255,255,0.75)';
     ctx.beginPath();
     ctx.ellipse(0, 8.5, 33, 4.2, 0, Math.PI * 0.05, Math.PI * 0.95);
     ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1.3;
+    ctx.strokeStyle = leadGlow > 0.01 ? 'rgba(255,226,120,0.45)' : 'rgba(255,255,255,0.4)';
     ctx.beginPath();
     ctx.ellipse(2, 9, 40, 6, 0, Math.PI * 1.1, Math.PI * 1.9);
     ctx.stroke();
   }
 
   ctx.restore();
+}
+
+/**
+ * Per-palette cache of gradients and derived colours. Canvas gradients are resolved in the
+ * user space current at fill time, so one object serves every frame, scale and canvas.
+ */
+function paletteCache(ctx, pal) {
+  if (pal._c) return pal._c;
+  const c = {};
+  c.outline = pal.outline || shadeOf(pal.shade);
+  c.wingStroke = pal.outline ? c.outline : shadeOf(pal.wingShade, 0.72);
+  const body = ctx.createLinearGradient(0, -18, 0, 16);
+  body.addColorStop(0, pal.light || pal.body);
+  body.addColorStop(0.45, pal.body);
+  body.addColorStop(1, pal.shade);
+  c.body = body;
+  const wing = ctx.createLinearGradient(0, -10, 0, 12);
+  wing.addColorStop(0, pal.wing);
+  wing.addColorStop(1, pal.wingShade);
+  c.wing = wing;
+  const headBase = pal.head || pal.body;
+  const head = ctx.createRadialGradient(3, -5, 2, 0, 0, 13.5);
+  head.addColorStop(0, pal.headLight || pal.light || headBase);
+  head.addColorStop(0.7, headBase);
+  head.addColorStop(1, pal.head ? shadeOf(pal.head) : pal.shade);
+  c.head = head;
+  const beak = ctx.createLinearGradient(0, -5, 0, 3);
+  beak.addColorStop(0, lighten(pal.beak));
+  beak.addColorStop(1, pal.beak);
+  c.beak = beak;
+  try {
+    Object.defineProperty(pal, '_c', { value: c, enumerable: false, configurable: true });
+  } catch {
+    /* frozen palette: uncached */
+  }
+  return c;
+}
+
+function tailPath(ctx) {
+  ctx.beginPath();
+  ctx.moveTo(-26, -4);
+  ctx.quadraticCurveTo(-36, -8, -40, -17);
+  ctx.quadraticCurveTo(-31, -13, -29, -9);
+  ctx.quadraticCurveTo(-33, -16, -35, -22);
+  ctx.quadraticCurveTo(-26, -14, -22, -8);
+  ctx.closePath();
 }
 
 function bodyPath(ctx) {
@@ -221,10 +360,17 @@ function bodyPath(ctx) {
   ctx.closePath();
 }
 
+function wingPath(ctx) {
+  ctx.beginPath();
+  ctx.moveTo(3, -2);
+  ctx.bezierCurveTo(-4, -12, -20, -10, -29, 2);
+  ctx.bezierCurveTo(-22, 6, -12, 12, 2, 8);
+  ctx.quadraticCurveTo(7, 4, 3, -2);
+  ctx.closePath();
+}
+
+/** Metallic sweep; caller has already clipped to the body. */
 function sheen(ctx, t) {
-  ctx.save();
-  bodyPath(ctx);
-  ctx.clip();
   const sx = -40 + ((t * 30) % 110);
   const g = ctx.createLinearGradient(sx, -20, sx + 22, 10);
   g.addColorStop(0, 'rgba(255,255,255,0)');
@@ -232,32 +378,157 @@ function sheen(ctx, t) {
   g.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = g;
   ctx.fillRect(-40, -20, 80, 40);
+}
+
+/** Fixed pseudo-random condiment spots per duck (seeded by its blink offset). */
+function sauceSpots(look) {
+  if (look._sauceSpots) return look._sauceSpots;
+  let z = (Math.floor((look.blinkOffset || 1) * 9973) | 1) >>> 0;
+  const rnd = () => {
+    z = (Math.imul(z, 1103515245) + 12345) >>> 0;
+    return (z >>> 8) / 16777216;
+  };
+  const body = [];
+  for (let k = 0; k < 3; k++) body.push({ x: -22 + rnd() * 40, y: -11 + rnd() * 17, r: 2.5 + rnd() * 1.5, a: rnd() * TAU, c: k < 2 ? MUSTARD : KETCHUP });
+  const head = [];
+  for (let k = 0; k < 2; k++) head.push({ x: -6 + rnd() * 11, y: -7 + rnd() * 10, r: 2.5 + rnd() * 1.3, a: rnd() * TAU, c: k ? KETCHUP : MUSTARD });
+  const spots = { body, head };
+  try {
+    Object.defineProperty(look, '_sauceSpots', { value: spots, enumerable: false });
+  } catch {
+    /* frozen look object: recompute next time */
+  }
+  return spots;
+}
+
+function sauceSplats(ctx, look, sauce, part, hx = 0, hy = 0) {
+  const spots = sauceSpots(look)[part];
+  const a = Math.max(0, Math.min(1, (sauce - 0.05) / 0.3));
+  ctx.save();
+  ctx.globalAlpha *= a;
+  for (const sp of spots) {
+    const cx = hx + sp.x;
+    const cy = hy + sp.y;
+    ctx.fillStyle = sp.c;
+    ctx.beginPath();
+    ctx.arc(cx, cy, sp.r, 0, TAU);
+    // two satellites + a drip make it read as a splat rather than a dot
+    ctx.moveTo(cx + Math.cos(sp.a) * sp.r * 1.5 + sp.r * 0.45, cy + Math.sin(sp.a) * sp.r * 1.5);
+    ctx.arc(cx + Math.cos(sp.a) * sp.r * 1.5, cy + Math.sin(sp.a) * sp.r * 1.5, sp.r * 0.45, 0, TAU);
+    ctx.moveTo(cx + Math.cos(sp.a + 2.2) * sp.r * 1.3 + sp.r * 0.35, cy + Math.sin(sp.a + 2.2) * sp.r * 1.3);
+    ctx.arc(cx + Math.cos(sp.a + 2.2) * sp.r * 1.3, cy + Math.sin(sp.a + 2.2) * sp.r * 1.3, sp.r * 0.35, 0, TAU);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx + sp.r * 0.3, cy + sp.r * 1.25, sp.r * 0.42, sp.r * 0.9, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.arc(cx - sp.r * 0.35, cy - sp.r * 0.35, sp.r * 0.3, 0, TAU);
+    ctx.fill();
+  }
   ctx.restore();
 }
 
-function roundel(ctx, look, mirrored) {
+/**
+ * A small three-point gold crown centred on (cx, cy); `r` is the half-width.
+ * Exported so the scene (leader hand-off) and the podium can share one glyph.
+ */
+export function drawCrownGlyph(ctx, cx, cy, r, { t = 0, rot = 0, stroke = true } = {}) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (rot) ctx.rotate(rot);
+  const h = r * 1.35;
+  ctx.beginPath();
+  ctx.moveTo(-r, h * 0.45);
+  ctx.lineTo(-r * 1.08, -h * 0.35);
+  ctx.lineTo(-r * 0.52, -h * 0.02);
+  ctx.lineTo(0, -h * 0.62);
+  ctx.lineTo(r * 0.52, -h * 0.02);
+  ctx.lineTo(r * 1.08, -h * 0.35);
+  ctx.lineTo(r, h * 0.45);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(0, -h * 0.6, 0, h * 0.5);
+  g.addColorStop(0, '#FFE884');
+  g.addColorStop(0.55, '#FFD23F');
+  g.addColorStop(1, '#E2A400');
+  ctx.fillStyle = g;
+  ctx.fill();
+  if (stroke) {
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = Math.max(1, r * 0.2);
+    ctx.strokeStyle = '#B8860B';
+    ctx.stroke();
+  }
+  // band + jewels
+  ctx.fillStyle = '#E2A400';
+  ctx.fillRect(-r, h * 0.2, 2 * r, h * 0.14);
+  ctx.fillStyle = '#E23D4E';
+  ctx.beginPath();
+  ctx.arc(0, h * 0.27, r * 0.16, 0, TAU);
+  ctx.fill();
+  // tip baubles
+  ctx.fillStyle = '#FFF3B0';
+  ctx.beginPath();
+  for (const [px, py] of [[-r * 1.08, -h * 0.35], [0, -h * 0.62], [r * 1.08, -h * 0.35]]) {
+    ctx.moveTo(px + r * 0.15, py);
+    ctx.arc(px, py, r * 0.15, 0, TAU);
+  }
+  ctx.fill();
+  // glint
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.beginPath();
+  ctx.ellipse(-r * 0.45, h * 0.05, r * 0.13, r * 0.3, 0.3, 0, TAU);
+  ctx.fill();
+  const tw = 0.5 + 0.5 * Math.sin(t * 6);
+  if (tw > 0.6) {
+    ctx.globalAlpha *= (tw - 0.6) / 0.4;
+    ctx.fillStyle = '#FFFFFF';
+    sparklePath(ctx, r * 0.55, -h * 0.25, r * 0.35);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function sparklePath(ctx, cx, cy, r) {
+  ctx.beginPath();
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * TAU;
+    const rr = k % 2 ? r * 0.3 : r;
+    const px = cx + Math.cos(a) * rr;
+    const py = cy + Math.sin(a) * rr;
+    if (k === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
+function roundel(ctx, look, mirrored, noText) {
   const cx = 13;
   const cy = 1;
   ctx.beginPath();
-  ctx.arc(cx, cy, 8.2, 0, TAU);
+  ctx.arc(cx, cy, 7.2, 0, TAU);
   ctx.fillStyle = '#fff';
   ctx.fill();
+  ctx.lineWidth = 0.8;
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.stroke();
   ctx.beginPath();
-  ctx.arc(cx, cy, 6.9, 0, TAU);
+  ctx.arc(cx, cy, 6.05, 0, TAU);
   ctx.fillStyle = look.towel.bg;
   ctx.fill();
+  if (noText) return;
   ctx.save();
   ctx.translate(cx, cy + 0.5);
   if (mirrored) ctx.scale(-1, 1);
   ctx.fillStyle = look.towel.text;
-  ctx.font = `800 ${look.number > 9 ? 7.6 : 10}px ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif`;
+  ctx.font = `800 ${look.number > 9 ? 6.9 : 9}px ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(String(look.number), 0, 0.5);
   ctx.restore();
 }
 
-function drawBeak(ctx, pal, hx, hy, open, outline) {
+function drawBeak(ctx, pal, hx, hy, open, outline, lineW = 1.1) {
   const bx = hx + 9;
   const by = hy - 1;
   // lower mandible
@@ -271,9 +542,11 @@ function drawBeak(ctx, pal, hx, hy, open, outline) {
   ctx.closePath();
   ctx.fillStyle = pal.beakShade;
   ctx.fill();
-  ctx.lineWidth = 1.1;
-  ctx.strokeStyle = outline;
-  ctx.stroke();
+  if (lineW) {
+    ctx.lineWidth = lineW;
+    ctx.strokeStyle = outline;
+    ctx.stroke();
+  }
   if (open > 0.3) {
     // tongue
     ctx.fillStyle = '#ff7b8a';
@@ -292,14 +565,13 @@ function drawBeak(ctx, pal, hx, hy, open, outline) {
   ctx.quadraticCurveTo(17, 1.2, 14, 1.6);
   ctx.quadraticCurveTo(6, 2.4, -1, 2);
   ctx.closePath();
-  const g = ctx.createLinearGradient(0, -5, 0, 3);
-  g.addColorStop(0, lighten(pal.beak));
-  g.addColorStop(1, pal.beak);
-  ctx.fillStyle = g;
+  ctx.fillStyle = paletteCache(ctx, pal).beak;
   ctx.fill();
-  ctx.lineWidth = 1.1;
-  ctx.strokeStyle = outline;
-  ctx.stroke();
+  if (lineW) {
+    ctx.lineWidth = lineW;
+    ctx.strokeStyle = outline;
+    ctx.stroke();
+  }
   // nostril
   ctx.fillStyle = pal.beakShade;
   ctx.beginPath();
@@ -307,6 +579,7 @@ function drawBeak(ctx, pal, hx, hy, open, outline) {
   ctx.fill();
   ctx.restore();
 }
+
 
 function drawEye(ctx, pal, ex, ey, blink, dizzy, t) {
   if (dizzy > 0.3) {
@@ -427,15 +700,16 @@ const HAT_DRAWERS = {
     ctx.lineTo(11, baseY - 9);
     ctx.lineTo(10, baseY);
     ctx.closePath();
+    // silver tiara, not gold: the gold crown is reserved for the race leader's floating marker
     const g = ctx.createLinearGradient(0, baseY - 12, 0, baseY);
-    g.addColorStop(0, '#FFE680');
-    g.addColorStop(1, '#E0A100');
+    g.addColorStop(0, '#F7FAFD');
+    g.addColorStop(1, '#9DA9B9');
     ctx.fillStyle = g;
     ctx.fill();
-    ctx.strokeStyle = '#9A6B00';
+    ctx.strokeStyle = '#56606E';
     ctx.lineWidth = 1.2;
     ctx.stroke();
-    ctx.fillStyle = '#E0A100';
+    ctx.fillStyle = '#8C98A8';
     ctx.fillRect(-10, baseY - 3, 20, 3);
     const jewels = [['#E23D4E', -5.5], ['#2F7BEA', 0], ['#1DB954', 5.5]];
     for (const [c, jx] of jewels) {
@@ -445,7 +719,7 @@ const HAT_DRAWERS = {
       ctx.fill();
     }
     for (const jx of [-11, -3.5, 3.5, 11]) {
-      ctx.fillStyle = '#FFF3B0';
+      ctx.fillStyle = '#FFFFFF';
       ctx.beginPath();
       ctx.arc(jx, baseY - (Math.abs(jx) > 5 ? 9 : 12), 1.1, 0, TAU);
       ctx.fill();
@@ -1049,27 +1323,50 @@ export function lighten(hex, k = 0.35) {
 }
 
 /**
- * Render a duck portrait into a (small) canvas element, DPR aware.
+ * Draw a duck portrait into a (CSS-sized) canvas. The backing store follows the
+ * CSS box (w x h at devicePixelRatio) so a 44x40 roster avatar is not a squashed
+ * square. Extra pose keys are forwarded to drawDuck.
  * @param {HTMLCanvasElement} canvas
+ * @param {object} look
+ * @param {{standing?: boolean, t?: number, w?: number, h?: number, size?: number, flap?: number, beakOpen?: number,
+ *   tilt?: number, crown?: boolean, hopY?: number, effort?: number, dizzy?: number}} [opts]
  */
-export function renderPortrait(canvas, look, { standing = false, t = 0, size } = {}) {
+export function renderPortrait(canvas, look, { standing = false, t = 0, w, h, size, hopY = 0, effort, ...pose } = {}) {
   const dpr = Math.min(3, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
-  const cssW = size || canvas.clientWidth || 64;
-  const cssH = size || canvas.clientHeight || 64;
-  if (canvas.width !== Math.round(cssW * dpr)) {
-    canvas.width = Math.round(cssW * dpr);
-    canvas.height = Math.round(cssH * dpr);
+  const cssW = w ?? size ?? (canvas.clientWidth || 64);
+  const cssH = h ?? size ?? (canvas.clientHeight || cssW);
+  const bw = Math.max(1, Math.round(cssW * dpr));
+  const bh = Math.max(1, Math.round(cssH * dpr));
+  if (canvas.width !== bw || canvas.height !== bh) {
+    canvas.width = bw;
+    canvas.height = bh;
   }
   const ctx = canvas.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssW, cssH);
-  const scale = (cssW / 96) * (standing ? 0.95 : 1.05);
+  let scale = (cssW / 96) * (standing ? 0.95 : 1.05);
+  let baseY = cssH * (standing ? 0.6 : 0.66);
+  const { flap = 0, beakOpen = 0, tilt = 0, crown = false, dizzy = 0 } = pose;
+  if (standing && crown) {
+    // the floating crown sits above the headgear: shrink/lower the pose so a tall hat + crown
+    // still fits the canvas (otherwise the champion's crown is clipped off the top)
+    const top = 51 + (HAT_HEIGHT[look.hat] || 0); // head + hat + crown above the body centre, local units
+    const bottom = 31; // feet below it
+    const hop = 6; // hopY range used by the podium loop
+    scale = Math.min(scale, (cssH - hop - 2) / (top + bottom));
+    baseY = Math.min(Math.max(baseY, top * scale + hop + 1), cssH - bottom * scale);
+  }
   drawDuck(ctx, look, {
     x: cssW * 0.47,
-    y: cssH * (standing ? 0.6 : 0.66),
+    y: baseY - hopY,
     scale,
     t,
-    effort: 0.2,
+    effort: effort ?? 0.2,
     standing,
+    flap,
+    beakOpen,
+    tilt,
+    crown,
+    dizzy,
   });
 }

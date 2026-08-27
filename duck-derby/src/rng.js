@@ -85,7 +85,10 @@ export function randomSeed() {
   return Math.floor(Math.random() * 4294967296) >>> 0;
 }
 
-/** Short human-friendly seed code, e.g. "K7Q2-M9XD". */
+/**
+ * Short human-friendly seed code, e.g. "3GQ-M2XD": 7 Crockford base32 chars
+ * (35 bits) holding a 32-bit seed, so the first char is always one of 0123.
+ */
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'; // Crockford base32
 export function seedToCode(seed) {
   let s = seed >>> 0;
@@ -97,26 +100,39 @@ export function seedToCode(seed) {
   return out.slice(0, 3) + '-' + out.slice(3);
 }
 
+/**
+ * Parse a race code (or a plain 8+ digit integer seed) back to a uint32.
+ * Returns null for anything that is not exactly one canonical seed — codes
+ * never alias (e.g. '7GQ-M2XD' would need 35 bits, so it is rejected rather
+ * than silently folded onto '3GQ-M2XD').
+ */
 export function codeToSeed(code) {
-  const clean = String(code || '')
+  const clean = String(code ?? '')
     .toUpperCase()
     .replace(/[^0-9A-Z]/g, '')
     .replace(/O/g, '0')
     .replace(/[IL]/g, '1')
     .replace(/U/g, 'V');
   if (!clean) return null;
-  if (/^\d+$/.test(clean) && clean.length > 7) {
-    // plain integer seed
+  if (/^\d{8,}$/.test(clean)) {
+    // plain integer seed (a 7-char all-digit string is a regular code)
     const n = Number(clean);
-    return Number.isFinite(n) ? n >>> 0 : null;
+    return Number.isSafeInteger(n) && n <= 4294967295 ? n : null;
   }
+  if (clean.length !== 7) return null;
   let s = 0;
   for (const ch of clean) {
     const v = ALPHABET.indexOf(ch);
     if (v < 0) return null;
     s = s * 32 + v;
   }
-  return s >>> 0;
+  return s < 4294967296 ? s : null;
+}
+
+/** Canonical display form of anything codeToSeed() accepts, else null. */
+export function canonicalSeedCode(str) {
+  const seed = codeToSeed(str);
+  return seed === null ? null : seedToCode(seed);
 }
 
 export const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);

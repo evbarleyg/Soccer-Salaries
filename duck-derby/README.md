@@ -25,10 +25,37 @@ Drop the folder on any static host.
   and keeps the most exciting — symmetric, so still fair).
 - Crowd hazards: occasionally someone in the stands lobs a **hot dog** at
   whoever is leading, Mario Kart style (toggle off under *Race options*).
-- Live standings, commentary ticker, synthesized sound (quacks, horn, crowd).
-- Results: draft board (winner-first or last-place-first), copy as text, copy
-  share link, save as PNG.
-- Responsive (phone → TV), keyboard friendly, honours `prefers-reduced-motion`.
+- Start and finish set pieces: starter arch with race lights and a pennant
+  rope that drops on GO, crouch-and-launch poses, a candy-striped finish tape
+  the winner snaps, confetti cannons, a grayscale photo-finish still for close
+  races, and a staged results ceremony (plinths rise 3-2-1 to a drumroll and
+  fanfare, the board reveals pick by pick, confetti over the panel).
+- Live standings and a two-tier commentary ticker (headlines + chatter) whose
+  lines are drawn from seeded shuffle-bags and sampled on a fixed race-clock
+  grid — the same share link produces the same broadcast, word for word.
+- Fully synthesized broadcast sound (no audio files): quacks, horn, crowd and
+  water beds, hot-dog foley, lead-change whoosh, a tension drone with an
+  accelerating heartbeat for the run-in that cuts to a cymbal on the win,
+  slow-mo muffling, fanfare stings and a sad trombone for last place. Muted
+  sessions build no audio graph at all; background tabs go silent.
+- Performance governor: watches real frame cadence and sheds effect tiers
+  (particles, reflections, backing-store resolution, backdrop blur) on devices
+  that can't hold the frame rate; idle screens render at 30 fps. `&fx=0|1|2`
+  pins a tier for captures or debugging.
+- Draft rule up front — winner gets pick 1, winner *chooses* first, or last
+  place gets pick 1 — and the results, copied text and PNG all follow it.
+- Results: podium + draft board, native share sheet (or copy link), copy as
+  text, save as PNG; optional league name carried through the top bar, tab
+  title, PNG and share link. `&view=board` deep-links straight to the board,
+  `&autoplay=1` starts a shared race by itself.
+- Roster entry: paste a whole list into any row, non-destructive resize with
+  Undo, duplicate names race as "Mike (2)".
+- Responsive (phone portrait + landscape → TV, safe-area aware), keyboard and
+  screen-reader friendly (`P`/`Space` pause, `Esc` skip to results, `M` mute,
+  `F` fullscreen, polite live announcements), honours `prefers-reduced-motion`
+  live plus an in-app "Calm" effects setting.
+- Race codes (`3GQ-M2XD`) are canonical 32-bit seeds; share links carry one
+  `n=` param per duck so any name — `~`, `&`, emoji — replays the same race.
 
 ## Run locally
 
@@ -60,9 +87,10 @@ src/sim.js               deterministic race engine
 src/ducks.js             palettes, hats, towel colours, look assignment
 src/draw-duck.js         procedural duck + headgear renderer
 src/scene.js             venue, water, camera, particles, hot dogs
-src/audio.js             WebAudio synth
-src/commentary.js        ticker lines
-src/main.js              UI + race director
+src/audio.js             WebAudio synth (beds, foley, tension, ceremony kit)
+src/commentary.js        seeded commentary: set pieces + situational lines
+src/share.js             share-link codec (pure; one n= param per duck)
+src/main.js              UI + race director (playback pacing, pause, hooks)
 test/                    node:test suites
 tools/                   analysis + screenshot tooling
 ```
