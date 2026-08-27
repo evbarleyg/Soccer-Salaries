@@ -157,6 +157,7 @@ body.view-tv #hud-comm { font-size: 1.3rem; }
 #hud-ladder .sw { width: 1.25rem; height: 1.25rem; border-radius: 5px; display: grid; place-items: center; font-size: 0.62rem; font-weight: 900; border: 1.5px solid rgba(255,255,255,0.85); }
 #hud-ladder .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #hud-ladder .gp { font: 700 0.66rem ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+#hud-ladder:empty { display: none; }
 body.view-tv #hud-ladder { width: 230px; }
 body.view-tv #hud-ladder li { font-size: 0.82rem; }
 body.phase-flythrough #hud-ladder, body.phase-grid #hud-ladder, body.phase-countdown #hud-ladder, body.phase-results #hud-ladder, body.phase-menu #hud-ladder { display: none; }
