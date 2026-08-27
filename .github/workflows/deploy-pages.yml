@@ -43,9 +43,8 @@ jobs:
           cp index.html app.js styles.css _site/
           cp favicon.ico favicon.svg site.webmanifest preview-card.svg _site/
           cp -R data _site/
-          mkdir -p _site/duck-derby
-          cp duck-derby/index.html duck-derby/styles.css duck-derby/favicon.svg _site/duck-derby/
-          cp -R duck-derby/src _site/duck-derby/src
+          # Duck Derby (2D) + Duck Derby World (3D): ship everything except dev tooling
+          rsync -a --exclude 'test/' --exclude 'tools/' --exclude 'node_modules/' --exclude 'shots/' --exclude '*.md' --exclude 'package*.json' duck-derby/ _site/duck-derby/
           touch _site/.nojekyll
 
       - name: Upload artifact
