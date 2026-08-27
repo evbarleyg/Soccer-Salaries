@@ -275,8 +275,8 @@ body.phase-finish #hud-item { display: none; }
 #title-card .tc-sub { margin-top: 0.4rem; font: 800 clamp(0.8rem, 2.4vw, 1.1rem) var(--num); letter-spacing: 0.3em; color: var(--gold); text-transform: uppercase; text-shadow: 0 2px 0 rgba(0,0,0,0.5); }
 /* personal finish card + letterbox for the photo-finish freeze */
 #finish-card { position: fixed; left: 50%; bottom: calc(64px + var(--safe-b)); transform: translateX(-50%); z-index: 12; background: rgba(13,24,38,0.86); border: 2px solid var(--me, var(--gold)); border-radius: 16px; padding: 8px 18px 10px; text-align: center; font-family: var(--num); box-shadow: 0 12px 30px rgba(0,0,0,0.35); animation: cardin 0.28s cubic-bezier(0.2, 1.4, 0.4, 1); pointer-events: none; }
-#finish-card .fc-place { font-weight: 900; font-style: italic; font-size: 1.6rem; color: #fff; line-height: 1.1; }
-#finish-card .fc-pick { font-weight: 800; font-size: 1rem; color: var(--gold); letter-spacing: 0.04em; }
+#finish-card .fc-place { font-weight: 900; font-style: italic; font-size: clamp(1.05rem, 4.6vw, 1.6rem); color: #fff; line-height: 1.1; white-space: nowrap; }
+#finish-card .fc-pick { font-weight: 800; font-size: clamp(0.85rem, 3.6vw, 1rem); color: var(--gold); letter-spacing: 0.04em; white-space: nowrap; }
 @keyframes cardin { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
 #letterbox { position: fixed; inset: 0; pointer-events: none; z-index: 11; }
 #letterbox i { position: absolute; left: 0; right: 0; height: 9%; background: #000; transform: scaleY(0); transition: transform 0.2s ease-out; }
