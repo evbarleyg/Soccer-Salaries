@@ -716,7 +716,7 @@ function handleEvent(ev) {
     case 'use':
       if (isT) hud.itemUsed();
       if (ev.item === 'bread' || ev.item === 'triple') { if (isT) { audio.whoosh(0.35); rig.kick(0.15); rig.fovPunch(6); hud.callout('BOOST!', ITEMS.bread.color); } else if (nearCam(i, 30)) audio.whoosh(0.12); }
-      else if (ev.item === 'hornet') { audio.buzz(1.0, isT || ev.target === state.target ? 0.16 : 0.07); if (ev.target === state.target) hud.popup('HORNET INCOMING!', ITEMS.hornet.color); }
+      else if (ev.item === 'hornet') { audio.buzz(1.0, isT || ev.target === state.target ? 0.16 : 0.07); }
       else if (ev.item === 'seagull') { audio.screech(); if (state.duckStates[state.target] && state.duckStates[state.target].rank === 0) hud.callout('SEAGULL INCOMING!', ITEMS.seagull.color); else hud.popup('SEAGULL STRIKE!', ITEMS.seagull.color); }
       else if (ev.item === 'feather') { audio.stinger(); if (isT) hud.callout('GOLDEN!', ITEMS.feather.color); }
       else if (ev.item === 'mud') { audio.splash(0.3); if (ev.victims && ev.victims.includes(state.target)) hud.callout('MUD!', ITEMS.mud.color); }
@@ -1241,6 +1241,8 @@ function step(dt) {
         }
       }
       hud.incoming(warn, wd);
+      if (warn && wd < 15 && !state.warnBuzzed) { state.warnBuzzed = true; buzz([20, 60, 20]); }
+      if (!warn) state.warnBuzzed = false;
       // my next item use (known ahead: the race is precomputed) and shield time left
       let armIn = null;
       if (me.held && me.held.item !== 'shield') {
@@ -1286,8 +1288,18 @@ function step(dt) {
         continue;
       }
       d.duck.shadow.visible = true;
-      // ducks right on top of the camera would fill the screen: hide them (Mario Kart-style ghosting, cheap version)
-      d.duck.group.visible = !(rig.mode === 'chase' && i !== state.target && dist < 3.2 && state.phase === 'race');
+      // ducks between the camera and my duck are ghosted so they never blank the frame (hidden when right on the lens)
+      let ghost = 1;
+      if (rig.mode === 'chase' && i !== state.target && state.phase === 'race' && dist < 7) {
+        const me = state.ducks[state.target];
+        const myDist = me ? me.duck.group.position.distanceTo(camP) : 99;
+        if (dist < myDist - 0.5) ghost = dist < 3.2 ? 0 : clamp((dist - 3.2) / 3.5, 0.3, 1);
+      }
+      d.duck.group.visible = ghost > 0;
+      if (d.ghost !== ghost && ghost > 0) {
+        d.ghost = ghost;
+        for (const mt of d.duck.glowMats || []) { mt.transparent = ghost < 0.999; mt.opacity = ghost; mt.depthWrite = ghost > 0.6; }
+      }
       ctx.isTarget = i === state.target;
       if (d.duck.lod && d.duck.lod.far) {
         const showDecals = dist < 45 && !(state.lod >= 1 && !ctx.isTarget);
