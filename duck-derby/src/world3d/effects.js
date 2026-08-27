@@ -48,13 +48,20 @@ export class Effects {
       transparent: true,
       depthWrite: false,
       blending: THREE.NormalBlending,
-      uniforms: { scale: { value: 600 } },
+      uniforms: { scale: { value: 600 }, maxSize: { value: 34 } },
       vertexShader: /* glsl */ `
-        attribute vec4 color; attribute float size; varying vec4 vCol; uniform float scale;
-        void main() { vCol = color; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = size * scale / max(0.5, -mv.z); gl_Position = projectionMatrix * mv; }`,
+        attribute vec4 color; attribute float size; varying vec4 vCol; uniform float scale; uniform float maxSize;
+        void main() {
+          vCol = color;
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          float depth = max(0.5, -mv.z);
+          gl_PointSize = min(size * scale / depth, maxSize);
+          vCol.a *= smoothstep(0.8, 2.5, depth); // nothing blows up into a disc on the lens
+          gl_Position = projectionMatrix * mv;
+        }`,
       fragmentShader: /* glsl */ `
         varying vec4 vCol;
-        void main() { vec2 c = gl_PointCoord - 0.5; float d = dot(c, c); if (d > 0.25) discard; float a = vCol.a * smoothstep(0.25, 0.15, d); gl_FragColor = vec4(vCol.rgb, a);
+        void main() { vec2 c = gl_PointCoord - 0.5; float d = dot(c, c); if (d > 0.25) discard; float a = vCol.a * smoothstep(0.25, 0.12, d); gl_FragColor = vec4(vCol.rgb, a);
         #include <colorspace_fragment>
         }`,
     });
@@ -107,21 +114,24 @@ export class Effects {
   rnd(a = 0, b = 1) { return a + (b - a) * this.rand(); }
 
   splash(pos, strength = 1) {
-    const n = Math.round(26 * strength * this.quality.particles);
+    // a crown: most droplets in a ring moving outward + up, a few stragglers
+    const n = Math.round(40 * strength * this.quality.particles);
     for (let k = 0; k < n; k++) {
       const a = this.rnd(0, Math.PI * 2);
-      const sp = this.rnd(1.5, 4.5) * strength;
-      this._v.set(Math.cos(a) * sp, this.rnd(2.5, 6) * Math.sqrt(strength), Math.sin(a) * sp);
-      this.emit(pos, this._v, k % 3 ? 0xffffff : PAL.waterShallow, this.rnd(0.12, 0.3), this.rnd(0.5, 1.0), 1, 0.8, 0.9);
+      const ring = k % 10 < 7;
+      const sp = (ring ? this.rnd(2.6, 3.4) : this.rnd(0.5, 4.5)) * Math.sqrt(strength);
+      this._v.set(Math.cos(a) * sp, (ring ? this.rnd(3.2, 4.2) : this.rnd(2, 6.5)) * Math.sqrt(strength), Math.sin(a) * sp);
+      this._v3.set(pos.x + Math.cos(a) * 0.4, pos.y, pos.z + Math.sin(a) * 0.4);
+      this.emit(this._v3, this._v, k % 6 ? PAL.waterFoam : PAL.waterShallow, this.rnd(0.06, 0.14), this.rnd(0.35, 0.7), 1.3, 0.9, 0.9);
     }
   }
 
   /** Rooster-tail spray behind a fast duck. dir = unit backward vector. */
-  spray(pos, back, amount = 1, color = 0xffffff) {
-    const n = Math.max(1, Math.round(3 * amount * this.quality.particles));
+  spray(pos, back, amount = 1, color = PAL.waterFoam) {
+    const n = Math.max(1, Math.round(8 * amount * this.quality.particles));
     for (let k = 0; k < n; k++) {
-      this._v.copy(back).multiplyScalar(this.rnd(2, 6)).add(this._v2.set(this.rnd(-1, 1), this.rnd(2, 4.5), this.rnd(-1, 1)));
-      this.emit(pos, this._v, color, this.rnd(0.1, 0.24), this.rnd(0.35, 0.7), 1, 1.2, 0.85);
+      this._v.copy(back).multiplyScalar(this.rnd(2, 6)).add(this._v2.set(this.rnd(-1.2, 1.2), this.rnd(1.5, 4), this.rnd(-1.2, 1.2)));
+      this.emit(pos, this._v, k % 7 ? color : PAL.waterShallow, this.rnd(0.05, 0.12), this.rnd(0.25, 0.45), 1.4, 1.2, 0.85);
     }
   }
 

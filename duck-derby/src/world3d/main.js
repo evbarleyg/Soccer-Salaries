@@ -642,7 +642,7 @@ function handleEvent(ev) {
       break;
     case 'use':
       if (isT) hud.itemUsed();
-      if (ev.item === 'bread' || ev.item === 'triple') { if (isT) { audio.whoosh(0.35); rig.kick(0.15); hud.callout('BOOST!', ITEMS.bread.color); } else if (nearCam(i, 30)) audio.whoosh(0.12); }
+      if (ev.item === 'bread' || ev.item === 'triple') { if (isT) { audio.whoosh(0.35); rig.kick(0.15); rig.fovPunch(6); hud.callout('BOOST!', ITEMS.bread.color); } else if (nearCam(i, 30)) audio.whoosh(0.12); }
       else if (ev.item === 'hornet') { audio.buzz(1.0, isT || ev.target === state.target ? 0.16 : 0.07); if (ev.target === state.target) hud.popup('HORNET INCOMING!', ITEMS.hornet.color); }
       else if (ev.item === 'seagull') { audio.screech(); if (state.duckStates[state.target] && state.duckStates[state.target].rank === 0) hud.callout('SEAGULL INCOMING!', ITEMS.seagull.color); else hud.popup('SEAGULL STRIKE!', ITEMS.seagull.color); }
       else if (ev.item === 'feather') { audio.stinger(); if (isT) hud.callout('GOLDEN!', ITEMS.feather.color); }
@@ -719,9 +719,9 @@ function handleEvent(ev) {
         }
         hud.card(race.photoFinish ? `${name} BY A BEAK!` : `${name} WINS!`, 1.6);
         const arch = track.toWorld(L, 0, 6);
-        fx.confetti(arch, 1.2);
-        fx.confetti(track.toWorld(L, 8, 2), 0.7);
-        fx.confetti(track.toWorld(L, -8, 2), 0.7);
+        fx.confetti(arch, 1.5);
+        fx.confetti(track.toWorld(L, 8, 2), 1.2);
+        fx.confetti(track.toWorld(L, -8, 2), 1.2);
         state.fireworks = true;
         state.excite = 1;
       }
@@ -1173,6 +1173,13 @@ function declutterTags() {
   placedRects.length = 0;
   const W = renderer.domElement.clientWidth;
   const H = renderer.domElement.clientHeight;
+  // keep tags out from under the HUD panels
+  for (const id of ['hud-ladder', 'minimap', 'hud-tl', 'hud-item']) {
+    const el = document.getElementById(id);
+    if (!el || el.offsetParent === null) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width > 0) placedRects.push({ x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width + 12, h: r.height + 12, hud: true });
+  }
   const th = 0.036 * H; // approx on-screen tag height in px (constant by construction)
   let shown = 0;
   for (const i of order) {
@@ -1188,8 +1195,8 @@ function declutterTags() {
     let clash = false;
     for (const r of placedRects) {
       const ox = Math.min(cx + tw / 2, r.x + r.w / 2) - Math.max(cx - tw / 2, r.x - r.w / 2);
-      const oy = Math.min(cy + th / 2, r.y + r.h / 2) - Math.max(cy - th / 2, r.y - r.h / 2);
-      if (ox > 0 && oy > 0 && ox * oy > 0.25 * tw * th) { clash = true; break; }
+      const oy = Math.min(cy + th / 2 + 3, r.y + r.h / 2 + 3) - Math.max(cy - th / 2 - 3, r.y - r.h / 2 - 3);
+      if (ox > 0 && oy > 0 && (r.hud || ox * oy > 0.2 * tw * th)) { clash = true; break; }
     }
     if (clash) continue;
     placedRects.push({ x: cx, y: cy, w: tw, h: th });

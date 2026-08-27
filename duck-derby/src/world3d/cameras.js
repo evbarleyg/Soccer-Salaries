@@ -380,7 +380,7 @@ export class CameraRig {
     }
     // candidate shots keyed off the leader's position (deterministic in t)
     let shot;
-    if (s > F.dropLipS - 30 && s < F.dropLandS + 22) shot = { id: 'weir', s: F.dropLandS + 16, lat: -13, h: 3.2, lookS: F.dropLipS + 4, lookH: 2.5, fov: 58 };
+    if (s > F.dropLipS - 30 && s < F.dropLandS + 22) shot = { id: 'weir', s: F.dropLandS + 24, lat: -11, h: 6.2, lookS: F.dropLipS + 3, lookH: 3.0, fov: 54 };
     else if (s > F.tunnelInS - 8 && s < F.tunnelOutS - 25) shot = { id: 'tunnel-dolly', dolly: true, ahead: 10, h: 1.1, fov: 70, stiff: 8 };
     else if (s > F.tunnelOutS - 25 && s < F.tunnelOutS + 20) shot = { id: 'tunnel-exit', s: F.tunnelOutS + 26, lat: 8, h: 2.2, lookS: F.tunnelOutS + 2, lookH: 1.5, fov: 55 };
     else if (s > L - 70) shot = { id: 'finish', s: L + 10, lat: -track.frame(L).width * 0.34, h: 2.4, lookLeader: true, fov: 52 };
@@ -393,7 +393,7 @@ export class CameraRig {
         const half = track.course.widthAt(s + 32) / 2;
         shot = flip === 0 ? { id: 'canyon-apex-' + slot, s: s + 32, lat: (slot % 4 < 2 ? 1 : -1) * (half - 1.2), h: 3.2, lookPack: true, fov: 60 } : { id: 'canyon-dolly-' + slot, dolly: true, ahead: 12, h: 0.7, fov: 66, stiff: 7 };
       } else if (s > F.lilyInS - 30 && s < F.dropLipS - 30) shot = flip === 0 ? { id: 'lily-low-' + slot, s: Math.min(s + 34, F.dropApproachS - 5), lat: -11, h: 0.45, lookPack: true, fov: 62 } : { id: 'lily-heli-' + slot, heli: true, r: 34, h: 20, fov: 54 };
-      else if (s > F.tunnelOutS + 20 && s < F.harborInS) shot = flip === 0 ? { id: 'rapids-dolly-' + slot, dolly: true, ahead: 11, h: 0.6, fov: 68, stiff: 7 } : { id: 'rapids-rock-' + slot, s: s + 30, lat: 10, h: 2.5, lookPack: true, fov: 58 };
+      else if (s > F.tunnelOutS + 20 && s < F.harborInS) shot = flip === 0 ? { id: 'rapids-dolly-' + slot, dolly: true, ahead: 11, h: 0.6, fov: 68, stiff: 7 } : { id: 'rapids-rock-' + slot, s: s + 36, lat: 9, h: 5.5, lookPack: true, fov: 56 };
       else shot = flip === 0 ? { id: 'heli-' + slot, heli: true, r: 36, h: 22, fov: 55 } : { id: 'dolly-' + slot, dolly: true, ahead: 12, h: 0.8, fov: 66, stiff: 7 };
     }
     // event cuts (lead changes, big hits) pre-empt the schedule for their duration
@@ -437,7 +437,23 @@ export class CameraRig {
       track.toWorld(s - 3, lead.lat * 0.6, 0.7, outLook);
     } else {
       track.toWorld(sh.s, sh.lat, sh.h, outPos);
-      if (this.terrainHeight) outPos.y = Math.max(outPos.y, this.terrainHeight(outPos.x, outPos.z) + 1.2);
+      if (this.terrainHeight) {
+        outPos.y = Math.max(outPos.y, this.terrainHeight(outPos.x, outPos.z) + 1.2);
+        // cheap occlusion test along the sight line to the leader: lift the camera until it clears
+        const tgt = track.toWorld(Math.min(lead.s, L + 3), lead.lat * 0.6, 0.7, tmpLook);
+        for (let tries = 0; tries < 4; tries++) {
+          let blocked = false;
+          for (let k = 1; k <= 5; k++) {
+            const f = k / 6;
+            const x = outPos.x + (tgt.x - outPos.x) * f;
+            const z = outPos.z + (tgt.z - outPos.z) * f;
+            const y = outPos.y + (tgt.y - outPos.y) * f;
+            if (this.terrainHeight(x, z) > y - 0.5) { blocked = true; break; }
+          }
+          if (!blocked) break;
+          outPos.y += 2.5;
+        }
+      }
       if (sh.lookLeader) track.toWorld(Math.min(lead.s, L + 3), lead.lat * 0.6, 0.7, outLook);
       else if (sh.lookPack) track.toWorld(lerp(cs, s, 0.6), cl * 0.5, 0.8, outLook);
       else track.toWorld(sh.lookS, 0, sh.lookH ?? 1, outLook);

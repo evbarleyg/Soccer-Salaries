@@ -149,7 +149,7 @@ body.view-tv #hud-comm { font-size: 1.3rem; }
 #hud-clock { position: absolute; right: calc(12px + var(--safe-r)); top: calc(84px + var(--safe-t)); font: 800 0.95rem ui-monospace, SFMono-Regular, Menlo, monospace; color: #dfe9f5; text-shadow: 0 2px 0 rgba(0,0,0,0.5); }
 #btn-more { display: none; }
 #hud-menu { display: flex; gap: 6px; }
-#hud-ladder { position: absolute; right: calc(12px + var(--safe-r)); top: calc(112px + var(--safe-t)); list-style: none; margin: 0; padding: 4px; width: 200px; background: rgba(13,24,38,0.55); border-radius: 12px; display: grid; gap: 2px; font-family: var(--num); }
+#hud-ladder { position: absolute; right: calc(12px + var(--safe-r)); top: calc(112px + var(--safe-t)); list-style: none; margin: 0; padding: 4px; width: 200px; background: rgba(12,22,34,0.8); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); border-radius: 12px; display: grid; gap: 2px; font-family: var(--num); }
 #hud-ladder li { display: grid; grid-template-columns: 1.4rem 1.35rem minmax(0, 1fr) auto; align-items: center; gap: 5px; font-size: 0.74rem; font-weight: 800; padding: 2px 4px; border-radius: 7px; color: #e9f0f7; }
 #hud-ladder li.me { background: rgba(255, 210, 63, 0.22); color: #fff; }
 #hud-ladder li.sep { display: block; height: 2px; padding: 0; background: rgba(255,255,255,0.15); margin: 1px 6px; }
@@ -171,7 +171,7 @@ body.phase-flythrough #hud-ladder, body.phase-grid #hud-ladder, body.phase-count
 #progress-dots i { position: absolute; top: 6px; width: 18px; height: 18px; margin-left: -9px; border-radius: 50%; border: 2px solid #fff; display: grid; place-items: center; font: 900 0.55rem var(--num); font-style: normal; color: #111; box-shadow: 0 2px 6px rgba(0,0,0,0.4); transition: transform 0.2s; }
 #progress-dots i.me { transform: scale(1.35); z-index: 2; box-shadow: 0 0 0 2px var(--gold), 0 2px 6px rgba(0,0,0,0.4); }
 #progress-dots i.lead { z-index: 1; }
-#minimap { position: absolute; right: calc(12px + var(--safe-r)); bottom: calc(12px + var(--safe-b)); width: 220px; height: 220px; border-radius: 18px; background: rgba(13,24,38,0.55); box-shadow: 0 0 0 1px rgba(255,255,255,0.2); }
+#minimap { position: absolute; right: calc(12px + var(--safe-r)); bottom: calc(12px + var(--safe-b)); width: 200px; height: 200px; border-radius: 18px; background: rgba(12,22,34,0.82); box-shadow: 0 0 0 1px rgba(255,255,255,0.2); }
 #toast { position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%) scale(0.9); font-weight: 900; font-style: italic; font-size: clamp(1.6rem, 5vw, 3rem); color: #fff; text-shadow: 0 4px 0 rgba(0,0,0,0.5), 0 0 30px rgba(0,0,0,0.4); opacity: 0; transition: opacity 0.25s, transform 0.35s cubic-bezier(0.2, 1.6, 0.4, 1); white-space: nowrap; }
 #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 #popup { position: absolute; left: 50%; top: 24%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
@@ -206,9 +206,12 @@ body.phase-flythrough #hud-ladder, body.phase-grid #hud-ladder, body.phase-count
 #incoming span { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #ffd0cb; }
 #incoming::before { content: "▼"; color: #ff4d3d; }
 @keyframes incpulse { from { box-shadow: 0 0 0 0 rgba(255,77,61,0.7); } to { box-shadow: 0 0 0 8px rgba(255,77,61,0); } }
-#speedlines { position: absolute; inset: 0; opacity: 0; transition: opacity 0.25s; background: repeating-conic-gradient(from 0deg at 50% 55%, rgba(255,255,255,0) 0deg 13deg, rgba(255,255,255,0.09) 13deg 14deg); -webkit-mask-image: radial-gradient(closest-side at 50% 55%, transparent 62%, #000 100%); mask-image: radial-gradient(closest-side at 50% 55%, transparent 62%, #000 100%); }
-#speedlines.show { opacity: 1; animation: streak 0.25s linear infinite; }
-@keyframes streak { from { transform: scale(1); } to { transform: scale(1.08); } }
+#speedlines { position: absolute; inset: 0; opacity: 0; transition: opacity 0.2s; pointer-events: none; overflow: hidden; }
+#speedlines.show { opacity: 1; }
+#speedlines::before, #speedlines::after { content: ""; position: absolute; top: 0; bottom: 0; width: 22%; background: repeating-linear-gradient(180deg, rgba(255,255,255,0) 0 38px, rgba(255,255,255,0.22) 38px 41px, rgba(255,255,255,0) 41px 90px); -webkit-mask-image: linear-gradient(90deg, #000, transparent); mask-image: linear-gradient(90deg, #000, transparent); animation: streak 0.35s linear infinite; }
+#speedlines::before { left: 0; }
+#speedlines::after { right: 0; transform: scaleX(-1); }
+@keyframes streak { from { background-position: 0 0; } to { background-position: 0 90px; } }
 #fly-cap { position: absolute; left: 50%; bottom: calc(70px + var(--safe-b)); transform: translateX(-50%); text-align: center; opacity: 0; transition: opacity 0.4s; }
 #fly-cap.show { opacity: 1; }
 #fly-title { font-weight: 900; font-style: italic; font-size: clamp(1.5rem, 5vw, 2.6rem); color: #fff; text-shadow: 0 4px 0 rgba(0,0,0,0.5); }
@@ -269,7 +272,7 @@ body.phase-finish #hud-item { display: none; }
 #lower-third .lt-title { background: rgba(13,24,38,0.88); color: #fff; font-weight: 900; font-style: italic; font-size: clamp(1.3rem, 4vw, 2.1rem); padding: 4px 16px 2px; border-left: 4px solid var(--gold); min-width: 220px; }
 #lower-third .lt-sub { background: rgba(13,24,38,0.72); color: var(--muted); font-weight: 700; font-size: 0.85rem; padding: 3px 16px 5px; border-left: 4px solid var(--gold); border-radius: 0 0 8px 0; }
 @keyframes ltin { from { opacity: 0; transform: translateX(-30px); } to { opacity: 1; transform: none; } }
-#title-card { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; z-index: 12; opacity: 0; transition: opacity 0.8s; }
+#title-card { position: fixed; inset: 0; display: grid; place-content: center; padding-bottom: 24vh; text-align: center; pointer-events: none; z-index: 12; opacity: 0; transition: opacity 0.8s; }
 #title-card.show { opacity: 1; }
 #title-card .logo span { font-size: clamp(1rem, 3vw, 1.6rem); }
 #title-card .logo b { font-size: clamp(3.2rem, 12vw, 7rem); text-shadow: 0 6px 0 #0b1522, 0 0 60px rgba(102,214,255,0.45); }

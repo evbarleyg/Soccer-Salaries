@@ -35,6 +35,10 @@ export class DuckAnimator {
     this._v = new THREE.Vector3();
     this._back = new THREE.Vector3();
     this.emissiveMats = duck.glowMats && duck.glowMats.length ? duck.glowMats : [duck.mats.body, duck.mats.head, duck.mats.wing, duck.mats.light];
+    // per-duck instances of the water-contact materials so opacity can follow this duck's speed/height
+    if (duck.shadow && duck.shadow.material) duck.shadow.material = duck.shadow.material.clone();
+    if (duck.wake && duck.wake.material) duck.wake.material = duck.wake.material.clone();
+    if (duck.foam && duck.foam.material) duck.foam.material = duck.foam.material.clone();
   }
 
   ensureStars() {
@@ -177,6 +181,12 @@ export class DuckAnimator {
     duck.shadow.position.y = -(hopY + (d.airborne ? 0 : bob)) + 0.1;
     const shS = 1 - clamp(hopY / 6, 0, 0.6);
     duck.shadow.scale.set(0.75 * shS, 1.05 * shS, 1);
+    duck.shadow.material.opacity = 0.35 * (1 - clamp(hopY / 4, 0, 1));
+    // wake + waterline foam scale with speed (nothing at rest on the grid, nothing in the air)
+    const spd = clamp(d.v / (d.v0 || 23), 0, 1.4);
+    const onWater = d.airborne || spinE >= 0 ? 0 : 1;
+    if (duck.wake && duck.wake.material) duck.wake.material.opacity = 0.3 * smoothstep(0.25, 0.8, spd) * onWater * (boostW || w.star ? 1.3 : 1);
+    if (duck.foam && duck.foam.material) duck.foam.material.opacity = (0.18 + 0.3 * smoothstep(0.1, 0.7, spd)) * onWater;
 
     // --- dizzy stars
     if (dizzy) {
