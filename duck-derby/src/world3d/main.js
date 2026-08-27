@@ -1355,9 +1355,8 @@ function step(dt) {
       if (ghost > 0) {
         const q = Math.round(ghost * 10) / 10; // quantised so materials only change on real steps
         if (d.ghost !== q) {
-          const hashOn = q < 1; // alpha-hash fade: no sorting artefacts, no x-ray look
           for (const mt of d.duck.glowMats) {
-            if (mt.alphaHash !== hashOn) { mt.alphaHash = hashOn; mt.needsUpdate = true; }
+            mt.transparent = q < 1; // depth-writing fade: no x-ray insides, no dither noise
             mt.opacity = q;
           }
           d.ghost = q;
