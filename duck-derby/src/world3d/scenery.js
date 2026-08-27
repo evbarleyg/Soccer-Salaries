@@ -1315,7 +1315,7 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
       const half = halfAt(s);
       const prof = profileAt(course, s);
       if (prof.tunnel > 0.1) continue;
-      const tex = bannerTexture(`${Math.round(L - s)}m`, { w: 256, h: 128, bg: '#14202e', fg: '#ffffff', accent: '#ffd23f', font: '900 80px system-ui, sans-serif' });
+      const tex = bannerTexture(`${Math.round(L - s)}m`, { w: 256, h: 128, bg: '#14202e', fg: '#ffffff', accent: '#ffd23f', font: '900 60px system-ui, sans-serif' });
       const board = twoSided(tex, 2.2, 1.1);
       const pp = P(s, -(half + 1.2), 2.2);
       board.position.copy(pp);

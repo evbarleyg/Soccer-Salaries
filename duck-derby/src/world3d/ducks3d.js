@@ -18,6 +18,7 @@ const footGeo = new THREE.BoxGeometry(0.2, 0.04, 0.28);
 const cheekGeo = new THREE.CircleGeometry(0.07, 12);
 const towelGeo = new THREE.CylinderGeometry(1, 1, 1, 24, 1, true, Math.PI * 0.94, Math.PI * 1.12); // draped over the back
 const roundelGeo = new THREE.CircleGeometry(0.17, 20);
+const ringGeo = new THREE.TorusGeometry(0.6, 0.14, 10, 30);
 const shadowGeo = new THREE.CircleGeometry(0.9, 20);
 
 const blackMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.35 });
@@ -110,6 +111,12 @@ export function buildDuck(look) {
   tail.scale.set(1, 1, 0.55);
   pivot.add(tail);
 
+  // towel-coloured rubber ring at the waterline: the duck's ID colour, readable from any camera
+  const ring = new THREE.Mesh(ringGeo, mats.towel);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.set(0, 0.07, 0.02);
+  ring.scale.set(1, 1.18, 1);
+  pivot.add(ring);
   // saddle towel + roundels
   const towel = new THREE.Mesh(towelGeo, mats.towel);
   towel.rotation.x = Math.PI / 2;
@@ -209,7 +216,7 @@ export function buildDuck(look) {
   shadow.position.y = 0.06;
 
   // ---- collapse into a handful of draw calls (body statics, head, hat, each wing, roundels)
-  const statics = [body, chest, towel];
+  const statics = [body, chest, towel, ring];
   pivot.children.filter((o) => o.isMesh && (o.material === mats.accent || o.material === mats.ring)).forEach((o) => statics.push(o));
   const bodyMerged = mergeMeshes(pivot, statics);
   const roundels = pivot.children.filter((o) => o.isMesh && o.material === roundelMat);
@@ -230,39 +237,89 @@ export function buildDuck(look) {
   group.traverse((o) => {
     if (o.isMesh) o.frustumCulled = true;
   });
-  return { group, pivot, body: bodyMerged[0] || body, head, wings, feet, hat, shadow, tail, mats, glowMats, look };
+  const shared = new Set([bodyGeo, headGeo, eyeGeo, glintGeo, wingGeo, tailGeo, beakTopGeo, beakBotGeo, footGeo, cheekGeo, towelGeo, roundelGeo, ringGeo, shadowGeo, blackMat, whiteMat, cheekMat, shadowMat, roundelMat.map]);
+  return { group, pivot, body: bodyMerged[0] || body, head, wings, feet, hat, shadow, tail, mats, glowMats, look, shared };
 }
 
 /** Small canvas name tag sprite shown above a duck. */
-export function makeNameTag(name, towel) {
+export function makeNameTag(name, towel, number) {
+  const label = name.length > 18 ? name.slice(0, 17) + '…' : name;
+  const font = '700 30px system-ui, -apple-system, Segoe UI, sans-serif';
+  const probe = document.createElement('canvas').getContext('2d');
+  probe.font = font;
+  const textW = Math.ceil(probe.measureText(label).width);
+  const w = Math.min(480, textW + 62);
   const c = document.createElement('canvas');
-  c.width = 256;
+  c.width = w;
   c.height = 64;
   const g = c.getContext('2d');
-  const label = name.length > 14 ? name.slice(0, 13) + '…' : name;
-  g.font = '700 30px system-ui, -apple-system, Segoe UI, sans-serif';
-  const w = Math.min(240, g.measureText(label).width + 46);
-  const x0 = (256 - w) / 2;
-  g.fillStyle = 'rgba(12,22,34,0.78)';
-  roundRect(g, x0, 8, w, 48, 24);
+  g.fillStyle = 'rgba(12,22,34,0.8)';
+  roundRect(g, 1, 8, w - 2, 48, 24);
   g.fill();
+  // number roundel in the towel colours
   g.fillStyle = towel.bg;
   g.beginPath();
-  g.arc(x0 + 24, 32, 11, 0, Math.PI * 2);
+  g.arc(26, 32, 15, 0, Math.PI * 2);
   g.fill();
-  g.lineWidth = 2;
-  g.strokeStyle = 'rgba(255,255,255,0.8)';
+  g.lineWidth = 2.5;
+  g.strokeStyle = 'rgba(255,255,255,0.9)';
   g.stroke();
-  g.fillStyle = '#fff';
-  g.textAlign = 'left';
+  g.fillStyle = towel.text;
+  g.font = '900 17px system-ui, -apple-system, Segoe UI, sans-serif';
+  g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillText(label, x0 + 42, 33);
+  g.fillText(String(number ?? ''), 26, 33);
+  g.fillStyle = '#fff';
+  g.font = font;
+  g.textAlign = 'left';
+  g.fillText(label, 48, 34, w - 56);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: true, fog: false });
   const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(2.6, 0.65, 1);
+  sprite.userData.aspect = w / 64;
+  sprite.scale.set(0.65 * sprite.userData.aspect, 0.65, 1);
   sprite.renderOrder = 10;
+  return sprite;
+}
+
+/** "YOU" chevron marker shown over the duck the camera follows. */
+export function makeYouMarker() {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 128;
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, fog: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.renderOrder = 12;
+  sprite.userData.paint = (towel, text = 'YOU') => {
+    const g = c.getContext('2d');
+    g.clearRect(0, 0, 128, 128);
+    g.fillStyle = 'rgba(12,22,34,0.85)';
+    roundRect(g, 14, 6, 100, 46, 14);
+    g.fill();
+    g.fillStyle = '#fff';
+    g.font = '900 30px system-ui, -apple-system, Segoe UI, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(text, 64, 30);
+    // chevron
+    g.beginPath();
+    g.moveTo(30, 62);
+    g.lineTo(98, 62);
+    g.lineTo(64, 112);
+    g.closePath();
+    g.fillStyle = towel.bg;
+    g.fill();
+    g.lineWidth = 6;
+    g.strokeStyle = '#ffffff';
+    g.stroke();
+    g.fillStyle = towel.text;
+    g.font = '900 26px system-ui, -apple-system, Segoe UI, sans-serif';
+    g.fillText(String(towel.number ?? ''), 64, 80);
+    tex.needsUpdate = true;
+  };
   return sprite;
 }
 
