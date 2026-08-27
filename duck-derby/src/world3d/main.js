@@ -103,6 +103,7 @@ window.addEventListener('resize', resize);
 // browsers only allow audio after a gesture: (re)try on the first one
 const unlockOnce = () => { if (state.sound) { audio.unlock(); if (state.race) audio.startAmbience(); } };
 window.addEventListener('pointerdown', unlockOnce, { passive: true });
+window.addEventListener('touchend', unlockOnce, { passive: true });
 window.addEventListener('keydown', unlockOnce);
 
 // --------------------------------------------------------------------------- boot
@@ -1335,5 +1336,5 @@ window.__duckWorld = {
 
 boot().catch((err) => {
   console.error(err);
-  bootMsg.textContent = 'Something went wrong: ' + err.message;
+  bootMsg.textContent = /webgl|context/i.test(String(err && err.message)) ? 'WebGL is not available on this device/browser — try the 2D Duck Derby (index.html).' : 'Something went wrong: ' + err.message;
 });

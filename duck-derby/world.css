@@ -237,7 +237,7 @@ body.phase-finish #hud-item { display: none; }
 
 /* ------------------------------------------------------------------ results */
 #results.panel { align-items: end; justify-items: start; background: linear-gradient(90deg, rgba(8,16,28,0.55), rgba(8,16,28,0) 70%); }
-#results .panel-inner { width: min(520px, 100%); max-height: calc(100vh - 24px); overflow: auto; }
+#results .panel-inner { width: min(520px, 100%); max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow: auto; }
 .res-head { display: flex; justify-content: space-between; align-items: start; gap: 1rem; }
 .res-head h2 { margin: 0; font: 900 italic 1.7rem var(--num); text-transform: uppercase; letter-spacing: 0.02em; }
 .res-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
