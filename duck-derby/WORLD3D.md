@@ -145,6 +145,13 @@ hits are evenly spread across ducks.
 - Lighting inside the tunnel dims globally while the camera is inside (the water
   is darkened by position); ducks seen from outside the tunnel are not darkened.
 - Real-device frame-rate numbers still to be collected (headless captures run on
-  software GL); the adaptive scaler is the safety net.
+  software GL); the GPU-aware tiers and the adaptive ladder are the safety net.
+- The sim uses `Math.sin/cos/pow` and branches on accumulated floats, so a shared
+  race could in principle diverge between JS engines by an ulp; a golden test pins
+  node's results per `ENGINE_VERSION`, but a WebKit/Gecko cross-check is still to do.
+- A faint seam can show where the river ribbon meets the open-sea sheet in the
+  harbour at grazing angles.
+- Start-together sync relies on device clocks (`go=` is an epoch time); phones a
+  few seconds off will start a few seconds off.
 - Phase 3 (player-controlled multiplayer "Grand Prix" with tilt steering) is
   sketched in `PHASE3-MULTIPLAYER.md`.
