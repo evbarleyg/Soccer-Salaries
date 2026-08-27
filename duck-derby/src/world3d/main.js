@@ -81,7 +81,7 @@ try {
   throw err;
 }
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(PAL.fog, 140, 560);
+scene.fog = new THREE.Fog(PAL.fog, 180, 680);
 const camera = new THREE.PerspectiveCamera(62, 1, 0.3, 1800);
 const sky = makeSky();
 scene.add(sky);
@@ -1111,8 +1111,8 @@ function step(dt) {
   lights.sun.intensity = lerp(2.1, 0.12, inTunnel);
   lights.fill.intensity = lerp(0.55, 0.25, inTunnel);
   scene.fog.color.copy(fogBase).lerp(fogDark, inTunnel * 0.85);
-  scene.fog.near = lerp(140, 20, inTunnel);
-  scene.fog.far = lerp(560, 160, inTunnel);
+  scene.fog.near = lerp(180, 20, inTunnel);
+  scene.fog.far = lerp(680, 160, inTunnel);
   sky.material.uniforms.dim.value = inTunnel;
   waterMat.uniforms.darkness.value = inTunnel;
   waterMat.uniforms.time.value = state.realTime;
