@@ -429,4 +429,4 @@ body.guest-in #lobby .lobby-left { display: none; }
 #btn-trial { border: 1px solid var(--line); background: rgba(255,255,255,0.08); color: #fff; border-radius: 12px; padding: 0.55rem 0.9rem; font: 800 0.95rem var(--num); }
 #btn-trial small { display: block; font: 700 0.62rem var(--font); color: var(--muted); letter-spacing: 0.04em; }
 body.trial #hud-item, body.trial #hud-leader { display: none; }
-body.trial #hud-name::after { content: ' · TILT TRIAL'; color: var(--gold); }
+body.trial #hud-tl::after { content: 'TILT TRIAL · course of the day'; display: block; margin-top: 4px; font: 900 0.6rem var(--num); letter-spacing: 0.12em; color: var(--gold); text-shadow: 0 1px 0 rgba(0,0,0,0.5); }
