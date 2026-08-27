@@ -142,11 +142,17 @@ offset), airborne pose off the Drop, dizzy wobble, barrel roll.
 
 ## Tech constraints
 
-- Static files only (GitHub Pages). No bundler, no npm deps. Three.js
-  `0.160.0` as ES modules via import map from jsdelivr
-  (`https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js`,
-  addons under `/examples/jsm/`). Post-processing allowed if it stays fast
-  (bloom on boosts/fireworks is nice-to-have; gate it by device).
+- Static files only (GitHub Pages). No bundler, no runtime npm deps.
+  **Vendor Three.js into the repo** rather than using a CDN: the Claude
+  sandbox's egress proxy blocks `cdn.jsdelivr.net` (CONNECT 403) but
+  `registry.npmjs.org` works, so run `npm pack three@0.160.0`, copy
+  `build/three.module.js` (and any `examples/jsm/` addons you use) into
+  `duck-derby/vendor/three/`, and point an import map at those local files
+  (`"three": "./vendor/three/three.module.js"`, `"three/addons/": "./vendor/three/addons/"`).
+  This also makes the deployed game independent of third-party CDNs.
+  Post-processing allowed if it stays fast (bloom on boosts/fireworks is
+  nice-to-have; gate it by device). Headless Chromium here does provide
+  WebGL2 with the swiftshader flags below.
 - Performance: 60 fps target on a mid-range phone. Instancing for crowd,
   buoys, trees, rocks; capped pixel ratio (≤2); cheap/blob shadows; LOD or
   density scaling by device; frustum-friendly chunking of the course.
