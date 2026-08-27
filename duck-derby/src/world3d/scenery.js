@@ -2525,14 +2525,25 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
 
   // crowd + bunting meshes (built last, after every section added people/flags): one instanced mesh per
   // section, bobbing via the vertex shader (per-instance phase attribute, shared time/excitement uniforms)
-  const crowdUniforms = { uTime: { value: 0 }, uExcite: { value: 0.3 } };
+  // uHot = the leader's position: spectators within ~30 m of the action jump higher and faster (a wave follows the race)
+  const crowdUniforms = { uTime: { value: 0 }, uExcite: { value: 0.3 }, uHot: { value: new THREE.Vector3(0, -1000, 0) } };
   for (const [inst, name] of [[crowdBodies, 'crowd-bodies'], [crowdHeads, 'crowd-heads']]) {
     inst.mat.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = crowdUniforms.uTime;
       shader.uniforms.uExcite = crowdUniforms.uExcite;
+      shader.uniforms.uHot = crowdUniforms.uHot;
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float aPhase;\nuniform float uTime;\nuniform float uExcite;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.y += max(0.0, sin(uTime * 7.0 + aPhase)) * (0.08 + 0.32 * uExcite) ;\ntransformed.x += sin(uTime * 3.0 + aPhase * 2.0) * 0.05 * uExcite;');
+        .replace('#include <common>', '#include <common>\nattribute float aPhase;\nuniform float uTime;\nuniform float uExcite;\nuniform vec3 uHot;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+#ifdef USE_INSTANCING
+vec3 seatW = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+#else
+vec3 seatW = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+#endif
+float near = 1.0 - smoothstep(12.0, 34.0, distance(seatW.xz, uHot.xz));
+float ex = clamp(uExcite + near * 0.9, 0.0, 1.4);
+transformed.y += max(0.0, sin(uTime * (7.0 + near * 4.0) + aPhase)) * (0.08 + 0.32 * ex);
+transformed.x += sin(uTime * 3.0 + aPhase * 2.0) * 0.05 * ex;`);
     };
     if (!inst.items.length) continue;
     for (const { key, mesh } of inst.buildSplit(name)) {
@@ -2545,6 +2556,7 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
   addUpdater((dt, ctx) => {
     crowdUniforms.uTime.value = ctx.realTime;
     crowdUniforms.uExcite.value = ctx.excite ?? 0.3;
+    if (ctx.leaderPos) crowdUniforms.uHot.value.copy(ctx.leaderPos);
   }, null);
   if (flags.items.length) for (const { key, mesh } of flags.buildSplit('bunting')) (sections[key] ? sections[key].group : root).add(mesh);
   if (cableGeoms.length) root.add(mergedMesh(cableGeoms, { flat: false }));

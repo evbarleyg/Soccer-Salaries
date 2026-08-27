@@ -725,7 +725,7 @@ function frameCtx(dt) {
   return {
     dt, t: state.t, realTime: state.realTime, phase: state.phase, phaseTime: state.phaseTime, race: state.race, ducks: state.duckStates, target: state.target, leader: state.leader,
     standings: state.standings, names: state.raceNames, looks: state.looks, view: state.view, follow: state.follow, fx, camPos: camera.position, flyDuration: FLY_T, gridDuration: state.gridT || GRID_T, rule: state.rule,
-    leaderS: state.duckStates[state.leader] ? state.duckStates[state.leader].s : 0, excite: state.excite || 0.3, orbitTarget: state.race ? state.race.order[0] : 0,
+    leaderS: state.duckStates[state.leader] ? state.duckStates[state.leader].s : 0, leaderPos: state.duckStates[state.leader] ? state.duckStates[state.leader].pos : null, excite: state.excite || 0.3, orbitTarget: state.race ? state.race.order[0] : 0,
   };
 }
 
