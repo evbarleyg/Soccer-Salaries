@@ -414,3 +414,5 @@ body.guest-in #lobby .lobby-left { display: none; }
 #res-board li .log time { color: var(--gold); font: 700 0.7rem ui-monospace, SFMono-Regular, Menlo, monospace; margin-right: 4px; }
 #res-board li .log li { display: block; min-height: 0; padding: 0 2px; background: none; border: 0; border-radius: 0; animation: none; font-size: inherit; cursor: default; }
 #res-board.dense li .log li { min-height: 0; padding: 0 2px; font-size: inherit; }
+#toast.sticky { pointer-events: auto; }
+#toast.sticky button { margin-left: 6px; border: 0; border-radius: 8px; padding: 3px 10px; font: 800 0.85rem var(--num); background: var(--gold); color: var(--ink); }

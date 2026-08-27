@@ -83,6 +83,12 @@ try {
   $('#boot-msg').textContent = 'WebGL is not available on this device/browser — try the 2D Duck Derby (index.html).';
   throw err;
 }
+// a backgrounded mobile tab can lose its GL context: say so and offer a reload instead of a frozen black canvas
+canvas.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  const t = document.getElementById('toast');
+  if (t) { t.innerHTML = 'Graphics were reset by the browser — <button type="button" onclick="location.reload()">reload</button>'; t.classList.add('show', 'sticky'); }
+});
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(PAL.fog, 180, 680);
 const camera = new THREE.PerspectiveCamera(62, 1, 0.3, 800);
