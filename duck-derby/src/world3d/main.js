@@ -184,6 +184,10 @@ async function boot() {
     fx.warmup();
     if (renderer.compileAsync && renderer.extensions.has('KHR_parallel_shader_compile')) await renderer.compileAsync(scene, camera); else renderer.compile(scene, camera);
     renderer.render(scene, camera);
+    // also the see-through variant of the duck program (used when a pack-mate is ghosted near the camera)
+    for (const mt of sample.glowMats || []) { mt.transparent = true; mt.opacity = 0.5; mt.needsUpdate = true; }
+    renderer.compile(scene, camera);
+    renderer.render(scene, camera);
     scene.remove(warm);
     sample.group.traverse((o) => { if (o.isMesh && o.geometry && !(sample.shared && sample.shared.has(o.geometry))) o.geometry.dispose(); });
   });
