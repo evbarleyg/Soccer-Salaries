@@ -903,7 +903,20 @@ function showResults() {
     li.style.setProperty('--me', lk.towel.bg);
     li.title = `${lk.palette.name} · ${lk.hatName}`;
     li.innerHTML = `<span class="pick">Pick <b>${k + 1}</b></span><span class="num" style="background:${lk.towel.bg};color:${lk.towel.text}">${lk.number}</span><span class="nm">${escapeHtml(state.raceNames[i])}${i === mine ? '<span class="you">YOU</span>' : ''}</span><span class="res">${ordinal(place)} · ${fmtTime(tt)}</span>`;
-    li.addEventListener('click', () => { setTarget(i, true); });
+    li.addEventListener('click', () => {
+      // tap a row: ride with that duck next time, and expand its race log ("what happened to MY duck")
+      setTarget(i, true);
+      const open = li.classList.toggle('open');
+      for (const o of els.resBoard.querySelectorAll('li.open')) if (o !== li) { o.classList.remove('open'); const lg = o.querySelector('.log'); if (lg) lg.remove(); }
+      const had = li.querySelector('.log');
+      if (had) had.remove();
+      if (open) {
+        const log = document.createElement('ol');
+        log.className = 'log';
+        log.innerHTML = duckLog(i).map((e) => `<li><time>${fmtTime(e.t)}</time> ${escapeHtml(e.text)}</li>`).join('') || '<li>A quiet race.</li>';
+        li.appendChild(log);
+      }
+    });
     els.resBoard.appendChild(li);
     if (i === mine) myRow = li;
   });
@@ -918,6 +931,31 @@ function showResults() {
   if (myRow) setTimeout(() => { if (myRow.offsetTop + myRow.offsetHeight > els.resBoard.scrollTop + els.resBoard.clientHeight) myRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 700);
   history.replaceState(null, '', '?' + shareQuery(true));
 }
+/** One duck's story, from the sim's events (pickups, hits given/taken, the Drop, leads, kick, finish). */
+function duckLog(i) {
+  const race = state.race;
+  const names = state.raceNames;
+  const out = [];
+  const itemName = (id) => (id === 'hotdog' ? 'hot dog' : ITEMS[id] ? ITEMS[id].name : id);
+  for (const e of race.events) {
+    if (e.duck === i) {
+      switch (e.type) {
+        case 'pickup': out.push({ t: e.t, text: `picked up ${itemName(e.item)}` }); break;
+        case 'use': out.push({ t: e.t, text: e.target >= 0 && e.target !== undefined ? `used ${itemName(e.item)} on ${names[e.target]}` : `used ${itemName(e.item)}` }); break;
+        case 'hit': out.push({ t: e.t, text: `${e.item === 'hotdog' ? 'hot-dogged by the crowd' : `hit by ${e.by >= 0 ? names[e.by] + "'s " : ''}${itemName(e.item)}`} while ${ordinal(e.rank + 1)}` }); break;
+        case 'blocked': out.push({ t: e.t, text: `bubble blocked ${e.by >= 0 ? names[e.by] + "'s shot" : 'a hit'}` }); break;
+        case 'stumble': out.push({ t: e.t, text: `bonked a ${e.what || 'rock'}` }); break;
+        case 'lead': out.push({ t: e.t, text: 'took the lead' }); break;
+        case 'kick': out.push({ t: e.t, text: 'kicked for home' }); break;
+        case 'takeoff': out.push({ t: e.t, text: 'over The Drop' }); break;
+        case 'finish': out.push({ t: e.t, text: `finished ${ordinal(race.order.indexOf(i) + 1)}` }); break;
+        default: break;
+      }
+    } else if (e.type === 'hit' && e.by === i) out.push({ t: e.t, text: `landed ${itemName(e.item)} on ${names[e.duck]}` });
+  }
+  return out;
+}
+
 /** Post-race highlights computed from the sim: comeback, punching bag, longest lead, photo margin. */
 function raceHighlights(race) {
   const out = [];
