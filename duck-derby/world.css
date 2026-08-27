@@ -183,16 +183,16 @@ body.phase-flythrough #hud-ladder, body.phase-grid #hud-ladder, body.phase-count
 #banner { position: absolute; left: 0; right: 0; top: 14%; text-align: center; font-weight: 900; font-style: italic; font-size: clamp(1.1rem, 4vw, 2rem); line-height: 1; letter-spacing: 0.08em; color: var(--ink); background: linear-gradient(90deg, transparent, var(--gold) 22%, var(--gold) 78%, transparent); padding: 0.45rem 0; transform: skewY(-2deg) translateX(-110%); opacity: 0; }
 #banner.show { animation: banner calc(var(--hold, 1.1s) + 0.6s) cubic-bezier(0.2, 0.9, 0.3, 1) forwards; }
 @keyframes banner { 0% { transform: skewY(-2deg) translateX(-110%); opacity: 1; } 20% { transform: skewY(-2deg) translateX(0); opacity: 1; } 85% { transform: skewY(-2deg) translateX(0); opacity: 1; } 100% { transform: skewY(-2deg) translateX(110%); opacity: 0; } }
-/* mud splat on the lens: hard-edged blobs with drip tails, never over the top-left HUD or dead centre */
+/* mud splat on the lens: hard-edged splats with short drips, kept off the HUD corners and dead centre */
 #mud { position: absolute; inset: 0; opacity: 0; transition: opacity 0.5s; overflow: hidden; }
 #mud.show { opacity: 1; transition: opacity 0.15s; }
-#mud i { position: absolute; width: 30vmin; height: 26vmin; border-radius: 46% 54% 50% 50% / 55% 45% 55% 45%; background: radial-gradient(closest-side, #6b4522 0 58%, #4a2e14 59% 66%, transparent 67%); transform-origin: 50% 40%; }
-#mud i::after { content: ""; position: absolute; left: 44%; top: 62%; width: 14%; height: 70%; border-radius: 0 0 50% 50%; background: linear-gradient(#5a3a1c, #4a2e14); transform-origin: top; transform: scaleY(0.2); }
+#mud i { position: absolute; width: 30vmin; height: 22vmin; border-radius: 58% 42% 63% 37% / 46% 61% 39% 54%; background: radial-gradient(60% 65% at 45% 45%, #6b4522 0 60%, #4a2e14 61% 70%, transparent 71%), radial-gradient(30% 40% at 78% 70%, #6b4522 0 60%, transparent 62%), radial-gradient(25% 30% at 20% 78%, #5a3a1c 0 60%, transparent 62%); transform-origin: 50% 40%; }
+#mud i::after { content: ""; position: absolute; left: 46%; top: 66%; width: 9%; height: 38%; border-radius: 40% 40% 50% 50%; background: linear-gradient(#5a3a1c, #4a2e14); transform-origin: top; transform: scaleY(0.1); }
 #mud.show i { animation: splat 0.28s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
-#mud.show i::after { animation: drip 1.6s 0.2s ease-in forwards; }
+#mud.show i::after { animation: drip 1.7s 0.25s ease-in forwards; }
 @keyframes splat { from { transform: scale(0.2); } to { transform: scale(1) rotate(var(--r, 0deg)); } }
 @keyframes drip { to { transform: scaleY(1); } }
-#mud i:nth-child(1) { left: 4%; top: 42%; --r: -8deg; } #mud i:nth-child(2) { right: 3%; top: 22%; width: 36vmin; height: 32vmin; --r: 6deg; } #mud i:nth-child(3) { left: 22%; bottom: 4%; --r: 12deg; } #mud i:nth-child(4) { left: 58%; top: 4%; width: 22vmin; height: 20vmin; } #mud i:nth-child(5) { right: 24%; bottom: 16%; width: 26vmin; height: 22vmin; --r: -14deg; } #mud i:nth-child(6) { left: 30%; top: 14%; width: 18vmin; height: 16vmin; }
+#mud i:nth-child(1) { left: 2%; top: 44%; --r: -8deg; } #mud i:nth-child(2) { right: 2%; bottom: 26%; width: 34vmin; height: 26vmin; --r: 6deg; } #mud i:nth-child(3) { left: 24%; bottom: 3%; --r: 12deg; } #mud i:nth-child(4) { left: 40%; top: 2%; width: 22vmin; height: 16vmin; } #mud i:nth-child(5) { right: 30%; bottom: 10%; width: 24vmin; height: 18vmin; --r: -14deg; } #mud i:nth-child(6) { left: 64%; top: 30%; width: 16vmin; height: 12vmin; }
 /* water on the lens after my splashdown */
 #drops { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
 #drops.show { animation: dropsfade 1.1s ease-out forwards; }
