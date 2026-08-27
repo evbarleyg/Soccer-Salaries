@@ -20,7 +20,7 @@ export class Hud {
     this.itemCtx = this.el.itemCanvas.getContext('2d');
     this.lastRank = -1;
     this.lastSection = '';
-    this.itemState = { key: null, rollUntil: 0, shown: null };
+    this.itemState = { key: null, rollUntil: 0 };
     this.commUntil = 0;
     this.sectionUntil = 0;
     this.toastUntil = 0;
@@ -45,7 +45,7 @@ export class Hud {
     });
     this.el.posOf.textContent = '/' + looks.length;
     this.lastRank = -1;
-    this.itemState = { key: null, rollUntil: 0, shown: null };
+    this.itemState = { key: null, rollUntil: 0 };
     this._drawItem(null);
   }
 
@@ -278,48 +278,39 @@ export class Hud {
   }
 
   _itemSlot(d, t, realTime) {
+    // fully state-driven: derive icon/label/classes from the held item every frame and apply diffs
     const st = this.itemState;
     const held = d.held; // {item, charges} | null
-    const key = held ? `${held.item}` : null;
+    const key = held ? held.item : null;
     if (key !== st.key) {
-      // new pickup -> roulette
-      if (key && !st.key) {
-        st.rollUntil = realTime + 0.75;
-        this.el.item.classList.add('rolling');
-        this.el.item.classList.remove('empty');
-      }
+      if (key && !st.key && !st.settling) st.rollUntil = realTime + 0.75; // fresh pickup -> roulette
       st.key = key;
-      if (!key) {
-        this.el.item.classList.add('empty');
-        this.el.item.classList.remove('rolling', 'got');
-        this._drawItem(null);
-        this.el.itemLabel.textContent = 'NO ITEM';
-        st.shown = null;
+    }
+    st.settling = false;
+    const rolling = !!key && realTime < st.rollUntil;
+    let icon;
+    let label;
+    if (!key) { icon = null; label = 'NO ITEM'; }
+    else if (rolling) { icon = ITEM_ORDER[Math.floor(realTime * 14) % ITEM_ORDER.length]; label = ITEMS[icon].short; }
+    else { icon = key; label = ITEMS[key].short + (key === 'triple' ? ` ×${held.charges}` : ''); }
+    if (this._arming && key) label = 'FIRING…';
+    const iconKey = icon ? icon + (rolling ? '' : ':' + (held ? held.charges : 0)) : '';
+    if (iconKey !== st.iconKey) {
+      st.iconKey = iconKey;
+      this._drawItem(icon);
+      if (icon && !rolling) {
+        this.el.item.classList.remove('got');
+        void this.el.item.offsetWidth;
+        this.el.item.classList.add('got');
+        this.el.item.dataset.blurb = ITEMS[key].blurb + ' · auto';
+        this.el.item.classList.add('blurb');
+        clearTimeout(this._blurbT);
+        this._blurbT = setTimeout(() => this.el.item.classList.remove('blurb'), 2200);
       }
     }
-    if (key) {
-      if (realTime < st.rollUntil) {
-        const idx = Math.floor(realTime * 14) % ITEM_ORDER.length;
-        const rid = ITEM_ORDER[idx];
-        if (st.shown !== rid) { this._drawItem(rid); st.shown = rid; }
-        this.el.itemLabel.textContent = ITEMS[rid].short;
-      } else {
-        const sk = held.item + (held.charges || 1);
-        if (st.shown !== sk) {
-          this._drawItem(held.item, held.charges);
-          st.shown = sk;
-          this.el.item.classList.remove('rolling');
-          this.el.item.classList.remove('got');
-          void this.el.item.offsetWidth;
-          this.el.item.classList.add('got');
-          this.el.itemLabel.textContent = ITEMS[held.item].short + (held.item === 'triple' ? ` ×${held.charges}` : '');
-          this.el.item.dataset.blurb = ITEMS[held.item].blurb + ' · auto';
-          this.el.item.classList.add('blurb');
-          clearTimeout(this._blurbT);
-          this._blurbT = setTimeout(() => this.el.item.classList.remove('blurb'), 2200);
-        }
-      }
-    }
+    if (label !== st.label) { st.label = label; this.el.itemLabel.textContent = label; }
+    if (st.empty !== !key) { st.empty = !key; this.el.item.classList.toggle('empty', !key); }
+    if (st.rolling !== rolling) { st.rolling = rolling; this.el.item.classList.toggle('rolling', rolling); }
   }
 
   _drawItem(id, charges) {
@@ -472,12 +463,13 @@ export class Hud {
 
   /** After a jump/seek: adopt the current held item without playing the pickup roulette. */
   settleItem(held) {
-    this.itemState.key = held ? `${held.item}` : null;
-    this.itemState.rollUntil = 0;
-    this.itemState.shown = null;
-    this.el.item.classList.toggle('empty', !held);
-    this.el.item.classList.remove('rolling', 'arming');
-    if (!held) { this._drawItem(null); this.el.itemLabel.textContent = 'NO ITEM'; }
+    const st = this.itemState;
+    st.key = held ? held.item : null;
+    st.rollUntil = 0;
+    st.settling = true;
+    st.iconKey = undefined;
+    st.label = undefined;
+    this.el.item.classList.remove('rolling', 'arming', 'got');
   }
 
   /** Arming ring before my item fires (the race is precomputed, so we know), drain ring for a shield. */
