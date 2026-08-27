@@ -451,6 +451,15 @@ export class Hud {
     el.style.setProperty('--p', `${Math.max(0.12, Math.min(0.6, dist / 80))}s`);
   }
 
+  /** After a jump/seek: adopt the current held item without playing the pickup roulette. */
+  settleItem(held) {
+    this.itemState.key = held ? `${held.item}` : null;
+    this.itemState.rollUntil = 0;
+    this.itemState.shown = null;
+    this.el.item.classList.toggle('empty', !held);
+    this.el.item.classList.remove('rolling');
+  }
+
   setCamLabel(view) { this.el.camBtn.textContent = view.toUpperCase(); }
   setMuted(muted) { this.el.muteBtn.classList.toggle('off', muted); }
 

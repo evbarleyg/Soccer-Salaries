@@ -1306,6 +1306,9 @@ function jump(t) {
   state.podium = false;
   hud.clearTransient();
   computeDuckStates(t, 1 / 60);
+  hud.settleItem(state.duckStates[state.target] && state.duckStates[state.target].held);
+  hud.lastRank = state.duckStates[state.target] ? state.duckStates[state.target].rank : -1;
+  hud.lastTarget = state.target;
   for (const d of state.ducks) d.anim.prevLat = null;
   rig.cut();
   // settle springs

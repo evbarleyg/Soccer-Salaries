@@ -173,3 +173,30 @@ test('standingsAt agrees with final order; activeWindows reports spins during hi
     assert.ok(w.some((x) => x.kind === 'spin'));
   }
 });
+
+test('an unused bubble shield expires and frees the item slot', () => {
+  let sawExpire = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const sim = simulateRace({ count: 12, seed: seed * 7 });
+    const shieldAt = new Map();
+    for (const e of sim.events) {
+      if (e.type === 'pickup' && e.item === 'shield') shieldAt.set(e.duck, e.t);
+      if (e.type === 'blocked' && e.reason === 'shield') shieldAt.delete(e.duck);
+      if (e.type === 'expire') {
+        sawExpire++;
+        assert.ok(shieldAt.has(e.duck), 'expire without a held shield');
+        assert.ok(e.t - shieldAt.get(e.duck) >= 7.9, 'shield expired early');
+        shieldAt.delete(e.duck);
+      }
+      if (e.type === 'finish') shieldAt.delete(e.duck);
+    }
+    // nobody may still "hold" a shield more than 8.5 s after picking it up
+    for (const [duck, t0] of shieldAt) {
+      const end = sim.finishTimes[duck];
+      assert.ok(end - t0 < 8.5, `duck ${duck} kept a dead shield from ${t0} to ${end}`);
+      const h = heldAt(sim, duck, Math.min(end - 0.05, t0 + 8.4));
+      assert.ok(!h || h.item !== 'shield' || end - t0 < 8.1);
+    }
+  }
+  assert.ok(sawExpire > 5, 'shields should expire sometimes');
+});

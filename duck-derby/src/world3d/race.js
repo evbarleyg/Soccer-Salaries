@@ -314,7 +314,13 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
     if (boxes.length) {
       for (let i = 0; i < count; i++) {
         const d = ducks[i];
-        if (d.finishTime !== null || d.item !== null) continue;
+        if (d.finishTime !== null) continue;
+        // an unused shield quietly expires (frees the slot for the next box)
+        if (d.item === 'shield' && !isShield(d)) {
+          d.item = null;
+          events.push({ t, type: 'expire', duck: i, item: 'shield' });
+        }
+        if (d.item !== null) continue;
         const prevS = tick > 0 ? pos[i][tick - 1] : 0;
         for (const bs of boxes) {
           if (prevS < bs && d.s >= bs) {
@@ -331,11 +337,6 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
             }
             break;
           }
-        }
-        // an unused shield quietly expires
-        if (d.item === 'shield' && !isShield(d)) {
-          d.item = null;
-          events.push({ t, type: 'expire', duck: i, item: 'shield' });
         }
       }
 
