@@ -84,17 +84,45 @@ hot dogs on and checks win and last-place counts per lane with a chi-square test
 (p = 0.01), plus a 16-duck variant; `world3d.items.test.js` checks pickups and
 hits are evenly spread across ducks.
 
+### Presentation systems
+
+- **Race director** (`main.js`): boot → menu / join → fly-through (12 s first
+  visit, 6.5 s after) → grid sweep that converges onto the race camera →
+  0.8 s countdown with FOV squeeze → race → shaped slow-motion + freeze-frame
+  letterbox verdict at the line → winner orbit with lower-third → slow-motion
+  instant replay of the finish → podium barge + draft-order panel.
+- **Identity**: each duck wears a rubber ring in its saddle-towel colour and
+  number; a YOU/LEADER chevron marks the followed duck in every camera; name tags
+  carry the number and are decluttered per frame in screen space.
+- **Announcer** (`hud.js`): headline lane (priority queue, min hold), personal
+  callouts anchored to your duck (BOOST!, ▲ passed X), moment cards, incoming
+  projectile warning, item roulette, contextual standings ladder.
+- **TV director** (`cameras.js`): seeded shot lengths, section-aware shots
+  (start crane, canyon apex/dolly, lily low cam, weir cam, tunnel dolly/exit,
+  rapids rock, finish cam) plus event cuts on lead changes and big hits.
+- **Audio** (`audio3d.js`): procedural music loop (kick/hat, bass, arpeggio,
+  stabs) layered by race intensity, ducked under stingers, low-passed in slow
+  motion; tunnel echo send; item roulette ticks; haptics on phones.
+- **Adaptive resolution**: frame-time watchdog trades pixel ratio for frame
+  rate (down to 0.6×) and gives it back when there is headroom.
+
 ## Performance
 
 - One heightfield (≈55k verts), one river ribbon, instanced crowd (2 draws),
   trees, pads, rocks, buoys, flags; merged static geometry per structure.
-- Typical frame: ~430 draw calls / ~470k triangles on desktop at the grid (all
-  16 ducks close); fewer mid-race. Quality tiers (`detectQuality`): pixel-ratio
-  cap 2 / 1.75 / 1.25, antialias off on low, crowd/particle/tree density scaling.
+- Duck parts are merged per material class (body statics, head, hat, wings), so
+  a 12-duck grid renders in ~170–250 draw calls / ~480k triangles; fewer
+  mid-race with frustum culling. Quality tiers (`detectQuality`): pixel-ratio cap
+  2 / 1.75 / 1.25, antialias off on low, crowd/particle/tree density scaling,
+  plus the adaptive resolution scaler above.
 - No shadow maps (blob shadows), no post-processing; fog hides the far field.
 
 ## Known gaps / next steps
 
-- Music loop is a stinger + fanfare rather than a full track.
 - Chase cam avoids walls by living in track space rather than by raycasting.
-- No per-object darkness inside the tunnel (global light dim while the camera is inside).
+- Lighting inside the tunnel dims globally while the camera is inside (the water
+  is darkened by position); ducks seen from outside the tunnel are not darkened.
+- Real-device frame-rate numbers still to be collected (headless captures run on
+  software GL); the adaptive scaler is the safety net.
+- Phase 3 (player-controlled multiplayer "Grand Prix" with tilt steering) is
+  sketched in `PHASE3-MULTIPLAYER.md`.
