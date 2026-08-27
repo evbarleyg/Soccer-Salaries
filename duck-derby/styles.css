@@ -1045,8 +1045,9 @@ body.phase-race .topbar .badge, body.phase-finish .topbar .badge { opacity: .85;
   .results-actions .quiet-group.overflow::after { content: ""; flex: none; width: 28px; height: 1px; }
   .quiet-group .sec-btn { padding: 6px 8px; }
   .results-actions > *, .results-actions .quiet-group > * { min-height: 36px; }
-  /* landscape phones have no sky to speak of: the card keeps its lower-third slot for the intro and leaves when the countdown starts (main.js) */
-  .title-card { top: auto; bottom: calc(var(--ticker-h, 28px) + 14px + var(--sab)); padding: 6px 12px; }
+  /* landscape phones have no sky to speak of: the card sits bottom-right over open water for the intro — clear of the start-list
+     pills down the left — and leaves when the countdown starts (main.js) */
+  .title-card { top: auto; left: auto; right: calc(12px + var(--sar)); translate: none; bottom: calc(var(--ticker-h, 28px) + 14px + var(--sab)); max-width: min(300px, 40vw); padding: 6px 12px; }
   .title-card .tc-1 { font-size: 15px; }
   .callout .wide.pause { min-height: 36px; }
   .callout .wide.pause .txt { min-height: 36px; }

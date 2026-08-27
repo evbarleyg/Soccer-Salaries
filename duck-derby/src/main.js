@@ -981,7 +981,7 @@ function setPhase(phase) {
 const landscapeCompact = () => isCompact() && window.innerHeight <= 500 && window.innerWidth >= 560;
 
 // title card (league · ducks · rule · code) during intro + countdown: in the sky band on wide screens, under the live
-// strip on portrait phones, a lower third on landscape phones (intro only) -----------------------------------------
+// strip on portrait phones, bottom-right over open water on landscape phones (intro only) ---------------------------
 let titleCardTimer = 0;
 const titleCard = { crowded: false }; // even the tight card would reach lane 1: the countdown hides it
 function showTitleCard() {
@@ -1925,7 +1925,8 @@ const TICKER_STALE = { 2: 2, 3: 3 }; // race seconds after which a queued line i
 const TICKER_IDLE_MS = 1200; // phones: the empty bar fades away after this long…
 const TICKER_IDLE_WIDE_MS = 2500; // …wide layouts a little later (a filler fact usually arrives first mid-race)
 const TIP_MS = 4000; // the one-time "follow your duck" tip rides the bar this long
-const TIP_HOLD = 1200; // …and, like chatter, may be replaced by a real line once it has had this long (wide; phones: at once)
+const TIP_HOLD = 1200; // …and, like chatter, may be replaced by a real line once it has had this long (wide)
+const TIP_HOLD_COMPACT = 2200; // phones: chatter waits this long for the tip (long enough to read it); story beats cut in at once
 const FILL_QUIET_MS = 2500; // wide: a low-key filler fact after this much dead air…
 const FILL_EVERY = 8; // …rotating to the next fact every 8 s of racing
 const FILL_REFRESH_MS = 500; // a filler's number follows the race clock
@@ -2036,10 +2037,12 @@ function hideTickerLine(tier) {
 }
 
 // The once-per-browser "follow your duck" tip: a quiet one-liner INSIDE the bar (never a floating box over the lanes),
-// after the launch has settled. It is not commentary: not queued, not in the transcript, and any real line takes its slot.
+// after the launch has settled. It is not commentary: not queued, not in the transcript, and any real line takes its slot
+// (phones: a story beat at once, chatter after TIP_HOLD_COMPACT — and it may itself retire chatter that has had its hold).
 function showTip(text) {
   const d = ensureTickerDom();
   const now = performance.now();
+  if (isCompact() && tk.head && tk.head.pri <= 1) hideTickerLine('head'); // the single tier: stale chatter makes way
   d.tip.textContent = text;
   d.tip.classList.remove('out');
   void d.tip.offsetWidth;
@@ -2059,10 +2062,10 @@ function hideTip(animate = true) {
   if (animate) tk.els.tip.classList.add('out');
   else tk.els.tip.classList.remove('out');
 }
-/** The tip may take the bar: nothing that matters is on air or waiting (phones have one tier, so nothing at all). */
+/** The tip may take the bar: nothing that matters is on air or waiting (phones have one tier: empty, or chatter past its hold). */
 function tipSlotFree() {
   if (tickerQueue.some((l) => l.pri >= 2)) return false;
-  if (isCompact()) return !tk.head;
+  if (isCompact()) return !tk.head || (tk.head.pri <= 1 && performance.now() - tk.head.shownAt >= TICKER_HOLD[1]);
   return !(tk.head && tk.head.pri >= 2) && !tk.sub && !tk.fill;
 }
 function maybeShowTip() {
@@ -2167,7 +2170,9 @@ function pumpTicker() {
     if (l.pri === 2 && l.kind === 'lead' && hLead < 0) hLead = k;
     if (l.pri <= 1 && h1 < 0) h1 = k;
   }
-  if (hi < 0) hi = hLead >= 0 ? hLead : h2 >= 0 ? h2 : single ? h1 : -1;
+  // phones: chatter shares the single tier — but not over the one-time tip's first moments (nobody could read it)
+  const tipHold = single && !!tk.tip && now - tk.tip.shownAt < TIP_HOLD_COMPACT;
+  if (hi < 0) hi = hLead >= 0 ? hLead : h2 >= 0 ? h2 : single && !tipHold ? h1 : -1;
   const H = tk.head;
   if (hi >= 0) {
     const line = tickerQueue[hi];
@@ -2576,16 +2581,30 @@ function frame(now) {
 /**
  * Park the countdown digit over open water: 58% of the way from the start line to the track's right edge (right of the
  * start-list pills, left of the live-order panel), clamped so the glyph never leaves the track; centred when the start
- * line is off screen. Reads the digit's own font size, so it runs right after callout() has put the element up.
+ * line is off screen. Reads the digit's own font size, so it runs right after callout() has put the element up; on a
+ * wide layout whose track is narrow (portrait tablet, small laptop window) the digit shrinks — down to the CSS floor —
+ * so its disc starts right of the pill column instead of sitting on the names people are looking for.
  */
 function placeCountdownDigit() {
   const el = els.callout.querySelector('.big');
   let x = '50%';
   const sx0 = scene.sx(0);
-  const trackRight = window.innerWidth - (isCompact() ? 0 : scene.insets.right || 0);
+  const compact = isCompact();
+  const trackRight = window.innerWidth - (compact ? 0 : scene.insets.right || 0);
   if (el && sx0 > 0 && sx0 < trackRight - 100) {
-    const half = (isCompact() ? 0.68 : 0.85) * (parseFloat(getComputedStyle(el).fontSize) || 120); // the ring's radius (CSS: 1.36em / 1.7em across)
-    x = `${Math.round(clamp(sx0 + 0.58 * (trackRight - sx0), half + 4, trackRight - half - 4))}px`;
+    const k = compact ? 0.68 : 0.85; // the ring's radius per font px (CSS: 1.36em / 1.7em across)
+    let fs = parseFloat(getComputedStyle(el).fontSize) || 120;
+    let pillRight = sx0; // right edge of the start-list pill column, as drawn last frame
+    for (const q of scene._pillRects || []) if (q.kind === 'side' && q.a > 0.3) pillRight = Math.max(pillRight, q.x + q.w);
+    if (!compact) {
+      const room = trackRight - 4 - (pillRight + 6);
+      if (2 * k * fs > room) {
+        fs = Math.max(84, room / (2 * k));
+        el.style.fontSize = `${Math.round(fs)}px`;
+      }
+    }
+    const half = k * fs;
+    x = `${Math.round(clamp(Math.max(sx0 + 0.58 * (trackRight - sx0), pillRight + 6 + half), half + 4, trackRight - half - 4))}px`;
   }
   els.callout.style.setProperty('--count-x', x);
 }

@@ -4404,11 +4404,15 @@ export class RaceScene {
     // --- ease alphas (250 ms in, 500 ms out for side pills), bookkeeping for the dwell rules ---
     const step = this._cut ? 1 : dt * 4;
     let any = false;
+    // where the lanes are barely taller than a pill (16 on a laptop, 12+ on a landscape phone) the whole start list goes
+    // at the gun: pills riding beside the beaks would pile onto the neighbours' hats and each other as the ducks fan out
+    const lane0 = this.lanes[0]; // the far lane is the tightest
+    const dense = !!lane0 && lane0.h < Math.round(clamp(11 * lane0.duckScale, 10, 14)) + 14;
     for (let i = 0; i < n; i++) {
       const fx = this.duckFx[i];
       const rank = this.ranks[i] ?? i;
       // start list leaves in a stagger by position (the leader's pill goes last), no global flip
-      const ts = !off && (idle || (racing && t < 3.2 + 0.12 * rank)) ? 1 : 0;
+      const ts = !off && (idle || (racing && !dense && t < 3.2 + 0.12 * rank)) ? 1 : 0;
       const tt = wantTop[i] ? 1 : 0;
       if (wantTop[i] !== fx.tagWant) {
         fx.tagWant = wantTop[i];
