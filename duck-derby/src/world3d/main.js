@@ -882,11 +882,39 @@ function showResults() {
     if (i === mine) myRow = li;
   });
   $('#btn-newrace').hidden = state.shared;
+  // race notes: the stories worth retelling
+  const notes = raceHighlights(race);
+  $('#res-notes').innerHTML = notes.map((n) => `<li><b>${n.title}</b> ${escapeHtml(n.text)}</li>`).join('');
   els.results.hidden = false;
   $('#finish-card').hidden = true;
   if (myRow) setTimeout(() => myRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 700);
   history.replaceState(null, '', '?' + shareQuery(true));
 }
+/** Post-race highlights computed from the sim: comeback, punching bag, longest lead, photo margin. */
+function raceHighlights(race) {
+  const out = [];
+  const n = race.count;
+  const names = state.raceNames;
+  const half = standingsAt(race, race.finishTimes[race.order[0]] * 0.5);
+  let best = null;
+  half.forEach((row, k) => {
+    const place = race.order.indexOf(row.i);
+    const gain = k - place;
+    if (!best || gain > best.gain) best = { i: row.i, from: k + 1, to: place + 1, gain };
+  });
+  if (best && best.gain >= 3) out.push({ title: 'Comeback', text: `${names[best.i]} was ${ordinal(best.from)} at halfway and finished ${ordinal(best.to)}.` });
+  const hits = race.stats.map((s, i) => ({ i, h: s.hitsTaken })).sort((a, b) => b.h - a.h)[0];
+  if (hits && hits.h >= 2) out.push({ title: 'Punching bag', text: `${names[hits.i]} took ${hits.h} hits and still finished ${ordinal(race.order.indexOf(hits.i) + 1)}.` });
+  const led = race.stats.map((s, i) => ({ i, t: s.timeLed })).sort((a, b) => b.t - a.t)[0];
+  if (led && led.t > 4 && led.i !== race.order[0]) out.push({ title: 'Heartbreak', text: `${names[led.i]} led for ${led.t.toFixed(1)} s but finished ${ordinal(race.order.indexOf(led.i) + 1)}.` });
+  else if (led && led.i === race.order[0] && led.t > race.finishTimes[led.i] * 0.6) out.push({ title: 'Wire to wire', text: `${names[led.i]} led for ${led.t.toFixed(1)} of ${race.finishTimes[led.i].toFixed(1)} s.` });
+  if (race.photoFinish) out.push({ title: 'Photo finish', text: `${names[race.order[0]]} beat ${names[race.order[1]]} by ${race.margin.toFixed(2)} s.` });
+  const lateHit = race.events.filter((e) => e.type === 'hit' && e.rank === 0).pop();
+  if (lateHit) out.push({ title: 'Ouch', text: `${names[lateHit.duck]} was leading when the ${lateHit.item === 'hotdog' ? 'hot dog' : ITEMS[lateHit.item]?.name.toLowerCase() || lateHit.item} landed (${fmtTime(lateHit.t)}).` });
+  if (n >= 2) out.push({ title: 'Spread', text: `${(race.finishTimes[race.order[n - 1]] - race.finishTimes[race.order[0]]).toFixed(1)} s from first to last · ${race.leadChanges} lead changes.` });
+  return out.slice(0, 4);
+}
+
 function shareQuery(withCam = false) {
   return buildQuery({ names: state.raceNames, seed: state.seed, rule: state.rule, hazards: state.hazards, items: state.items, salt: state.salt, go: state.go, cam: withCam && state.follow === 'fixed' ? state.target + 1 : null, view: withCam && state.view === 'tv' ? 'tv' : null });
 }

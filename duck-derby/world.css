@@ -299,6 +299,9 @@ body.phase-lobby #hud-tl, body.phase-lobby #hud-item, body.phase-lobby #hud-ladd
 #res-board .nm { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #res-board .nm .you { margin-left: 6px; font: 900 0.62rem var(--num); letter-spacing: 0.08em; background: var(--gold); color: var(--ink); border-radius: 6px; padding: 1px 5px; vertical-align: 2px; }
 #res-board .res { font: 700 0.78rem ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); white-space: nowrap; }
+#res-notes { list-style: none; margin: 0 0 8px; padding: 8px 10px; display: grid; gap: 3px; background: rgba(255,255,255,0.05); border-radius: 10px; font-size: 0.8rem; color: #dfe9f5; flex: none; }
+#res-notes:empty { display: none; }
+#res-notes li b { color: var(--gold); font-weight: 800; margin-right: 4px; }
 @keyframes rowin { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
 .res-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: start; padding: 10px 0 2px; flex: none; }
 .res-actions .primary { padding: 0.5rem 0.9rem; border-radius: 10px; box-shadow: 0 4px 0 #b37d00; }
