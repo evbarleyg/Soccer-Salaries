@@ -2,12 +2,12 @@
 // river. Each vertex looks up its nearest point on the course and takes a
 // cross-section profile that depends (smoothly) on the section there: quays in
 // the marina, tall warm cliffs in the canyon, flat marsh around the lily pond,
-// a hill over the tunnel (with a slot cut for the flume), rocky banks in the
+// a hill over the tunnel rising just outside the flume tube, rocky banks in the
 // rapids, a quay on the town side of the harbour and open sea on the other.
 import * as THREE from 'three';
 import { PAL, fbm2, noise2, hash2 } from './gfx.js';
 import { clamp, smoothstep, lerp } from '../rng.js';
-import { WATER_BANK } from './track.js';
+import { WATER_BANK, bankLat } from './track.js';
 
 export const SEA_LEVEL = -5.7;
 const GRID = 3.5;
@@ -99,7 +99,7 @@ export function buildTerrain(course) {
     const d = Math.abs(lat);
     const dist = Math.hypot(dxw, dzw);
     const vis = lat >= 0 ? q.visL : q.visR;
-    const waterY = q.y - lat * Math.tan(q.bank) * WATER_BANK;
+    const waterY = q.y - bankLat(lat, q.half * 2) * Math.tan(q.bank) * WATER_BANK;
     const hills = fbm2(x * 0.012, z * 0.012, 4); // 0..1
     const bumps = fbm2(x * 0.05 + 7, z * 0.05 - 3, 3);
     let h;
@@ -112,11 +112,6 @@ export function buildTerrain(course) {
       // river / basin bed
       h = waterY - 1.6 - 0.8 * bumps;
       kind = 'bed';
-      if (q.tunnel > 0.02) {
-        // hill over the tunnel (a slot is cut out of the mesh along the flume)
-        h = lerp(h, waterY + 10 + 5 * hills, q.tunnel);
-        kind = 'hill';
-      }
     } else {
       const e = (d - vis) / q.slopeW; // 0 at the water's edge, 1 at the top of the bank
       const t = clamp(e, 0, 1);
@@ -131,8 +126,18 @@ export function buildTerrain(course) {
         const rise = smoothstep(flat, flat + 90, far);
         h += (0.6 * bumps - 0.2) * smoothstep(0, 12, far) * (1 - 0.7 * q.marina) * (1 - 0.7 * q.harbor);
         h += rise * (14 + 26 * hills) + q.canyon * smoothstep(0, 40, far) * 6 * hills;
-        if (q.tunnel > 0.02) h = Math.max(h, lerp(h, waterY + 10 + 6 * hills, q.tunnel * (1 - smoothstep(25, 60, far))));
         kind = rise > 0.55 ? 'hill' : 'top';
+      }
+    }
+    // the hill the flume tunnels through: rises steeply just outside the wooden tube
+    // (nothing is raised over the tube footprint itself, so no terrain ever pokes into it)
+    if (q.tunnel > 0.02 && !seaSide) {
+      const hh = waterY + 10 + 6 * hills - 0.5 * bumps;
+      const kLat = smoothstep(q.half + 2.3, q.half + 6.5, d);
+      const k = q.tunnel * kLat * (1 - smoothstep(30, 66, d));
+      if (k > 0) {
+        h = lerp(h, Math.max(h, hh), k);
+        if (k > 0.3) kind = 'hill';
       }
     }
     return { h, kind, q, lat, d, dist, waterY, hills, bumps };
@@ -198,17 +203,12 @@ export function buildTerrain(course) {
 
   // indices, skipping the slot over the flume so the tunnel tube can sit in it
   const idx = [];
-  const inSlot = (k) => {
-    const ev = info[k];
-    return ev.q.tunnel > 0.02 && ev.d < ev.q.half + 3.2 && ev.q.s > F.tunnelInS - 4 && ev.q.s < F.tunnelOutS + 4;
-  };
   for (let j = 0; j < nz - 1; j++) {
     for (let i = 0; i < nx - 1; i++) {
       const a = j * nx + i;
       const b = a + 1;
       const c = a + nx;
       const d = c + 1;
-      if (inSlot(a) || inSlot(b) || inSlot(c) || inSlot(d)) continue;
       // alternate diagonal for a nicer low-poly look
       if ((i + j) % 2 === 0) idx.push(a, c, b, b, c, d);
       else idx.push(a, c, d, a, d, b);

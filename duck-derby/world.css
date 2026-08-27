@@ -204,8 +204,11 @@ body.view-tv #hud-item, body.view-tv #hud-gap { display: none; }
   .panel-inner { border-radius: 18px; }
   #minimap { width: 132px; height: 132px; border-radius: 14px; }
   #progress { right: calc(160px + var(--safe-r)); }
-  #hud-top { width: 58vw; top: calc(64px + var(--safe-t)); }
+  #hud-top { width: 94vw; top: auto; bottom: calc(150px + var(--safe-b)); }
   #hud-comm { font-size: 0.85rem; }
+  #progress-secs i::after { display: none; }
+  #toast { top: 32%; }
+  #popup { top: 20%; }
   #hud-tr button { font-size: 0.62rem; padding: 0.4rem 0.45rem; }
   #hud-leader { top: calc(50px + var(--safe-t)); font-size: 0.72rem; }
   #hud-clock { top: calc(80px + var(--safe-t)); font-size: 0.8rem; }

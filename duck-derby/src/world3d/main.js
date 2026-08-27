@@ -777,6 +777,8 @@ function step(dt) {
         continue;
       }
       d.duck.shadow.visible = true;
+      // ducks right on top of the camera would fill the screen: hide them (Mario Kart-style ghosting, cheap version)
+      d.duck.group.visible = !(rig.mode === 'chase' && i !== state.target && dist < 3.2 && state.phase === 'race');
       d.anim.update(dt, ds, ctx);
       // name tag + held item sprite
       const showTags = state.phase !== 'flythrough' && dist < 70 && dist > 3.5;
@@ -912,6 +914,7 @@ window.__duckWorld = {
   get track() { return track; },
   get camera() { return camera; },
   get renderer() { return renderer; },
+  get scene() { return scene; },
   jump,
   setTarget: (i) => { setTarget(i, true); applyView(false); },
   setView: (v) => { state.view = v; applyView(true); for (let k = 0; k < 3; k++) rig.update(0.5, frameCtx(0.5)); },
@@ -919,7 +922,7 @@ window.__duckWorld = {
   start: (opts = {}) => { Object.assign(state, opts); startRace({}); },
   skip: skipIntro,
   results: () => { if (!state.race) return; jump(Math.max(...state.race.finishTimes) + 1); state.podium = true; setPhase('results'); rig.setMode('podium'); rig.cut(); rig.update(0.5, frameCtx(0.5)); },
-  freeCam: (x, y, z, lx, ly, lz) => { state.view = 'free'; applyView(true); rig.pos.set(x, y, z); rig.look.set(lx, ly, lz); const d = rig.look.clone().sub(rig.pos).normalize(); rig.free.yaw = Math.atan2(d.x, d.z); rig.free.pitch = Math.asin(clamp(d.y, -0.99, 0.99)); rig.free.vel.set(0, 0, 0); },
+  freeCam: (x, y, z, lx, ly, lz) => { state.prevView = state.view === 'free' ? state.prevView : state.view; state.view = 'free'; rig.setMode('free'); document.body.className = `phase-${state.phase} view-free`; rig.pos.set(x, y, z); rig.look.set(lx, ly, lz); const d = rig.look.clone().sub(rig.pos).normalize(); rig.free.yaw = Math.atan2(d.x, d.z); rig.free.pitch = Math.asin(clamp(d.y, -0.99, 0.99)); rig.free.vel.set(0, 0, 0); },
   eventsOf: (type) => (state.race ? state.race.events.filter((e) => e.type === type) : []),
 };
 

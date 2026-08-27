@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { PAL } from './gfx.js';
 import { profileAt, SEA_LEVEL } from './terrain.js';
-import { WATER_BANK } from './track.js';
+import { WATER_BANK, bankLat } from './track.js';
 import { clamp, smoothstep, lerp } from '../rng.js';
 
 const NOISE_GLSL = /* glsl */ `
@@ -77,20 +77,20 @@ export function makeWaterMaterial() {
         float flow = time * (5.5 + chop * 6.0);
         vec2 q = vec2(vSL.x - flow, vSL.y);
         // two octaves of drifting value noise -> soft cell pattern
-        float n1 = vnoise(q * vec2(0.16, 0.42));
-        float n2 = vnoise(q * vec2(0.41, 1.1) + vec2(time * 0.7, -time * 0.3));
-        float n = n1 * 0.65 + n2 * 0.35;
+        float n1 = vnoise(q * vec2(0.26, 0.62));
+        float n2 = vnoise(q * vec2(0.7, 1.6) + vec2(time * 0.7, -time * 0.3));
+        float n = n1 * 0.6 + n2 * 0.4;
         // fake normal from noise gradient for glints / fresnel
         float e = 0.35;
-        float nx = vnoise((q + vec2(e, 0.0)) * vec2(0.41, 1.1)) - n2;
-        float nz = vnoise((q + vec2(0.0, e)) * vec2(0.41, 1.1)) - n2;
+        float nx = vnoise((q + vec2(e, 0.0)) * vec2(0.7, 1.6) + vec2(time * 0.7, -time * 0.3)) - n2;
+        float nz = vnoise((q + vec2(0.0, e)) * vec2(0.7, 1.6) + vec2(time * 0.7, -time * 0.3)) - n2;
         vec3 nrm = normalize(vec3(nx * (0.6 + chop), 1.0, nz * (0.6 + chop)));
         vec3 viewDir = normalize(cameraPosition - vWorld);
         // base colour: shallow band near banks, deep in the middle
         float shallowMix = 1.0 - smoothstep(0.0, 5.0, edge);
         vec3 col = mix(deep, shallow, 0.18 + 0.5 * shallowMix + 0.22 * n);
         // toon caustic streaks
-        float streak = smoothstep(0.62, 0.68, n) * 0.16 + smoothstep(0.8, 0.82, n1) * 0.12;
+        float streak = (smoothstep(0.64, 0.7, n) * 0.13 + smoothstep(0.8, 0.83, n1) * 0.1) * (0.55 + chop * 0.9);
         col += vec3(streak);
         // foam: edges, rapids, weir face
         float foamNoise = vnoise(vec2(vSL.x * 0.9 - flow * 1.8, vSL.y * 2.3)) * 0.6 + vnoise(vec2(vSL.x * 2.2 - flow * 3.1, vSL.y * 5.0)) * 0.4;
@@ -151,7 +151,7 @@ export function buildRiver(course, material, { step = 2, across = 14 } = {}) {
       const shaped = Math.sign(w) * Math.pow(Math.abs(w), 1.35);
       const lat = shaped >= 0 ? shaped * latL : -shaped * -latR;
       const k = r * cols + c;
-      const y = p.y - clamp(lat, -prof.half - 2, prof.half + 2) * Math.tan(p.bank) * WATER_BANK - 0.02;
+      const y = p.y - bankLat(lat, prof.half * 2) * Math.tan(p.bank) * WATER_BANK - 0.02;
       pos[k * 3] = p.x + p.nx * lat;
       pos[k * 3 + 1] = y;
       pos[k * 3 + 2] = p.z + p.nz * lat;

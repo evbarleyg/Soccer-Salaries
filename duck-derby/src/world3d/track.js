@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import { getCourse } from './course.js';
 
 export const WATER_BANK = 0.5; // how much the water surface super-elevates in banked turns (fraction of duck lean)
+/** Banking only tilts the channel itself; beyond the banks the world stays level. */
+export const bankLat = (lat, width) => Math.max(-width / 2 - 2, Math.min(width / 2 + 2, lat));
 
 export class Track {
   constructor(course = getCourse()) {
@@ -18,7 +20,7 @@ export class Track {
   /** Water surface height at (s, lat) including banking super-elevation. */
   surfaceY(s, lat = 0) {
     const p = this.course.at(s, this._tmp);
-    return p.y - lat * Math.tan(p.bank) * WATER_BANK;
+    return p.y - bankLat(lat, p.width) * Math.tan(p.bank) * WATER_BANK;
   }
 
   /**
@@ -48,7 +50,7 @@ export class Track {
   /** World position for track-space coordinates. h = height above the (banked) water. */
   toWorld(s, lat, h, out = new THREE.Vector3()) {
     const p = this.course.at(s, this._tmp);
-    const y = p.y - lat * Math.tan(p.bank) * WATER_BANK + h;
+    const y = p.y - bankLat(lat, p.width) * Math.tan(p.bank) * WATER_BANK + h;
     return out.set(p.x + p.nx * lat, y, p.z + p.nz * lat);
   }
 
