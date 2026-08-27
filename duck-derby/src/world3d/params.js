@@ -10,7 +10,7 @@ export const VIEWS = ['chase', 'tv', 'free'];
 /** @param {string|URLSearchParams} search */
 export function parseParams(search) {
   const p = search instanceof URLSearchParams ? search : new URLSearchParams(search);
-  const out = { names: null, seed: null, rule: 'w', hazards: true, items: true, cam: null, view: null, autostart: false, muted: false, t: null };
+  const out = { names: null, seed: null, rule: 'w', hazards: true, items: true, cam: null, view: null, autostart: false, muted: false, t: null, salt: 0 };
   const namesRaw = p.get('names');
   if (namesRaw) {
     const names = namesRaw.split('~').map((s) => s.trim().slice(0, 22)).filter((s) => s.length);
@@ -27,6 +27,8 @@ export function parseParams(search) {
   if (cam) out.cam = cam;
   out.autostart = p.get('autostart') === '1';
   out.muted = p.get('sound') === '0';
+  const salt = Number(p.get('salt'));
+  if (Number.isInteger(salt) && salt >= 0) out.salt = salt;
   const t = Number(p.get('t'));
   if (p.get('t') !== null && Number.isFinite(t)) out.t = t;
   return out;
@@ -46,13 +48,14 @@ export function resolveCam(cam, names) {
 }
 
 /** Build the shareable query string for a race (no cam: everyone picks their own). */
-export function buildQuery({ names, seed, rule = 'w', hazards = true, items = true, cam = null, view = null }) {
+export function buildQuery({ names, seed, rule = 'w', hazards = true, items = true, cam = null, view = null, salt = 0 }) {
   const p = new URLSearchParams();
   p.set('names', names.join('~'));
   if (seed != null) p.set('seed', seedToCode(seed));
   p.set('rule', rule === 'l' ? 'l' : 'w');
   if (!hazards) p.set('hz', '0');
   if (!items) p.set('items', '0');
+  if (salt) p.set('salt', String(salt));
   if (cam != null && cam !== '') p.set('cam', String(cam));
   if (view) p.set('view', view);
   return p.toString();

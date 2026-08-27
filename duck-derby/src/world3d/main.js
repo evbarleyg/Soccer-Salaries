@@ -49,6 +49,7 @@ const state = {
   view: params.view || (stored.view === 'tv' ? 'tv' : 'chase'),
   camChoice: params.cam ?? stored.cam ?? 'leader', // name | lane | 'leader'
   shared: !!(params.names && params.seed !== null),
+  salt: params.salt || 0,
   seed: params.seed,
   race: null,
   looks: [],
@@ -172,7 +173,7 @@ function renderJoin() {
   const grid = $('#join-grid');
   if (!grid) return;
   const names = state.names.map((s, i) => (String(s).trim() || `Duck ${i + 1}`));
-  const looks = assignLooks(names);
+  const looks = assignLooks(names, state.salt || 0);
   grid.innerHTML = '';
   names.forEach((n, i) => {
     const b = document.createElement('button');
@@ -325,7 +326,7 @@ function startRace({ fromUrl = false, names = null } = {}) {
   if (state.seed == null) state.seed = randomSeed();
   state.raceNames = raceNames;
   state.race = createRace({ count: raceNames.length, seed: state.seed, hazards: state.hazards, items: state.items });
-  state.looks = assignLooks(raceNames);
+  state.looks = assignLooks(raceNames, state.salt || 0);
   commentator = new WorldCommentator(raceNames, state.seed);
   rig.setSeed(state.seed);
   // per-duck splashdown times for the landing squash
@@ -812,7 +813,7 @@ function showResults() {
   history.replaceState(null, '', '?' + shareQuery(true));
 }
 function shareQuery(withCam = false) {
-  return buildQuery({ names: state.raceNames, seed: state.seed, rule: state.rule, hazards: state.hazards, items: state.items, cam: withCam && state.follow === 'fixed' ? state.target + 1 : null, view: withCam && state.view === 'tv' ? 'tv' : null });
+  return buildQuery({ names: state.raceNames, seed: state.seed, rule: state.rule, hazards: state.hazards, items: state.items, salt: state.salt, cam: withCam && state.follow === 'fixed' ? state.target + 1 : null, view: withCam && state.view === 'tv' ? 'tv' : null });
 }
 function shareUrl() {
   const u = new URL(location.href);
@@ -826,6 +827,7 @@ function twoDQuery() {
   if (state.seed != null) p.set('seed', seedToCode(state.seed));
   p.set('rule', state.rule);
   if (!state.hazards) p.set('hz', '0');
+  if (state.salt) p.set('salt', String(state.salt));
   return p.toString();
 }
 function draftText(withUrl = true) {
