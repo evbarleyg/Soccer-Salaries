@@ -1317,6 +1317,7 @@ function jump(t) {
   computeDuckStates(t, 1 / 60);
   hud.settleItem(state.duckStates[state.target] && state.duckStates[state.target].held);
   hud.lastRank = -1; // forces a silent refresh of the position readout
+  hud.forceRefresh();
   hud.lastTarget = state.target;
   for (const d of state.ducks) d.anim.prevLat = null;
   rig.cut();

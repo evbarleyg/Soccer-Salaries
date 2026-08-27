@@ -451,6 +451,9 @@ export class Hud {
     el.style.setProperty('--p', `${Math.max(0.12, Math.min(0.6, dist / 80))}s`);
   }
 
+  /** Force the throttled widgets (ladder, minimap) to redraw on the next update. */
+  forceRefresh() { this.lastLadder = 0; this.lastMini = 0; this._ladderHtml = ''; }
+
   /** After a jump/seek: adopt the current held item without playing the pickup roulette. */
   settleItem(held) {
     this.itemState.key = held ? `${held.item}` : null;
