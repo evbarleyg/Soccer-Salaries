@@ -161,7 +161,28 @@ const els = {
   picker: $('#picker'), pickerList: $('#picker-list'),
 };
 
+function renderJoin() {
+  const grid = $('#join-grid');
+  if (!grid) return;
+  const names = state.names.map((s, i) => (String(s).trim() || `Duck ${i + 1}`));
+  const looks = assignLooks(names);
+  grid.innerHTML = '';
+  names.forEach((n, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'join-card';
+    const lk = looks[i];
+    b.innerHTML = `<span class="num" style="background:${lk.towel.bg};color:${lk.towel.text}">${i + 1}</span><span class="nm">${escapeHtml(n)}</span><small>${escapeHtml(lk.palette.name)} · ${escapeHtml(lk.hatName)}</small>`;
+    b.addEventListener('click', () => { state.camChoice = String(i + 1); state.view = 'chase'; startRace({}); });
+    grid.appendChild(b);
+  });
+  $('#join-tv').onclick = () => { state.camChoice = 'leader'; state.view = 'tv'; startRace({}); };
+  $('#join-host').onclick = () => { $('#join').hidden = true; $('#setup-form').hidden = false; };
+  $('#join-sub').textContent = `${names.length} ducks · seed ${seedToCode(state.seed)} · ${state.rule === 'l' ? 'last place picks first' : 'winner picks first'}${state.items ? ' · items on' : ''}`;
+}
+
 function initSetupUi() {
+  if (state.shared) { $('#join').hidden = false; $('#setup-form').hidden = true; renderJoin(); }
   els.optRule.value = state.rule;
   els.optView.value = state.view === 'tv' ? 'tv' : 'chase';
   els.optItems.checked = state.items;
@@ -264,7 +285,7 @@ function updateCta() {
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]); }
 function loadStore() { try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch { return {}; } }
 function saveStore() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ coached: stored.coached || state.coached || false, names: state.names, rule: state.rule, hazards: state.hazards, items: state.items, fly: state.fly, sound: state.sound, view: state.view === 'free' ? 'chase' : state.view, cam: state.camChoice })); } catch { /* private mode */ }
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ coached: stored.coached || state.coached || false, flySeen: !!stored.flySeen, names: state.names, rule: state.rule, hazards: state.hazards, items: state.items, fly: state.fly, sound: state.sound, view: state.view === 'free' ? 'chase' : state.view, cam: state.camChoice })); } catch { /* private mode */ }
 }
 
 // --------------------------------------------------------------------------- race lifecycle
@@ -342,6 +363,8 @@ function startRace({ fromUrl = false, names = null } = {}) {
   $('#btn-2d').href = 'index.html?' + twoDQuery();
   audio.startAmbience();
   audio.setCrowd(0.3);
+  audio.startMusic();
+  audio.setMusicIntensity(0.25);
   if (params.t != null && fromUrl) {
     setPhase('race');
     jump(params.t);
@@ -395,11 +418,17 @@ function setPhase(phase) {
     letterbox(false);
     state.fireworks = false;
     audio.setCrowd(0.1);
+    audio.setMusicIntensity(0.15);
     els.results.hidden = true;
     rig.setMode('menu');
     renderRoster();
   }
-  if (phase === 'flythrough') { rig.setMode('flythrough'); hud.say(commentator.intro(state.raceNames.length), state.realTime, 5); }
+  if (phase === 'flythrough') {
+    FLY_T = stored.flySeen ? 6.5 : 12;
+    if (!stored.flySeen) { stored.flySeen = true; try { localStorage.setItem(STORE_KEY, JSON.stringify({ ...loadStore(), flySeen: true })); } catch { /* ignore */ } }
+    rig.setMode('flythrough');
+    hud.say(commentator.intro(state.raceNames.length), state.realTime, 5, 3);
+  }
   if (phase === 'grid') {
     rig.setMode('grid');
     hud.flyCaption(null);
@@ -564,7 +593,7 @@ function frameCtx(dt) {
   };
 }
 
-const FLY_T = 12;
+let FLY_T = 12;
 const GRID_T = 3.2;
 const FLY_SECTIONS = [
   ['marina', 'Duck Village Marina', 'Pontoon start · grandstands · the blimp'],
@@ -663,7 +692,7 @@ function handleEvent(ev) {
         audio.cameraFlash();
         audio.horn();
         audio.cheer(0.5, 2.5);
-        setTimeout(() => audio.fanfare(), 700);
+        setTimeout(() => { audio.duckMusic(2.2); audio.fanfare(); }, 700);
         // freeze-frame: hold the clock for a beat with letterbox bars and the verdict
         if (state.phase === 'race' && !state.jumping) {
           state.freezeUntil = state.realTime + (Q.reducedMotion ? 0.2 : 0.38);
@@ -802,13 +831,37 @@ function showGridNames(on) {
 
 // --------------------------------------------------------------------------- main loop
 let inTunnel = 0;
+// Adaptive resolution: if the device can't hold ~50 fps, trade sharpness for smoothness (and give it back later).
+const perf = { acc: 0, frames: 0, scale: 1, min: 0.6, lastChange: 0 };
+function adaptQuality(rawDt) {
+  perf.acc += rawDt;
+  perf.frames++;
+  if (perf.acc < 2) return;
+  const avg = perf.acc / perf.frames;
+  perf.acc = 0;
+  perf.frames = 0;
+  if (document.hidden || state.realTime - perf.lastChange < 4) return;
+  const base = Math.min(window.devicePixelRatio || 1, Q.maxDpr);
+  let s = perf.scale;
+  if (avg > 1 / 45 && s > perf.min) s = Math.max(perf.min, s - 0.15);
+  else if (avg < 1 / 57 && s < 1) s = Math.min(1, s + 0.1);
+  if (s !== perf.scale) {
+    perf.scale = s;
+    perf.lastChange = state.realTime;
+    renderer.setPixelRatio(base * s);
+    resize();
+  }
+}
+
 function loop() {
   requestAnimationFrame(loop);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const raw = clock.getDelta();
+  const dt = Math.min(raw, 0.05);
   state.realTime += dt;
   state.phaseTime += dt;
   step(dt);
   renderer.render(scene, camera);
+  if (state.phase !== 'menu' && !urlFlags.has('noadapt')) adaptQuality(raw);
 }
 
 function step(dt) {
@@ -1021,6 +1074,9 @@ function step(dt) {
     if (burst) audio.boom();
   }
   if (audio.crowdGain && state.phase === 'race') audio.setCrowd(0.3 + 0.6 * (state.excite || 0));
+  audio.setMusicIntensity(state.phase === 'race' ? 0.45 + 0.55 * smoothstep(0.3, 1, state.excite || 0) : state.phase === 'countdown' ? 0.35 : state.phase === 'finish' ? 0.7 : state.phase === 'results' ? 0.4 : 0.22);
+  audio.setRate(state.phase === 'race' ? state.rate : 1);
+  audio.pumpMusic();
 
   // ---- HUD
   if (race && state.phase !== 'menu') hud.update(ctx);
@@ -1159,6 +1215,7 @@ canvas.addEventListener('pointerdown', (e) => (downAt = { x: e.clientX, y: e.cli
 canvas.addEventListener('pointerup', (e) => {
   if (!downAt || !state.race) return;
   if (Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 8 || performance.now() - downAt.t > 400) return;
+  if (state.phase === 'flythrough') { skipIntro(); return; }
   const rect = canvas.getBoundingClientRect();
   let best = -1;
   let bestD = 48;

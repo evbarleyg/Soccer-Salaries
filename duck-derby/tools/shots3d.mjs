@@ -23,7 +23,7 @@ async function session(name, viewport, names, query, steps) {
   const page = await ctx.newPage();
   page.on('pageerror', (e) => issues.push(`[${name}] pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') issues.push(`[${name}] ${m.type()}: ${m.text()}`); });
-  const url = `${baseUrl}?names=${encodeURIComponent(names.join('~'))}&seed=${seedCode}&sound=0${query}`;
+  const url = `${baseUrl}?names=${encodeURIComponent(names.join('~'))}&seed=${seedCode}&sound=0&noadapt=1${query}`;
   await page.goto(url, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__duckWorld && document.getElementById('boot') === null, null, { timeout: 90000 });
   const snap = async (file, wait = 650) => { await page.waitForTimeout(wait); await page.screenshot({ path: `${outDir}/${name}-${file}.png` }); console.log('  ', `${name}-${file}.png`); };

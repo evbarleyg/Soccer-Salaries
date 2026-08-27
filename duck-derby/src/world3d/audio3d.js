@@ -4,10 +4,24 @@
 // final-stretch stinger. No audio files.
 import { DuckAudio } from '../audio.js';
 
+const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
+
 export class WorldAudio extends DuckAudio {
   unlock() {
     super.unlock();
-    if (!this.ctx || this.echo) return;
+    if (!this.ctx) return;
+    if (!this.toneBus) {
+      // everything musical/one-shot goes through a tone bus so slow-motion can low-pass it
+      this.toneBus = this.ctx.createBiquadFilter();
+      this.toneBus.type = 'lowpass';
+      this.toneBus.frequency.value = 20000;
+      this.toneBus.connect(this.master);
+      this.musicGain = this.ctx.createGain();
+      this.musicGain.gain.value = 0.0001;
+      this.musicGain.connect(this.toneBus);
+      this.music = { on: false, next: 0, step: 0, intensity: 0, target: 0.3, duck: 1 };
+    }
+    if (this.echo) return;
     // tunnel echo: master -> delay -> feedback -> destination (wet gain toggled)
     const delay = this.ctx.createDelay(0.6);
     delay.delayTime.value = 0.23;
@@ -25,6 +39,105 @@ export class WorldAudio extends DuckAudio {
     lp.connect(wet);
     wet.connect(this.ctx.destination);
     this.echo = wet;
+  }
+
+  // ---------------------------------------------------------------- music
+  /** Start the procedural loop (124 bpm, A minor): kick/hat, bass ostinato, arpeggio, stabs — layered by intensity. */
+  startMusic() {
+    if (!this.ctx || !this.music || this.music.on) return;
+    this.music.on = true;
+    this.music.next = this.ctx.currentTime + 0.1;
+    this.music.step = 0;
+  }
+  stopMusic() {
+    if (!this.music) return;
+    this.music.on = false;
+    if (this.musicGain) this.musicGain.gain.setTargetAtTime(0.0001, this.now, 0.3);
+  }
+  /** 0..1: how many layers / how loud. */
+  setMusicIntensity(x) { if (this.music) this.music.target = Math.max(0, Math.min(1, x)); }
+  /** Call every frame: schedules notes a little ahead of time. */
+  pumpMusic() {
+    const m = this.music;
+    if (!this.ctx || !m || !m.on) return;
+    const now = this.ctx.currentTime;
+    m.intensity += (m.target - m.intensity) * 0.05;
+    const level = (0.05 + 0.22 * m.intensity) * m.duck;
+    this.musicGain.gain.setTargetAtTime(level, now, 0.2);
+    const spb = 60 / 124 / 4; // 16th notes
+    const BASS = [45, 45, 0, 45, 48, 48, 0, 48, 43, 43, 0, 43, 40, 40, 0, 52]; // midi, 0 = rest (A, C, G, E)
+    const ARP = [69, 72, 76, 81, 72, 76, 81, 84, 67, 71, 74, 79, 64, 67, 71, 76];
+    while (m.next < now + 0.15) {
+      const s = m.step % 16;
+      const t = m.next;
+      const it = m.intensity;
+      // kick
+      if (s % 4 === 0) this._kick(t, 0.5);
+      // hats: off-beats, 16ths when intense
+      if (s % 4 === 2 || (it > 0.75 && s % 2 === 1)) this._hat(t, s % 4 === 2 ? 0.16 : 0.08);
+      // clap on 4 and 12
+      if (it > 0.35 && (s === 4 || s === 12)) this._clap(t, 0.18);
+      // bass
+      if (it > 0.2 && BASS[s]) this._note('sawtooth', midi(BASS[s] - 12), t, spb * 1.6, 0.16, 420 + it * 500);
+      // arp
+      if (it > 0.55) this._note('triangle', midi(ARP[(s + Math.floor(m.step / 16) * 4) % 16]), t, spb * 0.9, 0.07 + 0.05 * it, 3000);
+      // stabs in the final stretch
+      if (it > 0.9 && (s === 0 || s === 6 || s === 10)) { this._note('square', midi(57), t, spb * 1.2, 0.05, 1800); this._note('square', midi(64), t, spb * 1.2, 0.05, 1800); }
+      m.next += spb;
+      m.step++;
+    }
+  }
+  _kick(t, v) {
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(120, t);
+    o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+    g.gain.setValueAtTime(v, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    o.connect(g); g.connect(this.musicGain);
+    o.start(t); o.stop(t + 0.25);
+  }
+  _hat(t, v) {
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const hp = this.ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7000;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    src.connect(hp); hp.connect(g); g.connect(this.musicGain);
+    src.start(t, Math.random() * 1.5); src.stop(t + 0.06);
+  }
+  _clap(t, v) {
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const bp = this.ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 0.9;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    src.connect(bp); bp.connect(g); g.connect(this.musicGain);
+    src.start(t, Math.random()); src.stop(t + 0.14);
+  }
+  _note(type, freq, t, dur, v, cutoff) {
+    const o = this.ctx.createOscillator();
+    o.type = type;
+    o.frequency.value = freq;
+    const f = this.ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(f); f.connect(g); g.connect(this.musicGain);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  /** Dip the music under a stinger/fanfare. */
+  duckMusic(sec = 1) {
+    if (!this.music) return;
+    this.music.duck = 0.4;
+    clearTimeout(this._duckT);
+    this._duckT = setTimeout(() => { if (this.music) this.music.duck = 1; }, sec * 1000);
+  }
+  /** Slow-motion feel: low-pass everything tonal while rate < 1. */
+  setRate(rate) {
+    if (!this.toneBus) return;
+    const f = rate < 0.95 ? 700 + 5000 * rate * rate : 20000;
+    this.toneBus.frequency.setTargetAtTime(f, this.now, 0.08);
   }
 
   setTunnel(amount) {
@@ -57,12 +170,15 @@ export class WorldAudio extends DuckAudio {
   itemGet() {
     if (!this.ctx) return;
     const t = this.now;
-    [0, 0.07, 0.14, 0.21, 0.28].forEach((dt, k) => {
-      const { g } = this._osc('square', 600 + k * 120 + (k % 2) * 200, t + dt, 0.06, 0.06);
-      g.gain.setValueAtTime(0.06, t + dt); g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.06);
-    });
-    const { g } = this._osc('triangle', 1320, t + 0.42, 0.3, 0.2);
-    g.gain.setValueAtTime(0.0001, t + 0.42); g.gain.exponentialRampToValueAtTime(0.22, t + 0.44); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
+    // roulette: ticks slowing down, then a ding as the item settles (~0.75 s, matches the HUD roll)
+    let dt = 0;
+    for (let k = 0; k < 10; k++) {
+      const { g } = this._osc('square', 700 + (k % 3) * 160, t + dt, 0.04, 0.05);
+      g.gain.setValueAtTime(0.05, t + dt); g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.04);
+      dt += 0.04 + k * 0.009;
+    }
+    const { g } = this._osc('triangle', 1320, t + 0.76, 0.3, 0.2);
+    g.gain.setValueAtTime(0.0001, t + 0.76); g.gain.exponentialRampToValueAtTime(0.22, t + 0.78); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.05);
   }
 
   itemUse() {
@@ -126,6 +242,7 @@ export class WorldAudio extends DuckAudio {
 
   stinger() {
     if (!this.ctx) return;
+    this.duckMusic(1.2);
     const t = this.now;
     [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, k) => {
       const { g } = this._osc('triangle', f, t + k * 0.09, 0.25, 0.16);

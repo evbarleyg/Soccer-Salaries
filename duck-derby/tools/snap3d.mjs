@@ -18,7 +18,7 @@ const issues = [];
 page.on('pageerror', (e) => issues.push('pageerror: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') issues.push(m.type() + ': ' + m.text()); });
 const names = ['Quack Sparrow', 'Duck Norris', 'Mallory', 'Sir Waddles', 'Bill Murray', 'Puddles', 'Feather Locklear', 'Drake', 'Waddle Dee', 'Eggatha', 'Beak Man', 'Ponderosa'];
-const url = `http://localhost:8080/duck-derby/world.html?names=${encodeURIComponent(names.join('~'))}&seed=7GQ-M2XD&autostart=1&intro=0&sound=0${extra ? '&' + extra : ''}`;
+const url = `http://localhost:8080/duck-derby/world.html?names=${encodeURIComponent(names.join('~'))}&seed=7GQ-M2XD&autostart=1&intro=0&sound=0&noadapt=1${extra ? '&' + extra : ''}`;
 const t0 = Date.now();
 await page.goto(url, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__duckWorld && window.__duckWorld.state.race && document.getElementById('boot') === null, null, { timeout: 60000 });
