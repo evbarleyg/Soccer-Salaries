@@ -175,8 +175,8 @@ export class CameraRig {
       // aiming a little above it seats the duck in the lower-middle of the frame
       tmpLook.copy(d.pos).sub(outPos).setY(0).normalize();
       const aheadY = outLook.y;
-      outLook.copy(d.pos).addScaledVector(tmpLook, 7);
-      outLook.y = Math.max(aheadY, d.pos.y) + 0.4;
+      outLook.copy(d.pos).addScaledVector(tmpLook, 11);
+      outLook.y = aheadY; // same pitch as the landscape framing: horizon mid-frame, course ahead visible
     }
     if ((d.airborne || d.spinning) && d.pos) {
       // over the weir (or while spinning out): come in closer and lower and look at the duck itself,

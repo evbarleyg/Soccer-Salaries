@@ -2,6 +2,7 @@
 // flaps, paddling feet, airborne pose off the Drop, boost squash & stretch,
 // hop + 360° barrel roll on hits, dizzy stars, bubble shield, golden glow.
 import * as THREE from 'three';
+import { WATER_BANK } from './track.js';
 import { clamp, lerp, smoothstep } from '../rng.js';
 
 const starGeo = new THREE.OctahedronGeometry(0.13, 0);
@@ -99,7 +100,8 @@ export class DuckAnimator {
     this.yawOff = lerp(this.yawOff, wantYaw, Math.min(1, dt * 5));
 
     // bank into turns (+ lean with lateral motion), wobble when dizzy
-    let wantRoll = -f.bank * 1.1 - clamp(this.latVel * 0.05, -0.3, 0.3);
+    // sit on the tilted water (WATER_BANK × bank) and lean a little further into the turn / with lateral motion
+    let wantRoll = -f.bank * (WATER_BANK + 0.15) - clamp(this.latVel * 0.04, -0.16, 0.16);
     const dizzy = (w.spin && t < w.spin.t1 + 0.5) || (w.stumble && (w.stumble.what === 'rock' || w.stumble.what === 'lilypad' || w.stumble.what === 'log' || w.stumble.what === 'buoy') && t < w.stumble.t0 + 0.9);
     if (dizzy && spinE >= 1) wantRoll += Math.sin(t * 12) * 0.22 * (1 - smoothstep(w.spin.t1 - 0.2, w.spin.t1 + 0.5, t));
     if (w.stumble) wantRoll += Math.sin(t * 15) * 0.16;
