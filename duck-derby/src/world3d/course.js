@@ -16,13 +16,13 @@ import { clamp, smoothstep, lerp } from '../rng.js';
 
 /** Themed stretches of the course, in running order. */
 export const SECTIONS = {
-  marina: { id: 'marina', name: 'Duck Village Marina', blurb: 'Pontoon start under the blimp', bank: 0.25 },
+  marina: { id: 'marina', name: 'Duck Village Marina', blurb: 'Pontoon start under the blimp', bank: 0.1 },
   canyon: { id: 'canyon', name: 'Canyon S-Bends', blurb: 'Banked turns between the cliffs', bank: 1.0 },
-  lily: { id: 'lily', name: 'Lily-Pad Chicane', blurb: 'Weave the pads, mind the frogs', bank: 0.45 },
-  drop: { id: 'drop', name: 'The Drop', blurb: 'Over the weir — everyone flies', bank: 0.3 },
+  lily: { id: 'lily', name: 'Lily-Pad Chicane', blurb: 'Weave the pads, mind the frogs', bank: 0.15 },
+  drop: { id: 'drop', name: 'The Drop', blurb: 'Over the weir — everyone flies', bank: 0.2 },
   tunnel: { id: 'tunnel', name: 'Log-Flume Tunnel', blurb: 'Dark, fast, echoing', bank: 0.8 },
-  rapids: { id: 'rapids', name: 'Rocky Rapids', blurb: 'White water and bonkable rocks', bank: 0.7 },
-  harbor: { id: 'harbor', name: 'Harbour Finish', blurb: 'Lighthouse, chequered arch, fireworks', bank: 0.3 },
+  rapids: { id: 'rapids', name: 'Rocky Rapids', blurb: 'White water and bonkable rocks', bank: 0.6 },
+  harbor: { id: 'harbor', name: 'Harbour Finish', blurb: 'Lighthouse, chequered arch, fireworks', bank: 0.1 },
 };
 export const SECTION_ORDER = ['marina', 'canyon', 'lily', 'drop', 'tunnel', 'rapids', 'harbor'];
 

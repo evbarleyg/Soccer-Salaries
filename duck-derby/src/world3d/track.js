@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { getCourse } from './course.js';
 
-export const WATER_BANK = 0.5; // how much the water surface super-elevates in banked turns (fraction of duck lean)
+export const WATER_BANK = 0.4; // how much the water surface super-elevates in banked turns (fraction of duck lean)
 /** Banking only tilts the channel itself; beyond the banks the world stays level. */
 export const bankLat = (lat, width) => Math.max(-width / 2 - 2, Math.min(width / 2 + 2, lat));
 

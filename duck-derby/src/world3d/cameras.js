@@ -170,8 +170,16 @@ export class CameraRig {
     const sBack = d.s - Math.cos(yaw) * dist;
     const latOff = d.lat * 0.92 + Math.sin(yaw) * dist;
     const half = track.course.widthAt(sBack) / 2 - 1.0;
-    track.toWorld(sBack, clamp(latOff, -half, half), height + d.hop * 0.45, outPos);
-    track.toWorld(d.s + (portrait ? 11 : 9), d.lat * 0.85, (portrait ? 0.8 : 0.9) + d.hop * 0.6, outLook);
+    track.toWorld(sBack, clamp(latOff, -half, half), height + Math.min(1.6, d.hop * 0.4), outPos);
+    track.toWorld(d.s + (portrait ? 11 : 9), d.lat * 0.85, (portrait ? 0.8 : 0.9), outLook);
+    if (d.airborne && d.pos) {
+      // over the weir: look at the duck itself (a little ahead of it) rather than the water far below
+      const f = track.frame(d.s);
+      tmpLook.copy(d.pos).addScaledVector(f.flat, 5);
+      tmpLook.y = d.pos.y - 0.2;
+      outLook.lerp(tmpLook, 0.85);
+      outPos.y = Math.max(outPos.y, d.pos.y - 1.2); // don't let the duck fly out of the top of the frame
+    }
     return inTunnel;
   }
 
@@ -204,11 +212,13 @@ export class CameraRig {
         const T = ctx.flyDuration || 11;
         const e = clamp(ctx.phaseTime / T, 0, 1);
         const ease = e * e * (3 - 2 * e);
-        const s = lerp(track.features.minS + 30, L + 40, ease);
+        const s = lerp(track.features.minS + 20, L + 40, ease);
         const f = track.frame(s);
-        const h = 6.5 + 2.5 * Math.sin(e * Math.PI * 4) + (f.section === 'tunnel' ? -4.3 : 0) + (f.section === 'canyon' ? 3 : 0);
-        track.toWorld(s, Math.sin(e * 9) * 2, Math.max(1.4, h), desiredPos);
-        track.toWorld(s + 28, 0, f.section === 'tunnel' ? 1.2 : 1.5, desiredLook);
+        // open high over the marina (clear of the start banner and blimp), then swoop down to racing height
+        const opening = 1 - smoothstep(10, 70, s);
+        const h = 6.5 + 2.5 * Math.sin(e * Math.PI * 4) + (f.section === 'tunnel' ? -4.3 : 0) + (f.section === 'canyon' ? 3 : 0) + opening * 9;
+        track.toWorld(s, Math.sin(e * 9) * 2 + opening * 6, Math.max(1.4, h), desiredPos);
+        track.toWorld(s + 28 + opening * 20, 0, (f.section === 'tunnel' ? 1.2 : 1.5) + opening * 1.5, desiredLook);
         wantFov = baseFov + 8;
         stiffness = 5;
         break;
