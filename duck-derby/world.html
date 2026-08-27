@@ -80,12 +80,12 @@
   <div id="hud-tl">
     <div id="hud-pos"><span class="p">P</span><b id="pos-num">1</b><span id="pos-of">/12</span></div>
     <div id="hud-gap">leader</div>
-    <div id="hud-name"><i id="hud-swatch"></i><span id="hud-name-text"></span></div>
+    <button id="hud-name" type="button" title="Switch duck"><i id="hud-swatch"></i><span id="hud-name-text"></span></button>
   </div>
   <div id="hud-item" class="empty"><canvas id="item-canvas" width="120" height="120"></canvas><div id="item-label">NO ITEM</div></div>
   <div id="hud-top"><div id="hud-section"></div><div id="hud-comm"></div></div>
   <div id="hud-tr">
-    <button id="btn-cam" type="button" title="Change camera (C)">CHASE</button>
+    <button id="btn-cam" type="button" title="Change camera (C)">TV VIEW</button>
     <button id="btn-duck" type="button" title="Switch duck ([ / ])">DUCK</button>
     <button id="btn-fly" type="button" title="Free-fly camera (F)">FLY</button>
     <button id="btn-mute" type="button" title="Sound (M)">SOUND</button>
@@ -111,23 +111,31 @@
   <div class="panel-inner">
     <header class="res-head">
       <div>
-        <h2 id="res-title">Official result</h2>
+        <h2 id="res-title">Draft order</h2>
+        <div class="res-chips"><span id="res-rule" class="chip"></span><span id="res-seed" class="chip mono"></span></div>
         <p id="res-sub"></p>
       </div>
       <div class="logo small"><span>Duck Derby</span><b>WORLD</b></div>
     </header>
     <ol id="res-board"></ol>
     <div class="res-actions">
-      <button id="btn-share" class="primary" type="button">Copy share link</button>
+      <button id="btn-share" class="primary" type="button">Share result</button>
       <button id="btn-replay" type="button">Replay</button>
-      <button id="btn-newrace" type="button">New race</button>
-      <button id="btn-switch" type="button">Switch duck</button>
       <button id="btn-copy" type="button">Copy draft order</button>
-      <button id="btn-setup" type="button">Edit roster</button>
-      <a id="btn-2d" class="btn" href="index.html">2D version</a>
+      <details class="more">
+        <summary>More</summary>
+        <div class="more-menu">
+          <button id="btn-switch" type="button">Switch duck</button>
+          <button id="btn-setup" type="button">Edit roster</button>
+          <button id="btn-newrace" type="button">New race (new seed)</button>
+          <a id="btn-2d" class="btn" href="index.html">2D version</a>
+        </div>
+      </details>
     </div>
   </div>
 </section>
+<div id="finish-card" hidden><div class="fc-place"></div><div class="fc-pick"></div></div>
+<div id="letterbox"><i></i><i></i><span id="lb-caption"></span></div>
 
 <noscript><p style="color:#fff;padding:2rem">Duck Derby World needs JavaScript and WebGL.</p></noscript>
 <script type="module" src="src/world3d/main.js"></script>

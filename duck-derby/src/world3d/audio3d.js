@@ -104,6 +104,24 @@ export class WorldAudio extends DuckAudio {
     g.gain.setValueAtTime(0.3, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
   }
 
+  blip(up = true) {
+    if (!this.ctx) return;
+    const t = this.now;
+    const [f1, f2] = up ? [660, 880] : [520, 390];
+    [[f1, 0], [f2, 0.09]].forEach(([f, dt]) => {
+      const { g } = this._osc('triangle', f, t + dt, 0.09, 0.14);
+      g.gain.setValueAtTime(0.0001, t + dt); g.gain.exponentialRampToValueAtTime(0.14, t + dt + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.09);
+    });
+  }
+
+  tom() {
+    if (!this.ctx) return;
+    const t = this.now;
+    const { o, g } = this._osc('sine', 160, t, 0.4, 0.4);
+    o.frequency.exponentialRampToValueAtTime(70, t + 0.3);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+  }
+
   bigSplash() { this.splash(0.5); setTimeout(() => this.splash(0.35), 90); }
 
   stinger() {

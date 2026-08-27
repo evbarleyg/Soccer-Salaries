@@ -147,22 +147,39 @@ export class Hud {
     if (d) {
       const rank = d.rank;
       if (rank !== this.lastRank) {
+        const prev = this.lastRank;
         this.el.posNum.textContent = rank + 1;
-        this.el.posNum.classList.remove('bump');
+        this.el.posNum.classList.remove('bump', 'up', 'down');
         void this.el.posNum.offsetWidth;
-        this.el.posNum.classList.add('bump');
-        setTimeout(() => this.el.posNum.classList.remove('bump'), 260);
+        const racing = ctx.phase === 'race' && t > 1.5 && prev >= 0 && this.lastTarget === target;
+        this.el.posNum.classList.add(racing ? (rank < prev ? 'up' : 'down') : 'bump');
+        clearTimeout(this._rankTimer);
+        this._rankTimer = setTimeout(() => this.el.posNum.classList.remove('bump', 'up', 'down'), 620);
+        if (racing && realTime - (this.lastRankCall || 0) > 0.7 && !d.finished) {
+          this.lastRankCall = realTime;
+          if (rank < prev) {
+            const passed = standings[rank + 1] ? ctx.names[standings[rank + 1].i] : '';
+            this.callout(rank === 0 ? '▲ 1st!' : `▲ passed ${passed}`, '#7dff8a');
+            if (this.onRank) this.onRank(1);
+          } else {
+            const by = standings[rank - 1] ? ctx.names[standings[rank - 1].i] : '';
+            this.callout(`▼ ${by} got you`, '#ff6f61');
+            if (this.onRank) this.onRank(-1);
+          }
+        }
         this.lastRank = rank;
+        this.lastTarget = target;
       }
       const leadD = ducks[leader];
       let gapTxt;
-      if (d.finished) gapTxt = `${ordinal(rank + 1)} · ${fmtTime(race.finishTimes[target])}`;
+      if (ctx.phase !== 'race' && ctx.phase !== 'finish' && t <= 0) gapTxt = `Lane ${target + 1} · ${ducks.length} ducks`;
+      else if (d.finished) gapTxt = `${ordinal(rank + 1)} · ${fmtTime(race.finishTimes[target])}`;
       else if (rank === 0) {
         const second = standings[1] ? ducks[standings[1].i] : null;
         gapTxt = second ? `leading by ${(d.s - second.s).toFixed(1)} m` : 'leader';
       } else gapTxt = `+${Math.max(0, leadD.s - d.s).toFixed(1)} m to ${ctx.names[leader]}`;
       setText(this.el.gap, gapTxt);
-      setText(this.el.name, ctx.names[target]);
+      setText(this.el.name, (ctx.follow === 'leader' ? '★ ' : '') + ctx.names[target] + ' ▾');
       const lk = looks[target];
       if (this.el.swatch.dataset.k !== String(target)) {
         this.el.swatch.dataset.k = String(target);
@@ -187,19 +204,24 @@ export class Hud {
       this.el.speed.classList.toggle('show', view === 'chase' && (!!d.win.boost || !!d.win.star || (d.section === 'tunnel' && d.v > 20)));
     }
     if (this.sectionUntil && realTime > this.sectionUntil) { this.el.section.classList.remove('show'); this.sectionUntil = 0; }
+    this._pumpQueue(realTime);
     if (this.commUntil && realTime > this.commUntil) { this.el.comm.classList.remove('show'); this.commUntil = 0; }
     if (this.toastUntil && realTime > this.toastUntil) { this.el.toast.classList.remove('show'); this.toastUntil = 0; }
     setText(this.el.leader, ctx.names[leader] || '');
     setText(this.el.clock, fmtTime(Math.max(0, t)));
     // progress
     const leadS = ducks[leader] ? Math.min(L, ducks[leader].s) : 0;
-    this.el.fill.style.width = `${(leadS / L) * 100}%`;
+    const fw = ((leadS / L) * 100).toFixed(1);
+    if (this._fw !== fw) { this._fw = fw; this.el.fill.style.width = fw + '%'; }
     for (let i = 0; i < ducks.length; i++) {
       const el = this.dots[i];
       if (!el) continue;
-      el.style.left = `${Math.min(100, (Math.max(0, ducks[i].s) / L) * 100)}%`;
-      el.classList.toggle('me', i === target);
-      el.classList.toggle('lead', i === leader);
+      const left = Math.min(100, (Math.max(0, ducks[i].s) / L) * 100).toFixed(1);
+      if (el._left !== left) { el._left = left; el.style.left = left + '%'; }
+      const me = i === target;
+      const ld = i === leader;
+      if (el._me !== me) { el._me = me; el.classList.toggle('me', me); }
+      if (el._ld !== ld) { el._ld = ld; el.classList.toggle('lead', ld); }
     }
     if (realTime - this.lastMini > 0.066) {
       this.lastMini = realTime;
@@ -232,7 +254,7 @@ export class Hud {
         const idx = Math.floor(realTime * 14) % ITEM_ORDER.length;
         const rid = ITEM_ORDER[idx];
         if (st.shown !== rid) { this._drawItem(rid); st.shown = rid; }
-        this.el.itemLabel.textContent = '…';
+        this.el.itemLabel.textContent = ITEMS[rid].short;
       } else {
         const sk = held.item + (held.charges || 1);
         if (st.shown !== sk) {
@@ -257,17 +279,66 @@ export class Hud {
     void charges;
   }
 
-  say(text, realTime, dur = 3.2) {
+  /**
+   * Headline lane: one line at a time, min hold 1.4 s, max 3 s, queue of 2,
+   * stale (>2 s queued) lines dropped, higher priority may pre-empt after the min hold.
+   * priority: 3 = my duck, 2 = leader/lead change, 1 = hits, 0 = flavour.
+   */
+  say(text, realTime, dur = 3.0, priority = 0) {
     if (!text) return;
+    this.queue = this.queue || [];
+    const showing = this.commUntil && realTime < this.commUntil;
+    const held = realTime - (this.commSince || 0);
+    if (!showing || (held > 1.4 && priority >= (this.commPri || 0)) || priority > (this.commPri || 0) + 1) {
+      this._show(text, realTime, dur, priority);
+      return;
+    }
+    this.queue.push({ text, dur, priority, at: realTime });
+    this.queue.sort((a, b) => b.priority - a.priority || a.at - b.at);
+    if (this.queue.length > 2) this.queue.length = 2;
+  }
+
+  _show(text, realTime, dur, priority) {
     this.el.comm.textContent = text;
+    this.el.comm.classList.remove('show');
+    void this.el.comm.offsetWidth;
     this.el.comm.classList.add('show');
-    this.commUntil = realTime + dur;
+    this.commUntil = realTime + Math.min(3, dur);
+    this.commSince = realTime;
+    this.commPri = priority;
+  }
+
+  _pumpQueue(realTime) {
+    if (!this.queue || !this.queue.length) return;
+    const held = realTime - (this.commSince || 0);
+    if (held < 1.4 && this.commUntil && realTime < this.commUntil) return;
+    // drop stale
+    this.queue = this.queue.filter((q) => realTime - q.at < 2.2);
+    const next = this.queue.shift();
+    if (next) this._show(next.text, realTime, next.dur, next.priority);
   }
 
   toast(text, realTime, dur = 1.4) {
     this.el.toast.textContent = text;
     this.el.toast.classList.add('show');
     this.toastUntil = realTime + dur;
+  }
+
+  setAnchor(x, y) { this.anchorX = x; this.anchorY = y; }
+
+  /** Personal callout anchored above my duck (screen space): BOOST!, STUNG!, ▲ passed X … */
+  callout(text, color = '#fff') {
+    const div = document.createElement('div');
+    div.className = 'callout';
+    div.style.setProperty('--c', color);
+    div.textContent = text;
+    const x = this.anchorX ?? window.innerWidth / 2;
+    const y = (this.anchorY ?? window.innerHeight * 0.6) - 70;
+    div.style.left = `${Math.round(Math.max(60, Math.min(window.innerWidth - 60, x)))}px`;
+    div.style.top = `${Math.round(Math.max(80, y - (this.el.callouts ? this.el.callouts.children.length * 30 : 0)))}px`;
+    if (!this.el.callouts) { this.el.callouts = document.createElement('div'); this.el.callouts.id = 'callouts'; this.el.hud.appendChild(this.el.callouts); }
+    this.el.callouts.appendChild(div);
+    setTimeout(() => div.remove(), 1250);
   }
 
   popup(text, color = '#fff') {
@@ -280,12 +351,22 @@ export class Hud {
     while (this.el.popup.children.length > 3) this.el.popup.firstChild.remove();
   }
 
-  banner(text) {
-    const b = this.el.banner;
-    b.textContent = text;
-    b.classList.remove('show');
-    void b.offsetWidth;
-    b.classList.add('show');
+  banner(text) { this.card(text); }
+
+  /** Moment card: slim skewed band near the top; never two within 2 s (the later one waits). */
+  card(text, hold = 1.1) {
+    const now = performance.now() / 1000;
+    const wait = Math.max(0, (this.cardBusyUntil || 0) - now);
+    clearTimeout(this._cardTimer);
+    this._cardTimer = setTimeout(() => {
+      const b = this.el.banner;
+      b.textContent = text;
+      b.style.setProperty('--hold', hold + 's');
+      b.classList.remove('show');
+      void b.offsetWidth;
+      b.classList.add('show');
+      this.cardBusyUntil = performance.now() / 1000 + hold + 0.9;
+    }, wait * 1000);
   }
 
   countdown(label, go = false) {

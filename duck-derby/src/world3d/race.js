@@ -177,10 +177,13 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
     if (isShield(d) && cause !== 'seagull') {
       d.shieldUntil = -1;
       if (d.item === 'shield') d.item = null;
-      const w = windows[i].findLast((x) => x.kind === 'shield');
-      if (w) {
-        w.t1 = t;
-        w.popped = true;
+      for (let k = windows[i].length - 1; k >= 0; k--) {
+        const w = windows[i][k];
+        if (w.kind === 'shield') {
+          w.t1 = t;
+          w.popped = true;
+          break;
+        }
       }
       events.push({ t, type: 'blocked', duck: i, item: cause, by, reason: 'shield' });
       return 'blocked';
@@ -198,10 +201,10 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
     if (r <= 0) return -1;
     return orderBuf[r - 1];
   }
-  function currentLeaderUnfinished() {
+  function currentLeaderUnfinished(exclude = -1) {
     for (let r = 0; r < count; r++) {
       const j = orderBuf[r];
-      if (ducks[j].finishTime === null) return j;
+      if (j !== exclude && ducks[j].finishTime === null) return j;
     }
     return -1;
   }
@@ -260,7 +263,7 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
         break;
       }
       case 'seagull': {
-        projectiles.push({ id: projId++, type: 'seagull', owner: i, target: currentLeaderUnfinished(), t0: t, t1: null, s: d.s, lat: d.lat, phase: 'fly', diveT: 0, result: null, path: [] });
+        projectiles.push({ id: projId++, type: 'seagull', owner: i, target: currentLeaderUnfinished(i), t0: t, t1: null, s: d.s, lat: d.lat, phase: 'fly', diveT: 0, result: null, path: [] });
         break;
       }
       default:
@@ -390,7 +393,7 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
           }
         } else if (p.type === 'seagull') {
           if (p.phase === 'fly') {
-            const tgtI = currentLeaderUnfinished();
+            const tgtI = currentLeaderUnfinished(p.owner);
             p.target = tgtI;
             const tgt = tgtI >= 0 ? ducks[tgtI] : null;
             if (!tgt) finish(p, 'fizzle');
@@ -517,16 +520,17 @@ export function simulateRace({ count, seed, duration = DEFAULTS.duration, hazard
     tick++;
 
     // ---- G. leader bookkeeping (hysteresis so photo-close swaps don't spam) ----
-    let curLeader = leader;
-    let bestS = leader >= 0 ? ducks[leader].s : -1;
+    let best = -1;
+    let bestS = -1;
     for (let i = 0; i < count; i++) {
-      if (i === leader) continue;
-      if (ducks[i].s > bestS + (leader >= 0 ? 0.004 * L : 0)) {
-        bestS = ducks[i].s;
-        curLeader = i;
+      const d = ducks[i];
+      if (d.s > bestS || (d.s === bestS && best >= 0 && d.tieKey < ducks[best].tieKey)) {
+        bestS = d.s;
+        best = i;
       }
     }
-    if (curLeader !== leader) {
+    const curLeader = leader >= 0 && best !== leader && bestS <= ducks[leader].s + 0.004 * L ? leader : best;
+    if (t < 1 && bestS <= 0) { /* nobody has moved yet: no leader */ } else if (curLeader !== leader) {
       if (leader !== -1 && t > 3 && ducks[curLeader].finishTime === null) {
         leadChanges++;
         events.push({ t, duck: curLeader, type: 'lead', from: leader });
@@ -685,7 +689,8 @@ export const lateralAt = (sim, i, t) => sample(sim.lat[i], sim.dt, t);
 export const speedAt = (sim, i, t) => {
   const arr = sim.vel[i];
   const end = (arr.length - 1) * sim.dt;
-  return t <= end ? sample(arr, sim.dt, t) : arr[arr.length - 1] * 0.6;
+  if (t <= end) return sample(arr, sim.dt, t);
+  return t - end < 6 ? arr[arr.length - 1] * 0.6 : 0;
 };
 
 /** Held item of duck i at time t: { item, charges } or null. */

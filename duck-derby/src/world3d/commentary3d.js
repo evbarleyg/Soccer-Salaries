@@ -17,9 +17,18 @@ function mulberry(seed) {
 export class WorldCommentator {
   constructor(names, seed) {
     this.names = names;
-    this.rnd = mulberry(seed ^ 0xc0ffee);
+    this.seed = seed >>> 0;
+    this.rnd = mulberry(seed ^ 0xc0ffee); // intro/go lines only
+    this.ev = null;
+    this.k = 0;
   }
-  pick(arr) { return arr[Math.floor(this.rnd() * arr.length)]; }
+  /** Deterministic per-event random (independent of who is watching or when). */
+  er() {
+    if (!this.ev) return this.rnd();
+    const x = Math.sin((this.ev.t * 1000 + 1) * 12.9898 + ((this.ev.duck ?? 0) + 2) * 78.233 + (this.k++) * 37.719 + (this.seed % 9973)) * 43758.5453;
+    return x - Math.floor(x);
+  }
+  pick(arr) { return arr[Math.floor(this.er() * arr.length)]; }
   n(i) { return this.names[i] ?? 'Someone'; }
 
   intro(count) {
@@ -33,16 +42,24 @@ export class WorldCommentator {
 
   /** @returns {string|null} */
   forEvent(ev, standings, target) {
+    this.ev = ev;
+    this.k = 0;
+    const out = this._forEvent(ev, standings, target);
+    this.ev = null;
+    return out;
+  }
+
+  _forEvent(ev, standings, target) {
     const name = ev.duck !== undefined && ev.duck >= 0 ? this.n(ev.duck) : '';
     const mine = ev.duck === target;
     switch (ev.type) {
       case 'lead':
         return this.pick([`${name} takes the lead!`, `${name} hits the front!`, `New leader: ${name}!`, ev.from != null && ev.from >= 0 ? `${name} sweeps past ${this.n(ev.from)}!` : `${name} leads!`]);
       case 'burst':
-        if (!mine && this.rnd() < 0.7) return null;
+        if (!mine && this.er() < 0.7) return null;
         return ev.section === 'rapids' ? this.pick([`${name} catches a current!`, `${name} rides the white water!`]) : this.pick([`${name} finds another gear!`, `Big move from ${name}!`, `Turbo-paddle from ${name}!`, `${name} is flying — look at that wake!`]);
       case 'stumble':
-        if (!mine && this.rnd() < 0.6) return null;
+        if (!mine && this.er() < 0.6) return null;
         return {
           rock: this.pick([`${name} bonks a rock!`, `Ouch — ${name} finds a boulder.`]),
           lilypad: this.pick([`${name} gets tangled in a lily pad!`, `${name} ploughs into a pad!`]),
@@ -65,7 +82,7 @@ export class WorldCommentator {
           case 'seagull': return `SEAGULL STRIKE! It's hunting down the leader!`;
           case 'feather': return `${name} goes GOLDEN — coming through!`;
           case 'mud': return ev.victims && ev.victims.length ? `${name} splatters ${ev.victims.length === 1 ? this.n(ev.victims[0]) : ev.victims.length + ' ducks'} with mud!` : null;
-          case 'stone': return mine || this.rnd() < 0.5 ? `${name} skims a stone up the course…` : null;
+          case 'stone': return mine || this.er() < 0.5 ? `${name} skims a stone up the course…` : null;
           case 'bread': case 'triple': return mine ? this.pick(['Bread boost!', 'Carbs → speed!']) : null;
           default: return null;
         }
@@ -82,7 +99,7 @@ export class WorldCommentator {
         if (ev.item === 'hotdog') return null;
         return ev.reason === 'shield' ? `${name}'s bubble shield pops — ${ITEMS[ev.item]?.name || 'the hit'} blocked!` : `${name} shrugs off the ${ITEMS[ev.item]?.name || 'hit'} — golden!`;
       case 'projectile-end':
-        if (ev.result === 'fizzle' && ev.kind === 'stone') return this.rnd() < 0.5 ? 'The stone skips out harmlessly.' : null;
+        if (ev.result === 'fizzle' && ev.kind === 'stone') return this.er() < 0.5 ? 'The stone skips out harmlessly.' : null;
         if (ev.result === 'fizzle' && ev.kind === 'hornet') return 'The hornet loses interest and buzzes off.';
         return null;
       case 'takeoff':
@@ -109,6 +126,6 @@ export class WorldCommentator {
     if (place === 2) return this.pick([`${name} home in second.`, `${name} grabs second!`]);
     if (place === 3) return this.pick([`${name} rounds out the podium.`, `Third for ${name}.`]);
     if (place === count) return this.pick([`And ${name} brings up the rear. Someone had to.`, `${name} finishes last — enjoy that pick.`]);
-    return this.rnd() < 0.4 ? `${name} finishes ${ordinal(place)}.` : null;
+    return (place * 7919 + this.seed) % 10 < 4 ? `${name} finishes ${ordinal(place)}.` : null;
   }
 }

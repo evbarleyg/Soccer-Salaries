@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { clamp, lerp, smoothstep } from '../rng.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
+const tmpLook = new THREE.Vector3();
 
 export class CameraRig {
   constructor(camera, track, dom) {
@@ -54,7 +55,13 @@ export class CameraRig {
   }
 
   kick(amount = 0.6) {
+    if (this.reducedMotion) return;
     this.shake = Math.min(1.2, this.shake + amount);
+  }
+
+  /** Nudge the field of view (degrees); it eases back on its own. */
+  fovPunch(deg) {
+    this.fovExtra = (this.fovExtra || 0) + deg * (this.reducedMotion ? 0.3 : 1);
   }
 
   _bindInput() {
@@ -129,6 +136,22 @@ export class CameraRig {
     window.addEventListener('blur', () => this.free.keys.clear());
   }
 
+  /** Desired chase-camera pose for duck state d (fills outPos/outLook; returns extra FOV). */
+  chasePose(d, ctx, outPos, outLook) {
+    const track = this.track;
+    const inTunnel = d.section === 'tunnel' || (d.s > track.features.tunnelInS - 12 && d.s < track.features.tunnelOutS + 4);
+    const portrait = this.portrait;
+    const dist = (inTunnel ? 4.2 : portrait ? 4.7 : 5.4) * this.userZoom;
+    const height = Math.max(0.7, (inTunnel ? 1.7 : portrait ? 2.15 : 2.35) * this.userZoom + this.userPitch * 3);
+    const yaw = this.userYaw;
+    const sBack = d.s - Math.cos(yaw) * dist;
+    const latOff = d.lat * 0.92 + Math.sin(yaw) * dist;
+    const half = track.course.widthAt(sBack) / 2 - 1.0;
+    track.toWorld(sBack, clamp(latOff, -half, half), height + d.hop * 0.45, outPos);
+    track.toWorld(d.s + (portrait ? 14 : 9), d.lat * 0.85, (portrait ? 1.6 : 0.9) + d.hop * 0.6, outLook);
+    return inTunnel;
+  }
+
   /**
    * @param {number} dt frame delta (real seconds)
    * @param {object} ctx { t, phaseTime, phase, ducks: DuckState[], target, leader, race, events }
@@ -136,7 +159,7 @@ export class CameraRig {
   update(dt, ctx) {
     const cam = this.camera;
     this.portrait = cam.aspect < 0.8;
-    const baseFov = this.portrait ? 76 : 62;
+    const baseFov = this.portrait ? 70 : 62;
     let wantFov = baseFov;
     const desiredPos = this._v1;
     const desiredLook = this._v2;
@@ -175,14 +198,19 @@ export class CameraRig {
         const a = lerp(-1, 1, smoothstep(0, 0.75, e));
         track.toWorld(7 - 2 * e, a * w * 0.42, 1.0 + 0.4 * e, desiredPos);
         track.toWorld(0, a * w * 0.3, 0.6, desiredLook);
-        if (e > 0.78) {
-          const k = smoothstep(0.78, 1, e);
+        if (e > 0.65) {
+          const k = smoothstep(0.65, 1, e);
           const tgt = ctx.ducks[ctx.target] || ctx.ducks[0];
-          const lat = tgt ? tgt.lat : 0;
-          track.toWorld(lerp(6, -5.5, k), lerp(a * w * 0.42, lat * 0.8, k), lerp(1.4, 2.2, k), desiredPos);
-          track.toWorld(lerp(0, 8, k), lerp(a * w * 0.3, lat * 0.6, k), 0.8, desiredLook);
+          if (tgt) {
+            const p2 = this._v3;
+            const l2 = tmpLook;
+            if (ctx.view === 'tv') { track.toWorld(-14, 16, 9, p2); track.toWorld(6, 0, 0.8, l2); }
+            else this.chasePose(tgt, ctx, p2, l2);
+            desiredPos.lerp(p2, k);
+            desiredLook.lerp(l2, k);
+          }
         }
-        wantFov = baseFov + 4;
+        wantFov = lerp(baseFov + 4, baseFov, smoothstep(0.65, 1, e));
         stiffness = 6;
         void n;
         break;
@@ -190,22 +218,16 @@ export class CameraRig {
       case 'chase': {
         const d = ctx.ducks[ctx.target] || ctx.ducks[0];
         if (!d) break;
-        const inTunnel = d.section === 'tunnel' || (d.s > track.features.tunnelInS - 12 && d.s < track.features.tunnelOutS + 4);
-        const dist = (inTunnel ? 4.2 : 5.4 + (this.portrait ? 0.8 : 0)) * this.userZoom;
-        const height = (inTunnel ? 1.7 : 2.35 + (this.portrait ? 0.7 : 0)) * this.userZoom + this.userPitch * 3;
-        const yaw = this.userYaw;
-        // camera sits behind along the track, swung around by user yaw
-        const sBack = d.s - Math.cos(yaw) * dist;
-        const latOff = d.lat * 0.92 + Math.sin(yaw) * dist;
-        const half = track.course.widthAt(sBack) / 2 - 1.0;
-        track.toWorld(sBack, clamp(latOff, -half, half), height + d.hop * 0.85, desiredPos);
-        track.toWorld(d.s + 9, d.lat * 0.85, 0.9 + d.hop * 0.8, desiredLook);
+        // camera sits behind along the track (track space keeps it inside the channel/tunnel), swung by user yaw
+        const inTunnel = this.chasePose(d, ctx, desiredPos, desiredLook);
         if (d.boosting) wantFov += 9;
         if (d.star) wantFov += 5;
+        if (d.airborne) wantFov += 7;
         wantFov += clamp((d.v / (ctx.race ? ctx.race.v0 : 23) - 1) * 10, -3, 6);
         const f = track.frame(d.s);
-        wantUp = this._v3.copy(UP).lerp(f.up.clone().applyAxisAngle(f.flat, -f.bank * 0.35), 1).normalize();
-        stiffness = inTunnel ? 9 : 6.5;
+        const bankRoll = clamp(-f.bank * 0.35, -0.1, 0.1); // cap at ~6 degrees
+        wantUp = this._v3.copy(f.up).applyAxisAngle(f.flat, bankRoll).normalize();
+        stiffness = inTunnel ? 9 : d.airborne ? 3.8 : 6.5;
         break;
       }
       case 'tv': {
@@ -226,8 +248,9 @@ export class CameraRig {
       case 'orbit': {
         const d = ctx.ducks[ctx.orbitTarget ?? ctx.target] || ctx.ducks[0];
         if (!d) break;
-        const a = ctx.phaseTime * 0.55 + 1.2;
-        const r = 4.8 * this.userZoom;
+        if (this.orbitA0 === undefined || ctx.phaseTime < 0.05) this.orbitA0 = Math.atan2(this.pos.z - d.pos.z, this.pos.x - d.pos.x);
+        const a = this.orbitA0 + ctx.phaseTime * 0.55;
+        const r = Math.min(4.8 * this.userZoom, track.course.widthAt(d.s) / 2);
         desiredPos.set(d.pos.x + Math.cos(a) * r, d.pos.y + 1.7 + this.userPitch * 2, d.pos.z + Math.sin(a) * r);
         desiredLook.copy(d.pos).y += 0.7;
         wantFov = baseFov - 10;
@@ -241,8 +264,12 @@ export class CameraRig {
           desiredPos.x += Math.cos(a) * 2 - 2;
           desiredPos.z += Math.sin(a) * 2;
           desiredLook.copy(this.podiumSpot.look);
+          // keep the podium clear of the results panel: right half on landscape, upper half on portrait
+          const f = this._v3.subVectors(this.podiumSpot.look, this.podiumSpot.pos).setY(0).normalize();
+          if (this.portrait) desiredLook.y -= 2.6;
+          else desiredLook.addScaledVector(this._v3.set(f.z, 0, -f.x), 4.8);
         }
-        wantFov = baseFov - 6;
+        wantFov = baseFov - 4;
         stiffness = 3;
         break;
       }
@@ -256,6 +283,11 @@ export class CameraRig {
         break;
     }
 
+    if (this.fovExtra) {
+      wantFov += this.fovExtra;
+      this.fovExtra *= Math.exp(-dt * (ctx.phase === 'countdown' ? 0.15 : 3.5));
+      if (Math.abs(this.fovExtra) < 0.05) this.fovExtra = 0;
+    }
     const k = this.snapNext ? 1 : 1 - Math.exp(-stiffness * dt);
     this.pos.lerp(desiredPos, k);
     this.look.lerp(desiredLook, this.snapNext ? 1 : 1 - Math.exp(-(stiffness + 2) * dt));
@@ -318,7 +350,8 @@ export class CameraRig {
     else if (s > F.canyonInS + 25 && s < F.lilyInS - 30) {
       // canyon: alternate cliff-top apex cams and a low chase dolly
       const phase = Math.floor(t / 4.5) % 2;
-      shot = phase === 0 ? { id: 'canyon-heli-' + Math.floor(t / 4.5), heli: true, r: 30, h: 17, fov: 56 } : { id: 'canyon-dolly-' + Math.floor(t / 4.5), dolly: true, ahead: 12, h: 0.7, fov: 66, stiff: 7 };
+      const half = track.course.widthAt(s + 32) / 2;
+      shot = phase === 0 ? { id: 'canyon-apex-' + Math.floor(t / 4.5), s: s + 32, lat: (Math.floor(t / 9) % 2 ? 1 : -1) * (half - 1.2), h: 3.2, lookPack: true, fov: 60 } : { id: 'canyon-dolly-' + Math.floor(t / 4.5), dolly: true, ahead: 12, h: 0.7, fov: 66, stiff: 7 };
     } else if (s > F.lilyInS - 30 && s < F.dropLipS - 30) shot = Math.floor(t / 5) % 2 === 0 ? { id: 'lily-low-' + Math.floor(t / 5), s: Math.min(s + 34, F.dropApproachS - 5), lat: -11, h: 0.45, lookPack: true, fov: 62 } : { id: 'lily-heli-' + Math.floor(t / 5), heli: true, r: 34, h: 20, fov: 54 };
     else if (s > F.tunnelOutS + 20 && s < F.harborInS) shot = Math.floor(t / 4.2) % 2 === 0 ? { id: 'rapids-dolly-' + Math.floor(t / 4.2), dolly: true, ahead: 11, h: 0.6, fov: 68, stiff: 7 } : { id: 'rapids-rock-' + Math.floor(t / 4.2), s: s + 30, lat: 10, h: 2.5, lookPack: true, fov: 58 };
     else shot = Math.floor(t / 5) % 2 === 0 ? { id: 'heli-' + Math.floor(t / 5), heli: true, r: 36, h: 22, fov: 55 } : { id: 'dolly-' + Math.floor(t / 5), dolly: true, ahead: 12, h: 0.8, fov: 66, stiff: 7 };
@@ -332,6 +365,7 @@ export class CameraRig {
       const a = t * 0.16 + this.userYaw;
       const c = track.toWorld(cs, cl * 0.5, 0, this._v3);
       outPos.set(c.x + Math.cos(a) * sh.r * this.userZoom, c.y + sh.h * this.userZoom, c.z + Math.sin(a) * sh.r * this.userZoom);
+      if (this.terrainHeight) outPos.y = Math.max(outPos.y, this.terrainHeight(outPos.x, outPos.z) + 4);
       outLook.copy(c).y += 1;
     } else if (sh.dolly) {
       const half = track.course.widthAt(s + sh.ahead) / 2 - 1.5;
@@ -339,6 +373,7 @@ export class CameraRig {
       track.toWorld(s - 3, lead.lat * 0.6, 0.7, outLook);
     } else {
       track.toWorld(sh.s, sh.lat, sh.h, outPos);
+      if (this.terrainHeight) outPos.y = Math.max(outPos.y, this.terrainHeight(outPos.x, outPos.z) + 1.2);
       if (sh.lookLeader) track.toWorld(Math.min(lead.s, L + 3), lead.lat * 0.6, 0.7, outLook);
       else if (sh.lookPack) track.toWorld(lerp(cs, s, 0.6), cl * 0.5, 0.8, outLook);
       else track.toWorld(sh.lookS, 0, sh.lookH ?? 1, outLook);
@@ -355,8 +390,8 @@ export class CameraRig {
     if (k.has('KeyS') || k.has('ArrowDown')) acc.sub(fwd);
     if (k.has('KeyD') || k.has('ArrowRight')) acc.add(right);
     if (k.has('KeyA') || k.has('ArrowLeft')) acc.sub(right);
-    if (k.has('KeyE') || k.has('Space')) acc.y += 1;
-    if (k.has('KeyQ') || k.has('KeyC')) acc.y -= 1;
+    if (k.has('KeyE') || k.has('PageUp')) acc.y += 1;
+    if (k.has('KeyQ') || k.has('PageDown')) acc.y -= 1;
     if (f.touchMove) acc.addScaledVector(fwd, clamp(f.touchMove, -1, 1));
     const speed = f.speed * (k.has('ShiftLeft') || k.has('ShiftRight') ? 3 : 1);
     f.vel.addScaledVector(acc, speed * dt * 4);
@@ -366,7 +401,7 @@ export class CameraRig {
     const sNear = this.track.nearestS(this.pos.x, this.pos.z);
     const c = this.track.course.at(sNear);
     const distToLine = Math.hypot(this.pos.x - c.x, this.pos.z - c.z);
-    const floor = (distToLine < c.width ? c.y : c.y) + 0.8;
+    const floor = (distToLine < c.width / 2 + 2 ? c.y : -5.7) + 0.8;
     if (this.terrainHeight) this.pos.y = Math.max(this.pos.y, Math.max(floor, this.terrainHeight(this.pos.x, this.pos.z) + 1.0));
     else this.pos.y = Math.max(this.pos.y, floor);
     this.pos.y = Math.min(this.pos.y, 160);

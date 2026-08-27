@@ -113,6 +113,7 @@ export function brainWantsToFire(brain, v) {
     case 'feather':
       return v.heldFor > 0.3;
     case 'seagull':
+      if (v.rank === 0) return v.heldFor > 6; // leading with a seagull in hand: sit on it
       return v.heldFor > 0.8 + 0.5 * brain.patience;
     case 'shield':
       return false; // shields equip themselves on pickup

@@ -6,7 +6,7 @@ import { clamp, lerp, smoothstep } from '../rng.js';
 
 const starGeo = new THREE.OctahedronGeometry(0.13, 0);
 const starMat = new THREE.MeshBasicMaterial({ color: 0xffe14d });
-const shieldGeo = new THREE.SphereGeometry(1.2, 20, 14);
+const shieldGeo = new THREE.SphereGeometry(1.05, 20, 14);
 const GOLD = new THREE.Color(0xffc830);
 const BLACK = new THREE.Color(0x000000);
 
@@ -49,7 +49,7 @@ export class DuckAnimator {
   }
   ensureShield() {
     if (this.shield) return;
-    this.shield = new THREE.Mesh(shieldGeo, new THREE.MeshLambertMaterial({ color: 0x7fdcff, emissive: 0x1d6d9c, transparent: true, opacity: 0.3, depthWrite: false }));
+    this.shield = new THREE.Mesh(shieldGeo, new THREE.MeshLambertMaterial({ color: 0x7fdcff, emissive: 0x1d6d9c, transparent: true, opacity: 0.14, depthWrite: false }));
     this.shield.position.set(0, 0.45, 0);
     this.shield.renderOrder = 8;
     const rim = new THREE.Mesh(shieldGeo, new THREE.MeshBasicMaterial({ color: 0xd8f6ff, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.BackSide, blending: THREE.AdditiveBlending }));
@@ -195,7 +195,7 @@ export class DuckAnimator {
       this.shield.visible = true;
       const k = 1 + Math.sin(rt * 6) * 0.03;
       this.shield.scale.setScalar(k);
-      this.shield.material.opacity = 0.3;
+      this.shield.material.opacity = ctx.isTarget ? 0.2 : 0.12;
       this.shieldPop = w.shield.popped ? w.shield.t1 : -1;
       this.shieldWin = w.shield;
     } else if (this.shield) {

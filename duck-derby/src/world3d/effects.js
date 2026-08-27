@@ -24,6 +24,8 @@ export class Effects {
     this.fireT = 0;
     this._v = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
+    this._v3 = new THREE.Vector3();
+    this.live = 0;
   }
 
   // ------------------------------------------------------------ pooled particles
@@ -75,12 +77,17 @@ export class Effects {
     this.pMax[i] = life;
     this.pGrav[i] = grav;
     this.pDrag[i] = drag;
+    this.live++;
+    this.dirty = true;
   }
 
   _updateParticles(dt) {
     const n = this.N;
+    if (this.live <= 0 && !this.dirty) return; // nothing alive: skip the CPU pass and GPU uploads
+    let live = 0;
     for (let i = 0; i < n; i++) {
       if (this.pLife[i] <= 0) continue;
+      live++;
       this.pLife[i] -= dt;
       if (this.pLife[i] <= 0) { this.pCol[i * 4 + 3] = 0; this.pPos[i * 3 + 1] = -999; continue; }
       const k = Math.exp(-this.pDrag[i] * dt);
@@ -89,6 +96,8 @@ export class Effects {
       const e = this.pLife[i] / this.pMax[i];
       this.pCol[i * 4 + 3] = Math.min(1, e * 2.5);
     }
+    this.live = live;
+    this.dirty = false;
     const g = this.points.geometry;
     g.attributes.position.needsUpdate = true;
     g.attributes.color.needsUpdate = true;
@@ -120,7 +129,8 @@ export class Effects {
     const n = Math.max(1, Math.round(2 * amount));
     for (let k = 0; k < n; k++) {
       this._v.set(this.rnd(-0.8, 0.8), this.rnd(0.5, 1.6), this.rnd(-0.8, 0.8));
-      this.emit(this._v2.copy(pos).add(new THREE.Vector3(this.rnd(-0.4, 0.4), this.rnd(0, 0.3), this.rnd(-0.4, 0.4))), this._v, k % 2 ? 0xfff1a8 : 0xffb347, this.rnd(0.16, 0.34), this.rnd(0.3, 0.55), -0.3, 2.5, 0.9);
+      this._v2.set(pos.x + this.rnd(-0.4, 0.4), pos.y + this.rnd(0, 0.3), pos.z + this.rnd(-0.4, 0.4));
+      this.emit(this._v2, this._v, k % 2 ? 0xfff1a8 : 0xffb347, this.rnd(0.16, 0.34), this.rnd(0.3, 0.55), -0.3, 2.5, 0.9);
     }
   }
 
@@ -139,7 +149,8 @@ export class Effects {
     const n = Math.max(1, Math.round(3 * amount));
     for (let k = 0; k < n; k++) {
       this._v.set(this.rnd(-1.5, 1.5), this.rnd(0.5, 3), this.rnd(-1.5, 1.5));
-      this.emit(this._v2.copy(pos).add(new THREE.Vector3(this.rnd(-0.6, 0.6), this.rnd(0, 1), this.rnd(-0.6, 0.6))), this._v, color, this.rnd(0.12, 0.28), this.rnd(0.3, 0.7), 0.2, 1.5, 1);
+      this._v2.set(pos.x + this.rnd(-0.6, 0.6), pos.y + this.rnd(0, 1), pos.z + this.rnd(-0.6, 0.6));
+      this.emit(this._v2, this._v, color, this.rnd(0.12, 0.28), this.rnd(0.3, 0.7), 0.2, 1.5, 1);
     }
   }
 
@@ -160,8 +171,8 @@ export class Effects {
     top.x += this.rnd(-8, 8);
     top.z += this.rnd(-8, 8);
     for (let k = 0; k < 10; k++) {
-      const p = new THREE.Vector3().lerpVectors(pos, top, k / 10);
-      this.emit(p, this._v.set(0, 2, 0), 0xfff1c4, 0.2, 0.25 + k * 0.03, 0, 0.5, 0.8);
+      this._v3.lerpVectors(pos, top, k / 10);
+      this.emit(this._v3, this._v.set(0, 2, 0), 0xfff1c4, 0.2, 0.25 + k * 0.03, 0, 0.5, 0.8);
     }
     const col = [0xff5f6d, 0xffd23f, 0x47e0ff, 0xb06bff, 0x7dff8a, 0xffffff][Math.floor(this.rnd(0, 6))];
     const n = Math.round(90 * this.quality.particles);
