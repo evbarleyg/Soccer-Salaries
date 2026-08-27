@@ -1177,13 +1177,17 @@ function loop() {
     if (performance.now() - lastInputReal > 20000 && !NOADAPT) { clock.getDelta(); return; }
   }
   const raw = clock.getDelta();
+  if (state.manual) return; // capture tools step the world themselves (window.__duckWorld.tick)
+  advance(raw);
+  if (!calm && !NOADAPT) adaptQuality(raw);
+}
+function advance(raw) {
   const dt = Math.min(raw, 0.05);
   state.realTime += dt;
   // a synchronised start must track the wall clock even if frames are slow
   state.phaseTime += state.go && (state.phase === 'grid' || state.phase === 'countdown' || state.phase === 'lobby') ? Math.min(raw, 0.5) : dt;
   step(dt);
   renderer.render(scene, camera);
-  if (!calm && !NOADAPT) adaptQuality(raw);
 }
 
 function step(dt) {
@@ -1714,6 +1718,8 @@ window.__duckWorld = {
   eventsOf: (type) => (state.race ? state.race.events.filter((e) => e.type === type) : []),
   resultCard: () => resultCard().toDataURL('image/png'),
   rig,
+  /** Deterministic stepping for capture tools: tick(dt) advances and renders one frame; tick(null) resumes real time. */
+  tick: (dt) => { state.manual = dt !== null && dt !== undefined; if (state.manual) advance(dt); },
 };
 
 boot().catch((err) => {
