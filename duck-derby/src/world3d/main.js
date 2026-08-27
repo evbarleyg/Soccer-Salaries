@@ -251,6 +251,7 @@ function initSetupUi() {
   $('#btn-replay').addEventListener('click', () => replay());
   $('#btn-newrace').addEventListener('click', () => { if (!confirm('Start a NEW race with a new seed? (A shared link will no longer match this result.)')) return; state.seed = randomSeed(); state.shared = false; state.go = null; startRace({ names: state.raceNames }); });
   $('#btn-switch').addEventListener('click', () => openPicker());
+  $('#btn-image').addEventListener('click', (e) => shareResultImage(e.currentTarget));
   $('#btn-share').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     const data = { title: 'Duck Derby World — draft order', text: draftText(false), url: shareUrl() };
@@ -904,6 +905,96 @@ function twoDQuery() {
   if (state.salt) p.set('salt', String(state.salt));
   return p.toString();
 }
+/** Paint the draft order as a shareable 1080×1350 image (what actually gets posted in the league chat). */
+function resultCard() {
+  const race = state.race;
+  const order = race.order;
+  const picks = draftOrder(order, state.rule);
+  const c = document.createElement('canvas');
+  c.width = 1080;
+  c.height = 1350;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, 1350);
+  grd.addColorStop(0, '#1d3a5c');
+  grd.addColorStop(1, '#0d1826');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 1080, 1350);
+  g.fillStyle = '#ffd23f';
+  g.font = '800 34px system-ui, -apple-system, Segoe UI, sans-serif';
+  g.fillText('DUCK DERBY WORLD', 64, 92);
+  g.fillStyle = '#ffffff';
+  g.font = 'italic 900 86px system-ui, -apple-system, Segoe UI, sans-serif';
+  g.fillText('DRAFT ORDER', 60, 178);
+  g.font = '700 30px system-ui, -apple-system, Segoe UI, sans-serif';
+  g.fillStyle = '#a9b8cc';
+  const win = state.raceNames[order[0]];
+  g.fillText(`${state.rule === 'l' ? 'Last place picks first' : 'Winner picks first'}  ·  ${win} ${race.photoFinish ? 'won a photo finish' : 'won by ' + race.margin.toFixed(2) + ' s'}  ·  seed ${seedToCode(state.seed)}`, 64, 232);
+  const n = picks.length;
+  const rowH = Math.min(78, Math.floor(980 / n));
+  const y0 = 280;
+  picks.forEach((i, k) => {
+    const y = y0 + k * rowH;
+    const lk = state.looks[i];
+    const mine = state.follow === 'fixed' && i === state.target;
+    g.fillStyle = k === 0 ? 'rgba(255,210,63,0.22)' : 'rgba(255,255,255,0.07)';
+    roundRectPath(g, 52, y, 976, rowH - 10, 18);
+    g.fill();
+    if (mine) { g.lineWidth = 4; g.strokeStyle = lk.towel.bg; g.stroke(); }
+    g.fillStyle = '#ffd23f';
+    g.font = `900 ${Math.round(rowH * 0.42)}px system-ui, -apple-system, Segoe UI, sans-serif`;
+    g.textBaseline = 'middle';
+    g.fillText(`Pick ${k + 1}`, 76, y + (rowH - 10) / 2);
+    // swatch
+    const sx = 250;
+    g.fillStyle = lk.towel.bg;
+    roundRectPath(g, sx, y + (rowH - 10) / 2 - 24, 48, 48, 10);
+    g.fill();
+    g.lineWidth = 3;
+    g.strokeStyle = 'rgba(255,255,255,0.85)';
+    g.stroke();
+    g.fillStyle = lk.towel.text;
+    g.font = '900 26px system-ui, -apple-system, Segoe UI, sans-serif';
+    g.textAlign = 'center';
+    g.fillText(String(lk.number), sx + 24, y + (rowH - 10) / 2 + 1);
+    g.textAlign = 'left';
+    g.fillStyle = '#ffffff';
+    g.font = `800 ${Math.round(rowH * 0.4)}px system-ui, -apple-system, Segoe UI, sans-serif`;
+    g.fillText(state.raceNames[i] + (mine ? '  (you)' : ''), sx + 66, y + (rowH - 10) / 2 + 1);
+    g.fillStyle = '#a9b8cc';
+    g.font = `700 ${Math.round(rowH * 0.32)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    g.textAlign = 'right';
+    g.fillText(`${ordinal(order.indexOf(i) + 1)} · ${fmtTime(race.finishTimes[i])}`, 1004, y + (rowH - 10) / 2 + 1);
+    g.textAlign = 'left';
+    g.textBaseline = 'alphabetic';
+  });
+  g.fillStyle = '#66d6ff';
+  g.font = '600 24px system-ui, -apple-system, Segoe UI, sans-serif';
+  const url = shareUrl();
+  g.fillText(url.length > 78 ? url.slice(0, 76) + '…' : url, 64, 1310);
+  return c;
+}
+function roundRectPath(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
+async function shareResultImage(btn) {
+  const canvas = resultCard();
+  const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
+  const file = blob && typeof File === 'function' ? new File([blob], 'duck-derby-draft-order.png', { type: 'image/png' }) : null;
+  try {
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Duck Derby World — draft order', text: draftText(false) }); return; }
+  } catch { /* fall through */ }
+  // fallback: open the image so it can be saved / long-pressed
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, '_blank');
+  if (!w) { const img = document.createElement('img'); img.src = url; img.alt = 'Draft order'; img.style.cssText = 'position:fixed;inset:4%;width:92%;height:92%;object-fit:contain;z-index:50;background:#0d1826;border-radius:16px'; img.addEventListener('click', () => img.remove()); document.body.appendChild(img); }
+  if (btn) { const old = btn.textContent; btn.textContent = 'Image ready'; setTimeout(() => (btn.textContent = old), 1400); }
+}
 function draftText(withUrl = true) {
   const race = state.race;
   const picks = draftOrder(race.order, state.rule);
@@ -1497,6 +1588,7 @@ window.__duckWorld = {
   results: () => { if (!state.race) return; jump(Math.max(...state.race.finishTimes) + 1); state.podium = true; setPhase('results'); rig.setMode('podium'); rig.cut(); rig.update(0.5, frameCtx(0.5)); },
   freeCam: (x, y, z, lx, ly, lz) => { state.prevView = state.view === 'free' ? state.prevView : state.view; state.view = 'free'; rig.setMode('free'); setBodyClass(state.phase, 'free'); rig.pos.set(x, y, z); rig.look.set(lx, ly, lz); const d = rig.look.clone().sub(rig.pos).normalize(); rig.free.yaw = Math.atan2(d.x, d.z); rig.free.pitch = Math.asin(clamp(d.y, -0.99, 0.99)); rig.free.vel.set(0, 0, 0); },
   eventsOf: (type) => (state.race ? state.race.events.filter((e) => e.type === type) : []),
+  resultCard: () => resultCard().toDataURL('image/png'),
 };
 
 boot().catch((err) => {
