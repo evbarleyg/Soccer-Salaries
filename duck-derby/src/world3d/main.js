@@ -649,6 +649,7 @@ function toggleSound() {
 }
 function setTarget(i, userChosen = true) {
   if (!Number.isInteger(i) || i < 0 || i >= state.ducks.length) return;
+  state.youSince = state.realTime;
   state.target = i;
   if (userChosen) { state.follow = 'fixed'; state.camChoice = String(i + 1); }
   hud.lastRank = -1;
@@ -1424,7 +1425,9 @@ function step(dt) {
       ctx.near = dist < 60;
       ctx.lens = dist < 5 || d.ghosted;
       if (ds.podiumSpot) {
-        // stand on the podium, face the camera, idle bob
+        // stand on the podium, face the camera, idle bob (fully visible even if it was ghosted a moment ago)
+        d.duck.group.visible = true;
+        if (d.ghost !== 1) { d.ghost = 1; d.ghosted = false; for (const mt of d.duck.glowMats) { mt.transparent = false; mt.opacity = 1; } }
         d.duck.group.position.copy(ds.podiumSpot);
         d.duck.group.position.y += 0.05 + Math.abs(Math.sin(state.realTime * 3 + i)) * 0.08;
         d.duck.group.rotation.set(0, scenery.podium.yaw, 0);
@@ -1637,8 +1640,11 @@ function updateYouMarker() {
   const k = clamp(dist * (chase ? 0.07 : 0.085), 0.45, 3.2);
   mk.scale.set(1.2 * k, 1.2 * k, 1);
   mk.position.copy(d.duck.group.position);
-  mk.position.y += (chase ? (rig.portrait ? 1.05 : 1.45) : 2.3) + k * (chase ? 0.4 : 0.6) + Math.sin(state.realTime * 3.8) * 0.05 * k;
-  mk.material.opacity = chase ? 0.92 : 1;
+  mk.position.y += (chase ? (rig.portrait ? 1.55 : 1.45) : 2.3) + k * (chase ? 0.4 : 0.6) + Math.sin(state.realTime * 3.8) * 0.05 * k;
+  // in a steady chase the marker has done its job after a few seconds: fade it so the hat (the duck's identity) shows
+  const shownFor = state.realTime - (state.youSince || 0);
+  mk.material.opacity = chase ? 0.92 * (1 - smoothstep(4, 6, shownFor)) : 1;
+  mk.visible = mk.visible && mk.material.opacity > 0.02;
   // screen anchor for personal callouts
   tagV.copy(d.duck.group.position).setY(d.duck.group.position.y + 1.2).project(camera);
   if (tagV.z < 1) hud.setAnchor((tagV.x * 0.5 + 0.5) * viewport.w, (-tagV.y * 0.5 + 0.5) * viewport.h);

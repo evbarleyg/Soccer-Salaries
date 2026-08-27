@@ -12,7 +12,7 @@ export class Hud {
     this.course = course;
     this.el = {
       hud: $('#hud'), posNum: $('#pos-num'), posOf: $('#pos-of'), gap: $('#hud-gap'), name: $('#hud-name-text'), swatch: $('#hud-swatch'),
-      item: $('#hud-item'), itemCanvas: $('#item-canvas'), itemLabel: $('#item-label'), section: $('#hud-section'), comm: $('#hud-comm'),
+      item: $('#hud-item'), itemCanvas: $('#item-canvas'), itemLabel: $('#item-label'), section: $('#hud-section'), comm: $('#hud-comm'), top: $('#hud-top'),
       leader: $('#leader-name'), clock: $('#hud-clock'), fill: $('#progress-fill'), dots: $('#progress-dots'), secs: $('#progress-secs'),
       minimap: $('#minimap'), toast: $('#toast'), popup: $('#popup'), countdown: $('#countdown'), banner: $('#banner'), mud: $('#mud'),
       speed: $('#speedlines'), drops: $('#drops'), incoming: $('#incoming'), incWhat: $('#inc-what'), incDist: $('#inc-dist'), flyCap: $('#fly-cap'), flyTitle: $('#fly-title'), flySub: $('#fly-sub'), camBtn: $('#btn-cam'), muteBtn: $('#btn-mute'), ladder: $('#hud-ladder'),
@@ -158,7 +158,9 @@ export class Hud {
       if (t <= 0.5) this._preStart = true;
       if (rank !== this.lastRank) {
         const prev = this.lastRank;
-        this.el.posNum.textContent = t <= 0.5 && ctx.phase !== 'finish' && ctx.phase !== 'results' ? '–' : rank + 1;
+        const pre = t <= 0.5 && ctx.phase !== 'finish' && ctx.phase !== 'results';
+        this.el.posNum.textContent = pre ? '' : rank + 1;
+        this.el.posNum.parentElement.classList.toggle('pre', pre);
         this.el.posNum.classList.remove('bump', 'up', 'down');
         void this.el.posNum.offsetWidth;
         const racing = ctx.phase === 'race' && t > 1.5 && prev >= 0 && this.lastTarget === target;
@@ -184,10 +186,17 @@ export class Hud {
       let gapTxt;
       if (ctx.phase !== 'race' && ctx.phase !== 'finish' && t <= 0) gapTxt = `Lane ${target + 1} · ${ducks.length} ducks`;
       else if (d.finished) gapTxt = `${ordinal(rank + 1)} · ${fmtTime(race.finishTimes[target])}`;
-      else if (rank === 0) {
-        const second = standings[1] ? ducks[standings[1].i] : null;
-        gapTxt = second ? `leading by ${(d.s - second.s).toFixed(1)} m` : 'leader';
-      } else gapTxt = `+${Math.max(0, leadD.s - d.s).toFixed(1)} m<span class="lead-name"> · ${esc(ctx.names[leader])} leads</span>`;
+      else {
+        // from the raw standings (independent of the displayed, hysteresis-held rank): nearest rival that isn't me
+        const rawRank = d.rank;
+        if (rawRank === 0) {
+          const second = standings[1] ? ducks[standings[1].i] : null;
+          gapTxt = second ? `leading by ${Math.max(0, d.s - second.s).toFixed(1)} m` : 'leader';
+        } else {
+          const top = ducks[standings[0].i];
+          gapTxt = `+${Math.max(0, top.s - d.s).toFixed(1)} m<span class="lead-name"> · ${esc(ctx.names[standings[0].i])} leads</span>`;
+        }
+      }
       if (this._gapHtml !== gapTxt) { this._gapHtml = gapTxt; this.el.gap.innerHTML = gapTxt; }
       setText(this.el.name, (ctx.follow === 'leader' ? '★ ' : '') + ctx.names[target]);
       const lk = looks[target];
@@ -277,7 +286,7 @@ export class Hud {
         const ft = ctx.race.finishTimes;
         const winT = ft[ctx.race.order[0]];
         const pick = ctx.rule === 'l' ? n - k : k + 1;
-        gap = (k === 0 ? fmtTime(ft[i]) : `+${(ft[i] - winT).toFixed(2)}`) + ` · P${pick}`;
+        gap = compact ? `P${pick}` : (k === 0 ? fmtTime(ft[i]) : `+${(ft[i] - winT).toFixed(2)}`) + ` · P${pick}`;
       } else gap = k === 0 ? 'leader' : `+${Math.max(0, leadS - d.s).toFixed(0)}m`;
       html += `<li class="${i === target ? 'me' : ''}${d.finished ? ' fin' : ''}"><span class="rk">${k + 1}</span><span class="sw" style="background:${lk.towel.bg};color:${lk.towel.text}">${lk.number}</span><span class="nm">${esc(names[i])}</span><span class="gp">${gap}</span></li>`;
     }
@@ -384,7 +393,10 @@ export class Hud {
     const x = this.anchorX ?? window.innerWidth / 2;
     const y = (this.anchorY ?? window.innerHeight * 0.6) - 70;
     div.style.left = `${Math.round(Math.max(60, Math.min(window.innerWidth - 60, x)))}px`;
-    div.style.top = `${Math.round(Math.max(80, y - (this.el.callouts ? this.el.callouts.children.length * 30 : 0)))}px`;
+    // never on top of the announcer lane when it sits at the top of the screen (desktop / landscape phones)
+    const topRect = this.el.top.getBoundingClientRect();
+    const minY = topRect.top < window.innerHeight * 0.4 ? Math.max(80, topRect.bottom + 12) : 80;
+    div.style.top = `${Math.round(Math.max(minY, y - (this.el.callouts ? this.el.callouts.children.length * 30 : 0)))}px`;
     if (!this.el.callouts) { this.el.callouts = document.createElement('div'); this.el.callouts.id = 'callouts'; this.el.hud.appendChild(this.el.callouts); }
     this.el.callouts.appendChild(div);
     setTimeout(() => div.remove(), 1250);

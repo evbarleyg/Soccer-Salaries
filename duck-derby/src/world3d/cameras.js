@@ -187,6 +187,8 @@ export class CameraRig {
       tmpLook.y = d.pos.y + (d.airborne ? 0.3 : -0.2);
       outLook.lerp(tmpLook, 0.85);
       outPos.y = d.airborne ? Math.max(Math.min(outPos.y, d.pos.y - 0.3), outPos.y - 2.5) : Math.max(outPos.y, d.pos.y - 1.2);
+      // while the camera itself is still upstream of the lip, keep it clear of the weir crest (no edge-on whiteout)
+      if (d.airborne && sBack < track.features.dropLipS + 2) outPos.y = Math.max(outPos.y, track.course.at(track.features.dropLipS).y + 2.2);
     }
     return inTunnel;
   }

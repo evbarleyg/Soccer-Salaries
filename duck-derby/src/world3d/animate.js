@@ -3,6 +3,7 @@
 // hop + 360° barrel roll on hits, dizzy stars, bubble shield, golden glow.
 import * as THREE from 'three';
 import { WATER_BANK } from './track.js';
+import { waveAt } from './water.js';
 import { clamp, lerp, smoothstep } from '../rng.js';
 
 const starGeo = new THREE.OctahedronGeometry(0.13, 0);
@@ -83,7 +84,8 @@ export class DuckAnimator {
       if (spinE >= 0 && spinE < 1) hopY += Math.sin(Math.PI * spinE) * 1.0;
     }
     this.track.toWorld(d.s, d.lat, 0, duck.group.position);
-    const waterY = duck.group.position.y;
+    // ride the shader's wave crests (mirrored in JS) so the ring never sinks into white water
+    const waterY = duck.group.position.y + waveAt(d.s, d.lat, rt) * 0.9;
     duck.group.position.y = waterY + hopY + (d.airborne ? 0 : bob) - 0.04;
 
     // --- orientation basis from the track (yaw + slope), roll/pitch extras on the pivot

@@ -740,7 +740,12 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
       // soften the staircase a little (still monotonic), then stand the sheet 0.4 m proud
       for (let pass = 0; pass < 2; pass++) for (let k = 1; k < N; k++) dS[k] = Math.min(dS[k], (dS[k - 1] + 2 * dS[k] + dS[k + 1]) / 4);
       for (let k = 0; k <= N; k++) dS[k] -= 0.4;
-      dS[0] = Math.min(dS[0], vis - 0.3); // splash out over the water at the foot
+      // never shallower than ~58 degrees: on gentle lower slopes the sheet leaps clear instead of lying on the
+      // bank like a glass ramp (worked from the lip down; the foot lands wherever that brings it)
+      const maxRun = (h / N) / Math.tan((58 * Math.PI) / 180);
+      for (let k = N - 1; k >= 0; k--) dS[k] = Math.max(dS[k], dS[k + 1] - maxRun);
+      if (dS[0] <= vis + 0.8) dS[0] = Math.min(dS[0], vis - 0.3); // close enough: splash out over the water
+      const footD = Math.min(dS[0], vis - 0.3);
       const lipD = dS[N];
       // sheet + wet strips as one strip builder: columns across the width (along the course), rows up the fall
       const buildStrip = (x0, x1, inset, cols) => {
@@ -774,7 +779,7 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
       sheetGeos.push(buildStrip(-w / 2, w / 2, 0, 4));
       for (const sx of [-1, 1]) wetGeos.push(buildStrip(sx * (w / 2 - 0.1), sx * (w / 2 + 0.8), 0.28, 1));
       // foam splat + mist at the foot
-      const base = P(s, side * (vis - 0.6), 0.14);
+      const base = P(s, side * Math.min(vis - 0.6, footD), 0.14);
       fallFoams.push({ pos: base, w, s, yaw: yawAt(s) });
       for (let k = 0; k < 6; k++) {
         const mp = P(s + rng.range(-w * 0.6, w * 0.6), side * (vis - rng.range(0.2, 2.2)), rng.range(0.15, 0.6)); // sitting on the water
@@ -829,7 +834,9 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
       addUpdater((dt, ctx) => {
         for (let i = 0; i < fallFoams.length; i++) {
           const ff = fallFoams[i];
-          const k = 1 + Math.sin(ctx.realTime * 7 + ff.s) * 0.06;
+          // shrink away when the camera is right beside the foot (a 4 m translucent disc across the lens reads as a glitch)
+          const near = smoothstep(3, 9, Math.hypot(ctx.camPos.x - ff.pos.x, ctx.camPos.z - ff.pos.z));
+          const k = (1 + Math.sin(ctx.realTime * 7 + ff.s) * 0.06) * near + 1e-3;
           e.set(-Math.PI / 2, 0, -ff.yaw);
           q.setFromEuler(e);
           sc.set(ff.w * 0.75 * k, ff.w * 0.55 * k, 1);
@@ -868,7 +875,8 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
           const ph = ctx.realTime * 0.7 + mp.phase;
           pos.copy(mp.pos);
           pos.y += Math.sin(ph) * 0.15 + 0.1;
-          const k = mp.size * (1 + Math.sin(ph * 1.3) * 0.25);
+          const nearM = smoothstep(2.5, 7, Math.hypot(ctx.camPos.x - mp.pos.x, ctx.camPos.z - mp.pos.z));
+          const k = mp.size * (1 + Math.sin(ph * 1.3) * 0.25) * nearM + 1e-3;
           sc.set(k, k * 0.8, k);
           e.set(0, ph * 0.15, 0);
           q.setFromEuler(e);
@@ -1503,7 +1511,7 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
     for (let s = s0 + 16; s < s1 - 10; s += 19) {
       const lat = rng.range(-2.5, 2.5);
       const top = P(s, lat, H - 0.3);
-      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 1.9, H + 0.4, 14, 1, true), shaftMat);
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 1.9, H + 0.4, 14, 1, true), shaftMat.clone()); // own material: fades near the camera
       shaft.position.copy(top).y -= (H + 0.4) / 2 - 0.2;
       shaft.rotation.z = rng.range(-0.12, 0.12);
       shaft.renderOrder = 6;
@@ -1520,7 +1528,15 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
       shafts.push({ shaft, pool, s });
     }
     addUpdater((dt, ctx) => {
-      for (const sh of shafts) sh.shaft.material.opacity = 0.13 + Math.sin(ctx.realTime * 1.5 + sh.s) * 0.03;
+      for (const sh of shafts) {
+        // fade out as the camera reaches the cone so it never fills the frame as a flat wedge
+        const dx = ctx.camPos.x - sh.pool.position.x;
+        const dz = ctx.camPos.z - sh.pool.position.z;
+        const near = smoothstep(2.5, 7, Math.hypot(dx, dz));
+        sh.shaft.material.opacity = (0.13 + Math.sin(ctx.realTime * 1.5 + sh.s) * 0.03) * near;
+        sh.shaft.visible = near > 0.02;
+        sh.pool.visible = near > 0.02;
+      }
     });
     // wooden ribs every 6 m standing proud of the tube wall, a plank strip along the ceiling, and a lantern
     // hanging from each rib (emissive globe + soft additive glow card + warm pool on the water)
@@ -1683,7 +1699,7 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
         ({ top, rW } = measure(geo));
       }
       rockParts.push(geo);
-      if (rW > 0.2) collars.push({ x: pp.x, y: wy + 0.11, z: pp.z, r: rW, yaw: yawAt(s), s });
+      if (rW > 0.2 && top > 0.4) collars.push({ x: pp.x, y: wy + 0.11, z: pp.z, r: rW, yaw: yawAt(s), s });
     }
     for (let s = F.tunnelOutS + 6; s < F.harborInS - 4; s += rng.range(3, 6)) {
       for (const side of [-1, 1]) {
@@ -1693,9 +1709,9 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
           const sc = rng.range(0.7, 2.8);
           addRock(s, side * (half + rng.range(-0.8, 2.5)), rng.range(-0.35, 0.25) * sc, [sc * rng.range(0.9, 1.3), sc * rng.range(0.55, 0.85), sc * rng.range(0.9, 1.2)], rng.int(0, 2), sc > 1.5 && rng.chance(0.42));
         } else {
-          // mid-channel bonkers: small, mostly awash
+          // edge bonkers: small rocks just inside the banks (the pack races through the middle, so nothing sits in it)
           const sc = rng.range(0.55, 0.95);
-          addRock(s, side * rng.range(0.5, half - 2), -sc * rng.range(0.25, 0.6), [sc * rng.range(0.9, 1.4), sc * rng.range(0.6, 0.9), sc], rng.int(0, 1), false);
+          addRock(s, side * rng.range(half - 2.2, half - 0.6), -sc * rng.range(0.15, 0.45), [sc * rng.range(0.9, 1.4), sc * rng.range(0.6, 0.9), sc], rng.int(0, 1), false);
         }
       }
     }
@@ -1745,15 +1761,16 @@ export function buildScenery({ track, terrain, quality, fallMat }) {
         const segs = 4;
         for (let k = 0; k <= segs; k++) {
           const t = k / segs;
-          const cx = sx * (0.95 + 0.75 * t);
-          const cz = 0.35 + 3.4 * t;
-          const w = 0.32 + 0.4 * t;
-          pos.push(cx - w * 0.5, 0, cz, cx + w * 0.5, 0, cz);
-          const a = 0.75 * (1 - t) * (1 - t);
-          col.push(1, 1, 1, k === 0 ? 0.4 : a, 1, 1, 1, k === 0 ? 0.4 : a);
+          const cx = sx * (0.95 + 0.6 * t);
+          const cz = 0.35 + 2.2 * t;
+          const w = 0.4 + 0.45 * t;
+          // three vertices across: transparent edges, soft bright centre (no hard-edged "glass plank")
+          pos.push(cx - w * 0.5, 0, cz, cx, 0, cz, cx + w * 0.5, 0, cz);
+          const a = 0.5 * (1 - t) * (1 - t);
+          col.push(1, 1, 1, 0, 1, 1, 1, k === 0 ? 0.3 : a, 1, 1, 1, 0);
           if (k < segs) {
-            const a0 = base + k * 2;
-            idx.push(a0, a0 + 2, a0 + 1, a0 + 1, a0 + 2, a0 + 3);
+            const a0 = base + k * 3;
+            idx.push(a0, a0 + 3, a0 + 1, a0 + 1, a0 + 3, a0 + 4, a0 + 1, a0 + 4, a0 + 2, a0 + 2, a0 + 4, a0 + 5);
           }
         }
       }

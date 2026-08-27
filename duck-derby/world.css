@@ -425,3 +425,4 @@ body.guest-in #lobby .lobby-left { display: none; }
 #res-story > summary::after { content: ' ▾'; opacity: 0.8; }
 #res-story:not([open]) > summary::after { content: ' ▸'; }
 #res-story #res-notes { margin: 0; }
+#hud-pos.pre { visibility: hidden; }

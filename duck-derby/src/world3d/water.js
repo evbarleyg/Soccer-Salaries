@@ -29,6 +29,24 @@ const NOISE_GLSL = /* glsl */ `
 
 const NO_BANK = 1e4; // aBank value for open water (no shoreline on that side)
 
+// chop along the course, recorded by buildRiver so JS can mirror the vertex shader's heave (waveAt)
+const chopLUT = { s0: 0, step: 2, values: null };
+/**
+ * Vertical wave displacement of the river surface at (s, lat) and shader time — the same three sines as
+ * the water vertex shader on the channel (fall foam boosts are ignored), so ducks and decals ride the crests.
+ */
+export function waveAt(s, lat, time) {
+  let chop = 0.3;
+  const L = chopLUT.values;
+  if (L) {
+    const f = clamp((s - chopLUT.s0) / chopLUT.step, 0, L.length - 1.001);
+    const i = Math.floor(f);
+    chop = L[i] + (L[i + 1] - L[i]) * (f - i);
+  }
+  const amp = 0.05 + chop * 0.22;
+  return Math.sin(s * 0.35 - time * 2.4 + lat * 0.31) * amp + Math.sin(s * 0.93 - time * 4.3 - lat * 0.77) * amp * 0.55 + Math.sin(lat * 1.7 + time * 3.1 + s * 0.21) * amp * 0.35;
+}
+
 export function makeWaterMaterial(opts = {}) {
   const F = getCourse().features;
   const uniforms = THREE.UniformsUtils.merge([
@@ -268,6 +286,7 @@ export function buildRiver(course, material, { step = 2, across = 14, chunks = 8
   const aFx = new Float32Array(rows * cols * 4);
   const aBank = new Float32Array(rows * cols * 2);
   const tmp = {};
+  const chopSamples = [];
   for (let r = 0; r < rows; r++) {
     const s = stations[r];
     const prof = profileAt(course, clamp(s, F.minS, F.maxS));
@@ -284,6 +303,7 @@ export function buildRiver(course, material, { step = 2, across = 14, chunks = 8
     const curtain = smoothstep(F.dropLipS - 0.4, F.dropLipS + 0.5, s) * (1 - smoothstep(F.dropLipS + 3.5, F.dropLipS + 7.5, s)); // the weir face itself
     const crest = 0.7 * Math.exp(-(((s - (F.dropLipS - 0.15)) / 0.38) ** 2)); // dark line along the lip
     const chop = 0.12 + prof.canyon * 0.25 + prof.rapids * 0.95 + prof.harbor * 0.3 + dropFace + pool * 0.6 + prof.tunnel * 0.3;
+    chopSamples.push(s, Math.min(1.6, chop));
     const foamBase = prof.rapids * 0.3 + dropFace * 0.95 + pool * 0.55 + prof.lily * 0.03;
     for (let c = 0; c < cols; c++) {
       const u = c / across; // 0 = right bank, 1 = left bank
@@ -375,6 +395,27 @@ export function buildRiver(course, material, { step = 2, across = 14, chunks = 8
   }
   group.matrixAutoUpdate = false;
   group.updateMatrix();
+  // resample the per-row chop onto a regular 2 m grid for waveAt()
+  {
+    const s0 = chopSamples[0];
+    const s1 = chopSamples[chopSamples.length - 2];
+    const n = Math.max(2, Math.ceil((s1 - s0) / 2) + 1);
+    const vals = new Float32Array(n);
+    let k = 0;
+    for (let i = 0; i < n; i++) {
+      const s = s0 + i * 2;
+      while (k + 2 < chopSamples.length - 1 && chopSamples[k + 2] < s) k += 2;
+      const sa = chopSamples[k];
+      const sb = chopSamples[Math.min(k + 2, chopSamples.length - 2)];
+      const ca = chopSamples[k + 1];
+      const cb = chopSamples[Math.min(k + 3, chopSamples.length - 1)];
+      const f = sb > sa ? clamp((s - sa) / (sb - sa), 0, 1) : 0;
+      vals[i] = ca + (cb - ca) * f;
+    }
+    chopLUT.s0 = s0;
+    chopLUT.step = 2;
+    chopLUT.values = vals;
+  }
   return group;
 }
 
