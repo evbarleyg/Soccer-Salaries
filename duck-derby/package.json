@@ -6,11 +6,13 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "for f in src/*.js tools/*.mjs test/*.js; do node --check \"$f\" || exit 1; done && echo 'syntax ok'",
+    "check": "for f in src/*.js src/world3d/*.js tools/*.mjs test/*.js; do node --check \"$f\" || exit 1; done && echo 'syntax ok'",
     "serve": "npx http-server .. -c-1 -p 8080 --silent",
     "analyze": "node tools/analyze.mjs 12 2000 38",
     "shots": "node tools/shots.mjs http://localhost:8080/duck-derby/ shots",
     "smoke": "node tools/smoke.mjs http://localhost:8080/duck-derby/",
+    "analyze3d": "node tools/analyze3d.mjs 12 300",
+    "shots3d": "node tools/shots3d.mjs http://localhost:8080/duck-derby/world.html shots/world",
     "ci": "npm run check && npm test"
   },
   "license": "MIT"

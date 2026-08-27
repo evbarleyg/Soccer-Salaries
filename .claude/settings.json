@@ -40,12 +40,19 @@
       "Bash(node *)",
       "Bash(python3 *)",
       "Bash(curl *)",
-      "Bash(pip install *)"
+      "Bash(pip install *)",
+      "Bash(npm run lint)",
+      "Bash(npm run typecheck)",
+      "Bash(npm run test)",
+      "Bash(npm run build)",
+      "Bash(npm run ci)",
+      "Bash(node --check *)",
+      "Bash(python3 -m py_compile *)",
+      "Bash(wget *)",
+      "Bash(open *)"
     ],
     "ask": [
       "Bash(gh *)",
-      "Bash(wget *)",
-      "Bash(open *)",
       "Bash(python3 scripts/update_pl_data.py *)"
     ],
     "deny": [

@@ -157,12 +157,15 @@ test/                    node:test suites
 tools/                   analysis, screenshot (shots.mjs) and smoke-test (smoke.mjs) tooling
 ```
 
-## Phase 2 (planned)
+## Duck Derby World (3D)
 
-**Duck Cam 3D** — a Three.js chase-camera view where each manager opens the
-shared link on their own phone and rides behind their own duck through the
-same seeded race (the sim layer is renderer-agnostic, so both views replay the
-identical result).
+`world.html` is a separate Mario Kart-style 3D race through a procedural world
+(marina, canyon, lily pond, The Drop, log flume, rapids, harbour) with items,
+chase/TV/free cameras, a join-by-QR lobby so every phone starts together, and
+the same fair/seeded/replayable contract (its own engine and tests under
+`src/world3d/` and `test/world3d.*`). See `WORLD3D.md` for the architecture and
+`PHASE3-MULTIPLAYER.md` for the player-controlled follow-up (a single-device preview,
+**Tilt Trial**, is already on the setup screen: steer your own duck with phone tilt or arrow keys).
 
 ## Deploying on its own
 

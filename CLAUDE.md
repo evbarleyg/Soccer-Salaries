@@ -14,7 +14,7 @@ Treat `AGENTS.md` as shared project workflow even though it is written for Codex
 ## Claude Workflow
 
 - Start non-trivial work by naming assumptions and a short plan.
-- Make small, reviewable changes without asking first unless the change is architectural, destructive, security-sensitive, or > ~100 LOC across multiple files.
+- Make changes without asking first. The owner has given standing approval for feature work in this repo, including large or architectural changes, new files/folders, commits and pushes to the working feature branch, and opening/updating its PR — proceed and report outcomes rather than pausing for confirmation. Still ask before destructive operations (history rewrites, force-pushes, deleting others' work) or anything security-sensitive.
 - Do not overwrite user or Codex changes in the worktree. Read dirty files before touching them and preserve unrelated edits.
 - Prefer `rg` / `rg --files` for search.
 - Use existing project patterns before adding abstractions or dependencies.
