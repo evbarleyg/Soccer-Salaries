@@ -487,9 +487,14 @@ export class Hud {
     this.commUntil = 0;
     this.commPri = 0;
     this.el.popup.innerHTML = '';
-    this.el.banner.classList.remove('show');
-    this.el.comm.classList.remove('show');
-    this.el.section.classList.remove('show');
+    for (const el of [this.el.banner, this.el.comm, this.el.section]) {
+      // drop instantly (no fade) so a seek never shows a line from another moment
+      el.style.transition = 'none';
+      el.classList.remove('show');
+      void el.offsetWidth;
+      el.style.transition = '';
+    }
+    this.el.comm.textContent = '';
     this.el.mud.style.transition = 'none';
     this.el.mud.classList.remove('show');
     void this.el.mud.offsetWidth;
