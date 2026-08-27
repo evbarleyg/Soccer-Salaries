@@ -6,7 +6,7 @@ import { assignLooks, SAMPLE_NAMES, MIN_DUCKS, MAX_DUCKS, TOWELS } from '../duck
 import { randomSeed, seedToCode, codeToSeed, clamp, lerp, smoothstep } from '../rng.js';
 import { ordinal } from '../commentary.js';
 import { getCourse } from './course.js';
-import { createRace, positionAt, lateralAt, speedAt, standingsAt, heldAt, activeWindows, ENGINE_VERSION } from './race.js';
+import { createRace, positionAt, lateralAt, speedAt, standingsAt, heldAt, activeWindows, timeAt, ENGINE_VERSION } from './race.js';
 import { parseParams, buildQuery, resolveCam, draftOrder } from './params.js';
 import { detectQuality, createRenderer, makeSky, makeLights, PAL } from './gfx.js';
 import { Track } from './track.js';
@@ -480,6 +480,24 @@ function buildTimeline() {
     }
   }
   for (const p of race.projectiles) if (p.type === 'seagull' && p.diveT) cues.push({ t: p.diveT, type: 'cue-dive', duck: p.target });
+  // anticipation + narrative beats derived from the position tracks (identical for every viewer):
+  // "items ahead" for each duck before each row, and sector splits when the leader passes a landmark
+  if (race.itemsOn) {
+    for (const boxS of course.features.itemBoxes) {
+      for (let i = 0; i < race.count; i++) {
+        const tb = timeAt(race, i, boxS - 28);
+        if (tb !== null) cues.push({ t: tb, type: 'cue-boxes', duck: i });
+      }
+    }
+  }
+  const F = course.features;
+  for (const [label, s] of [['Canyon', F.canyonInS + 40], ['Lily pond', F.lilyInS + 10], ['The Drop', F.dropLipS], ['Tunnel exit', F.tunnelOutS], ['Harbour', F.harborInS]]) {
+    const times = [];
+    for (let i = 0; i < race.count; i++) { const ti = timeAt(race, i, s); if (ti !== null) times.push({ i, t: ti }); }
+    if (times.length < 2) continue;
+    times.sort((a, b) => a.t - b.t || a.i - b.i);
+    cues.push({ t: times[0].t + 0.2, type: 'cue-split', duck: times[0].i, label, times });
+  }
   state.timeline = race.events.concat(cues).sort((a, b) => a.t - b.t);
   state.lastFinishT = Math.max(...race.finishTimes);
 }
@@ -757,6 +775,21 @@ function handleEvent(ev) {
     case 'cue-hit':
       if (ev.w >= 3) rig.tvEvent('hit', { duck: i }, state.t); // pre-roll so the impact and the roll are on screen
       break;
+    case 'cue-boxes':
+      if (isT && !state.duckStates[i].held) hud.callout('ITEMS AHEAD ▸', '#66d6ff');
+      break;
+    case 'cue-split': {
+      // sector split: leader + next two + my duck, gaps in seconds at this landmark
+      const rows = ev.times;
+      const lead = rows[0];
+      const parts = [`${state.raceNames[lead.i]}`];
+      const show = rows.slice(1, 3);
+      const mineRow = rows.find((r) => r.i === state.target);
+      if (mineRow && !show.includes(mineRow) && mineRow !== lead) show.push(mineRow);
+      for (const r of show) parts.push(`${r.i === state.target && state.follow === 'fixed' ? 'You' : state.raceNames[r.i]} +${(r.t - lead.t).toFixed(1)}`);
+      hud.say(`${ev.label}: ${parts.join(' · ')}`, state.realTime, 3, 1);
+      break;
+    }
     case 'cue-spun':
       if (isT && ev.after > ev.before) hud.callout(`−${ev.after - ev.before}  ${ordinal(ev.before + 1)} → ${ordinal(ev.after + 1)}`, '#ff6f61');
       else if (isT) hud.callout('Held position!', '#7dff8a');

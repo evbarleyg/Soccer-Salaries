@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { simulateRace, createRace, standingsAt, positionAt, lateralAt, heldAt, activeWindows, dramaScore, TUNING, DEFAULTS, ENGINE_VERSION } from '../src/world3d/race.js';
+import { simulateRace, createRace, standingsAt, positionAt, lateralAt, heldAt, activeWindows, dramaScore, timeAt, TUNING, DEFAULTS, ENGINE_VERSION } from '../src/world3d/race.js';
 import { ITEM_TUNING } from '../src/world3d/items.js';
 import { getCourse } from '../src/world3d/course.js';
 
@@ -238,4 +238,16 @@ test('golden races: tuning changes that alter shared-link outcomes must bump ENG
   const expected = GOLDEN[ENGINE_VERSION];
   assert.ok(expected, `no golden data for ENGINE_VERSION ${ENGINE_VERSION} — add it: ${JSON.stringify(golden)}`);
   assert.deepEqual(golden, expected);
+});
+
+test('timeAt inverts positionAt and returns null for unreached positions', () => {
+  const sim = simulateRace({ count: 6, seed: 31337 });
+  for (const i of [0, 3, 5]) {
+    for (const s of [50, 300, 700]) {
+      const tt = timeAt(sim, i, s);
+      assert.ok(tt !== null && tt > 0);
+      assert.ok(Math.abs(positionAt(sim, i, tt) - s) < 0.5, `duck ${i} s=${s}`);
+    }
+    assert.equal(timeAt(sim, i, sim.trackLength + 500), null);
+  }
 });

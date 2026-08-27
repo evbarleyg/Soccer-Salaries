@@ -723,6 +723,24 @@ export const speedAt = (sim, i, t) => {
 };
 
 /** Held item of duck i at time t: { item, charges } or null. */
+/** First race time at which duck i reaches course position s (null if it never does). Positions are monotonic. */
+export function timeAt(sim, i, s) {
+  const arr = sim.pos[i];
+  if (!arr.length || arr[arr.length - 1] < s) return null;
+  let lo = 0;
+  let hi = arr.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] < s) lo = mid + 1;
+    else hi = mid;
+  }
+  if (lo === 0) return 0;
+  const a = arr[lo - 1];
+  const b = arr[lo];
+  const f = b > a ? (s - a) / (b - a) : 0;
+  return (lo - 1 + f) * sim.dt;
+}
+
 export function heldAt(sim, i, t) {
   const arr = sim.held[i];
   const k = clamp(Math.floor(t / sim.dt), 0, arr.length - 1);
