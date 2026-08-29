@@ -1,39 +1,12 @@
 #!/usr/bin/env python3
-"""grab_video_frames.py - turn a YouTube video (or any video file) into a zip of still frames.
+"""Turn a video (YouTube URL or local file) into a zip of timestamped still frames.
 
-Modes
-  download (default)  yt-dlp fetches the best-quality stream, ffmpeg slices it into stills.
-  browser             headless Chromium (Playwright) opens the watch page like a normal viewer,
-                      steps through the video and copies each decoded frame off the <video>
-                      element through a canvas - i.e. exactly what a viewer sees, at the
-                      stream's native resolution.
-  file                you already have the video file; just slice and zip it (--video-file).
+  python3 grab_video_frames.py --url https://www.youtube.com/watch?v=ID                 # yt-dlp + ffmpeg
+  python3 grab_video_frames.py --url https://www.youtube.com/watch?v=ID --mode browser  # headless Chromium watches it
+  python3 grab_video_frames.py --channel https://www.youtube.com/@handle --title REGEX  # pick an upload by title
+  python3 grab_video_frames.py --video-file walkthrough.mp4                             # a file you already have
 
-Picking the video
-  --url URL                      an exact watch URL, or
-  --channel URL --title REGEX    list the channel's uploads and take the single video whose
-                                 title matches REGEX (case-insensitive), e.g.
-                                 --channel https://www.youtube.com/@theolivian3201 --title "plan ?r\\b"
-
-What ends up in the zip
-  frames/            frame_00042_t0021.00s.jpg ... a still every 1/--fps seconds
-                     (or every single frame with --all-frames); t = timestamp in the video
-  scenes/            one still per detected shot change (download/file modes)
-  contact_sheet.jpg  thumbnail overview of the whole video
-  manifest.json      machine-readable index (source, resolution, every frame + timestamp)
-  README.txt         plain-English description for whoever/whatever consumes the zip
-  source/            the downloaded video + yt-dlp .info.json (download mode, unless --no-source)
-
-Setup
-  macOS:  brew install ffmpeg && pip3 install yt-dlp playwright && python3 -m playwright install chromium
-  Linux:  apt install ffmpeg  (or: pip install imageio-ffmpeg)
-          pip install yt-dlp playwright && python3 -m playwright install chromium
-  (browser mode needs only playwright; download mode needs only yt-dlp + ffmpeg; file mode only ffmpeg)
-
-Examples
-  python3 grab_video_frames.py --channel https://www.youtube.com/@theolivian3201 --title "floor ?plan ?r\\b|\\br ?floor ?plan"
-  python3 grab_video_frames.py --url "https://www.youtube.com/watch?v=VIDEOID" --mode browser --fps 3
-  python3 grab_video_frames.py --video-file walkthrough.mp4 --all-frames --png
+Setup, what lands in the zip, and tips for not getting blocked: README.md next to this file.
 """
 from __future__ import annotations
 
@@ -42,17 +15,19 @@ import base64
 import hashlib
 import json
 import math
-import os
 import re
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
+# YouTube player quality labels -> frame height, used to tell whether the stream reached what we asked for
+QUALITY_HEIGHT = {"highres": 4320, "hd2160": 2160, "hd1440": 1440, "hd1080": 1080, "hd720": 720,
+                  "large": 480, "medium": 360, "small": 240}
+ALREADY_COMPRESSED = {".jpg", ".jpeg", ".png", ".mp4", ".webm", ".mkv", ".mov", ".m4a"}
 
 
 def log(msg: str) -> None:
@@ -64,9 +39,9 @@ def die(msg: str) -> None:
     sys.exit(2)
 
 
-# --------------------------------------------------------------------------- ffmpeg helpers
+# --------------------------------------------------------------------------- ffmpeg
 def find_ffmpeg(required: bool = True):
-    exe = os.environ.get("FFMPEG") or shutil.which("ffmpeg")
+    exe = shutil.which("ffmpeg")
     if not exe:
         try:
             import imageio_ffmpeg  # `pip install imageio-ffmpeg` ships a static build
@@ -74,32 +49,28 @@ def find_ffmpeg(required: bool = True):
         except Exception:
             exe = None
     if not exe and required:
-        die("ffmpeg not found. Install it (brew install ffmpeg / apt install ffmpeg), "
-            "or `pip install imageio-ffmpeg`, or set FFMPEG=/path/to/ffmpeg")
+        die("ffmpeg not found: brew install ffmpeg / apt install ffmpeg / pip install imageio-ffmpeg")
     return exe
 
 
-def ffmpeg_run(ffmpeg: str, args: list, quiet: bool = True) -> subprocess.CompletedProcess:
+def ffmpeg_run(ffmpeg: str, args: list, fatal: bool = True) -> subprocess.CompletedProcess:
     cmd = [ffmpeg, "-hide_banner", "-nostdin", "-y"] + [str(a) for a in args]
     log("$ " + " ".join(cmd))
     p = subprocess.run(cmd, capture_output=True, text=True)
-    if p.returncode != 0 and "fps_mode" in p.stderr and "-fps_mode" in cmd:
-        # ffmpeg < 5.1 does not know -fps_mode; retry with the old spelling
-        i = cmd.index("-fps_mode")
+    if p.returncode != 0 and "-fps_mode" in cmd and "fps_mode" in p.stderr:
+        i = cmd.index("-fps_mode")                 # ffmpeg < 5.1 spells it -vsync
         cmd[i:i + 2] = ["-vsync", cmd[i + 1]]
         p = subprocess.run(cmd, capture_output=True, text=True)
     if p.returncode != 0:
-        sys.stderr.write(p.stderr[-4000:])
-        die(f"ffmpeg failed (exit {p.returncode})")
-    if not quiet:
-        sys.stderr.write(p.stderr)
+        sys.stderr.write(p.stderr[-3000:])
+        if fatal:
+            die(f"ffmpeg failed (exit {p.returncode})")
     return p
 
 
 def probe(ffmpeg: str, video: Path) -> dict:
-    """Duration / size / fps via `ffmpeg -i` banner parsing (avoids needing ffprobe)."""
-    p = subprocess.run([ffmpeg, "-hide_banner", "-nostdin", "-i", str(video)],
-                       capture_output=True, text=True)
+    """Duration / size / fps from the `ffmpeg -i` banner (imageio-ffmpeg ships no ffprobe)."""
+    p = subprocess.run([ffmpeg, "-hide_banner", "-nostdin", "-i", str(video)], capture_output=True, text=True)
     out: dict = {"duration": None, "width": None, "height": None, "fps": None}
     m = re.search(r"Duration: (\d+):(\d+):(\d+(?:\.\d+)?)", p.stderr)
     if m:
@@ -112,15 +83,12 @@ def probe(ffmpeg: str, video: Path) -> dict:
     return out
 
 
-def slice_stills(ffmpeg, video: Path, out_dir: Path, vf: list, prefix: str, *, png: bool,
-                 jpg_q: int) -> list:
-    """Run one ffmpeg pass with filter chain `vf`, name each still <prefix>_<n>_t<sec>s.<ext>."""
+def slice_stills(ffmpeg: str, video: Path, out_dir: Path, vf: list, prefix: str, ext: str) -> list:
+    """One ffmpeg pass with filter chain `vf`; each still is named <prefix>_<n>_t<seconds>s.<ext>."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    ext = "png" if png else "jpg"
-    args = ["-i", video, "-vf", ",".join(vf + ["showinfo"]), "-fps_mode", "vfr", "-an"]
-    if not png:
-        args += ["-q:v", jpg_q]
-    p = ffmpeg_run(ffmpeg, args + [out_dir / f"{prefix}_%05d.{ext}"])
+    quality = [] if ext == "png" else ["-q:v", "2"]
+    p = ffmpeg_run(ffmpeg, ["-i", video, "-vf", ",".join(vf + ["showinfo"]), "-fps_mode", "vfr", "-an",
+                            *quality, out_dir / f"{prefix}_%05d.{ext}"])
     times = [float(t) for t in re.findall(r"pts_time:\s*([\d.]+)", p.stderr)]  # one showinfo line per still
     stills = []
     for i, f in enumerate(sorted(out_dir.glob(f"{prefix}_*.{ext}"))):
@@ -132,444 +100,409 @@ def slice_stills(ffmpeg, video: Path, out_dir: Path, vf: list, prefix: str, *, p
     return stills
 
 
-def contact_sheet(ffmpeg, frames_dir: Path, out_file: Path, ext: str, cols: int = 8,
-                  max_tiles: int = 64) -> bool:
-    files = sorted(frames_dir.glob(f"*.{ext}"))
-    if not files:
-        return False
-    step = max(1, math.ceil(len(files) / max_tiles))
-    picked = files[::step]
-    cols = min(cols, len(picked))
+def contact_sheet(ffmpeg: str, files: list, out_file: Path) -> None:
+    """Best-effort thumbnail grid (up to 64 tiles, 8 wide) of the given stills."""
+    picked = files[::max(1, math.ceil(len(files) / 64))]
+    cols = min(8, len(picked))
     rows = math.ceil(len(picked) / cols)
     lst = out_file.with_suffix(".ffconcat")
-    lst.write_text("ffconcat version 1.0\n" + "".join(f"file '{p.resolve().as_posix()}'\n" for p in picked))
-    try:
-        ffmpeg_run(ffmpeg, ["-f", "concat", "-safe", "0", "-i", lst,
+    lst.write_text("ffconcat version 1.0\n" + "".join(f"file '{Path(p).resolve().as_posix()}'\n" for p in picked))
+    p = ffmpeg_run(ffmpeg, ["-f", "concat", "-safe", "0", "-i", lst,
                             "-vf", f"scale=240:-2,tile={cols}x{rows}:padding=4:color=white",
-                            "-frames:v", "1", "-q:v", "3", out_file])
-    finally:
-        lst.unlink(missing_ok=True)
-    return out_file.exists()
+                            "-frames:v", "1", "-q:v", "3", out_file], fatal=False)
+    lst.unlink(missing_ok=True)
+    if p.returncode != 0:
+        log("contact sheet skipped (ffmpeg could not tile the stills)")
 
 
 # --------------------------------------------------------------------------- yt-dlp
-def ytdlp_opts(args, **extra) -> dict:
-    o = {"quiet": True, "no_warnings": True, "noprogress": True}
-    if args.cookies:
-        o["cookiefile"] = args.cookies
-    if args.cookies_from_browser:
-        o["cookiesfrombrowser"] = (args.cookies_from_browser,)
-    o.update(extra)
-    return o
-
-
-def need_ytdlp():
+def ytdlp():
     try:
         import yt_dlp
         return yt_dlp
     except ImportError:
-        die("yt-dlp not installed: pip install yt-dlp   (or pass --url with --mode browser)")
+        die("yt-dlp not installed: pip install yt-dlp   (or use --mode browser with --url)")
+
+
+def ytdlp_opts(args, **extra) -> dict:
+    o = {"quiet": True, "no_warnings": True, "noprogress": True}
+    if args.cookies:
+        o["cookiefile"] = args.cookies
+    if args.cookies_from_browser:   # same BROWSER[+KEYRING][:PROFILE][::CONTAINER] grammar as yt-dlp's own flag
+        parsed = ytdlp().parse_options(["--cookies-from-browser", args.cookies_from_browser])
+        o["cookiesfrombrowser"] = parsed.ydl_opts["cookiesfrombrowser"]
+    o.update(extra)
+    return o
 
 
 def resolve_from_channel(args) -> str:
-    yt_dlp = need_ytdlp()
     url = args.channel.rstrip("/")
-    if not re.search(r"/(videos|shorts|streams|featured)$", url):
+    if not re.search(r"/(videos|shorts|streams)$", url):
         url += "/videos"
     log(f"listing {url}")
-    with yt_dlp.YoutubeDL(ytdlp_opts(args, extract_flat=True)) as y:
-        info = y.extract_info(url, download=False)
-    flat = []
-    for e in info.get("entries") or []:
-        if e and e.get("entries") is not None:      # channel tab nesting
-            flat += [x for x in e["entries"] if x]
-        elif e:
-            flat.append(e)
+    with ytdlp().YoutubeDL(ytdlp_opts(args, extract_flat=True)) as y:
+        uploads = [e for e in (y.extract_info(url, download=False).get("entries") or []) if e]
     rx = re.compile(args.title, re.I)
-    hits = [e for e in flat if rx.search(e.get("title") or "")]
-    log(f"{len(flat)} uploads, {len(hits)} match /{args.title}/i:")
-    for e in flat:
+    hits = [e for e in uploads if rx.search(e.get("title") or "")]
+    log(f"{len(uploads)} uploads, {len(hits)} match /{args.title}/i:")
+    for e in uploads:
         log(f"  {'*' if e in hits else ' '} https://www.youtube.com/watch?v={e.get('id')}  {e.get('title')}")
     if len(hits) != 1:
         die("need exactly one title match - tighten --title, or copy the right URL from the list into --url")
-    e = hits[0]
-    return e.get("url") if str(e.get("url", "")).startswith("http") else f"https://www.youtube.com/watch?v={e['id']}"
+    return f"https://www.youtube.com/watch?v={hits[0]['id']}"
 
 
 def download_video(args, url: str, src_dir: Path, ffmpeg: str):
-    yt_dlp = need_ytdlp()
     src_dir.mkdir(parents=True, exist_ok=True)
-    opts = ytdlp_opts(args, quiet=False, noprogress=False, format=args.format,
+    opts = ytdlp_opts(args, quiet=False, noprogress=False, format=args.format, retries=5,
                       outtmpl=str(src_dir / "%(id)s.%(ext)s"), writeinfojson=True,
-                      merge_output_format="mp4/mkv", ffmpeg_location=ffmpeg, retries=5)
+                      merge_output_format="mp4/mkv", ffmpeg_location=ffmpeg)
     log(f"downloading {url}")
-    with yt_dlp.YoutubeDL(opts) as y:
+    with ytdlp().YoutubeDL(opts) as y:
         info = y.extract_info(url, download=True)
-        path = Path(y.prepare_filename(info))
-    if not path.exists():  # merged/remuxed under another extension
-        cands = [c for c in src_dir.glob(f"{info['id']}.*") if c.suffix not in (".json", ".part", ".ytdl")]
-        if not cands:
-            die("download finished but no media file found in " + str(src_dir))
-        path = max(cands, key=lambda c: c.stat().st_size)
+        final = (info.get("requested_downloads") or [{}])[0].get("filepath")  # post-merge path
+        path = Path(final or y.prepare_filename(info))
+    if not path.exists():
+        die(f"download finished but {path} is missing")
     keys = ("id", "title", "webpage_url", "duration", "width", "height", "fps", "upload_date",
             "channel", "channel_url", "description")
     return path, {k: info.get(k) for k in keys}
 
 
 # --------------------------------------------------------------------------- browser capture
-JS_PREP = """async ({quality}) => {
+# Installed once per page (add_init_script). Generic <video> handling; when YouTube's player API
+# (#movie_player) is present it is used for play/pause/seek/quality and for waiting out pre-roll ads.
+JS_LIB = r"""(() => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-  let v = null;
-  for (let i = 0; i < 300 && !(v = document.querySelector('video')); i++) await sleep(100);
-  if (!v) return {error: 'no <video> element appeared on the page'};
-  const p = document.getElementById('movie_player');           // YouTube player API, if present
-  const yt = !!(p && typeof p.playVideo === 'function');
-  if (yt) {
-    try { p.mute(); } catch (e) {}
-    try { if (quality && p.setPlaybackQualityRange) p.setPlaybackQualityRange(quality, quality); } catch (e) {}
-    try { p.playVideo(); } catch (e) {}
-  } else {
-    v.muted = true;
-    try { await v.play(); } catch (e) {}
-  }
-  const t0 = Date.now();
-  let adSeen = false;
-  while (Date.now() - t0 < 120000) {                            // wait out pre-roll ads / buffering
-    v = document.querySelector('video') || v;
-    const ad = yt && p.classList.contains('ad-showing');
-    if (ad) {
-      adSeen = true;
-      const b = document.querySelector('.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-skip-ad-button');
-      if (b) try { b.click(); } catch (e) {}
-    } else if (v.readyState >= 2 && v.duration > 0 && isFinite(v.duration) && v.currentTime > 0.2) break;
-    await sleep(250);
-  }
-  if (!(v.duration > 0) || !isFinite(v.duration)) {
-    const err = document.querySelector('.ytp-error, #reason, yt-player-error-message-renderer');
-    return {error: 'video never became playable' + (err ? ': ' + err.innerText.trim().slice(0, 300) : '')};
-  }
-  try { yt ? p.pauseVideo() : v.pause(); } catch (e) {}
-  let qual = null; try { qual = yt ? p.getPlaybackQuality() : null; } catch (e) {}
-  return {duration: v.duration, width: v.videoWidth, height: v.videoHeight, yt, adSeen, qual,
-          title: (document.title || '').replace(/ - YouTube$/, '')};
-}"""
+  const vid = () => document.querySelector('video');
+  const ytp = () => { const p = document.getElementById('movie_player');
+                      return p && typeof p.playVideo === 'function' ? p : null; };
+  const fg = window.__fg = {
+    opts: {mime: 'image/jpeg', q: 0.92},
+    play(rate) {
+      const v = vid(), p = ytp();
+      try { v.playbackRate = rate; if (p && p.setPlaybackRate) p.setPlaybackRate(rate); } catch (e) {}
+      try { p ? p.playVideo() : v.play(); } catch (e) {}
+    },
+    pause() { const v = vid(), p = ytp(); try { p ? p.pauseVideo() : v.pause(); } catch (e) {} },
+    state() { const v = vid(); return {at: v.currentTime, ended: v.ended, paused: v.paused}; },
+    async prep({quality, targetHeight, heights, mime, q}) {
+      fg.opts = {mime, q};
+      let v = null;
+      for (let i = 0; i < 300 && !(v = vid()); i++) await sleep(100);
+      if (!v) return {error: 'no <video> element appeared on the page'};
+      const p = ytp();
+      if (p) {
+        try { p.mute(); } catch (e) {}
+        try { if (quality && p.setPlaybackQualityRange) p.setPlaybackQualityRange(quality, quality); } catch (e) {}
+      } else v.muted = true;
+      fg.play(1);
+      const t0 = Date.now();
+      let adSeen = false;
+      while (Date.now() - t0 < 120000) {               // wait out pre-roll ads / initial buffering
+        v = vid() || v;
+        if (p && p.classList.contains('ad-showing')) {
+          adSeen = true;
+          const b = document.querySelector('.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-skip-ad-button');
+          if (b) try { b.click(); } catch (e) {}
+        } else if (v.readyState >= 2 && v.duration > 0 && isFinite(v.duration) && v.currentTime > 0.2) break;
+        await sleep(250);
+      }
+      if (!(v.duration > 0) || !isFinite(v.duration)) {
+        const err = document.querySelector('.ytp-error, #reason, yt-player-error-message-renderer');
+        return {error: 'video never became playable' + (err ? ': ' + err.innerText.trim().slice(0, 300) : '')};
+      }
+      // adaptive streams ramp up: give the YouTube player a few seconds to reach the requested height
+      // (capped at the best quality it says this video has)
+      let target = p ? targetHeight : 0;
+      if (p && p.getAvailableQualityLevels) {
+        const avail = p.getAvailableQualityLevels().map(l => heights[l] || 0).filter(h => h);
+        if (avail.length) target = Math.min(target, Math.max(...avail));
+      }
+      for (let i = 0; i < 24 && v.videoHeight < target; i++) await sleep(250);
+      fg.pause();
+      return {duration: v.duration, width: v.videoWidth, height: v.videoHeight, yt: !!p, adSeen,
+              title: (document.title || '').replace(/ - YouTube$/, '')};
+    },
+    async grab(t) {                                    // t == null: snapshot whatever is showing now
+      const v = vid(), p = ytp();
+      if (t != null && Math.abs(v.currentTime - t) > 0.02) {
+        await new Promise(res => {
+          let done = false;
+          const fin = () => { if (!done) { done = true; res(); } };
+          if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(fin);   // the sought frame was presented
+          v.addEventListener('seeked', () => setTimeout(fin, 250), {once: true}); // fallback if no new frame shows
+          setTimeout(fin, 20000);
+          if (p) { try { p.seekTo(t, true); } catch (e) { v.currentTime = t; } } else v.currentTime = t;
+        });
+        const t0 = Date.now();
+        while (v.readyState < 2 && Date.now() - t0 < 20000) await sleep(50);
+        if (!v.paused) fg.pause();
+      }
+      if (!v.videoWidth) return {error: 'video has no decoded frame (videoWidth=0)'};
+      const c = fg.canvas || (fg.canvas = document.createElement('canvas'));
+      if (c.width !== v.videoWidth || c.height !== v.videoHeight) { c.width = v.videoWidth; c.height = v.videoHeight; }
+      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+      try { return {data: c.toDataURL(fg.opts.mime, fg.opts.q), w: c.width, h: c.height, at: v.currentTime}; }
+      catch (e) { return {error: 'canvas export blocked: ' + e}; }
+    },
+  };
+})();"""
 
-JS_GRAB = """async ({t, seek, mime, q}) => {
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
-  const v = document.querySelector('video');
-  const p = document.getElementById('movie_player');
-  const yt = !!(p && typeof p.seekTo === 'function');
-  if (seek && Math.abs(v.currentTime - t) > 0.02) {
-    await new Promise(res => {
-      const done = () => { v.removeEventListener('seeked', done); res(); };
-      v.addEventListener('seeked', done);
-      setTimeout(done, 20000);
-      if (yt) { try { p.seekTo(t, true); } catch (e) { v.currentTime = t; } } else v.currentTime = t;
-    });
-    const t0 = Date.now();
-    while (v.readyState < 2 && Date.now() - t0 < 20000) await sleep(100);
-    if (!v.paused) { try { yt ? p.pauseVideo() : v.pause(); } catch (e) {} }
-    await Promise.race([new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))), sleep(300)]);
-  }
-  if (!v.videoWidth) return {error: 'video has no decoded frame (videoWidth=0)'};
-  const c = window.__grab || (window.__grab = document.createElement('canvas'));
-  if (c.width !== v.videoWidth || c.height !== v.videoHeight) { c.width = v.videoWidth; c.height = v.videoHeight; }
-  c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-  try { return {data: c.toDataURL(mime, q), w: c.width, h: c.height, at: v.currentTime, ended: v.ended, paused: v.paused}; }
-  catch (e) { return {error: 'canvas export blocked: ' + e, w: c.width, h: c.height}; }
-}"""
 
-JS_PLAY = """({rate}) => {
-  const v = document.querySelector('video');
-  const p = document.getElementById('movie_player');
-  try { v.playbackRate = rate; if (p && p.setPlaybackRate) p.setPlaybackRate(rate); } catch (e) {}
-  try { (p && p.playVideo) ? p.playVideo() : v.play(); } catch (e) {}
-  return true;
-}"""
-
-
-def capture_browser(args, url: str, frames_dir: Path):
+def capture_browser(args, url: str, frames_dir: Path, ext: str):
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
         die("playwright not installed: pip install playwright && python3 -m playwright install chromium")
     frames_dir.mkdir(parents=True, exist_ok=True)
-    mime, ext = ("image/png", "png") if args.png else ("image/jpeg", "jpg")
     launch = {"headless": not args.headed,
               "args": ["--autoplay-policy=no-user-gesture-required", "--mute-audio",
                        "--disable-blink-features=AutomationControlled"]}
-    if args.browser_channel:
-        launch["channel"] = args.browser_channel          # e.g. "chrome" = your installed Google Chrome
-    if os.environ.get("CHROMIUM_PATH"):
-        launch["executable_path"] = os.environ["CHROMIUM_PATH"]
-    ctx_opts = {"viewport": {"width": 1920, "height": 1080}, "user_agent": UA,
-                "locale": "en-US", "timezone_id": "America/Los_Angeles"}
+    if args.use_browser:
+        key = "executable_path" if ("/" in args.use_browser or "\\" in args.use_browser) else "channel"
+        launch[key] = args.use_browser
     with sync_playwright() as pw:
-        if args.user_data_dir:                            # reuse a (logged-in) browser profile
+        ctx_opts = {"viewport": {"width": 1920, "height": 1080}, "locale": "en-US",
+                    "timezone_id": "America/Los_Angeles"}
+        if not args.use_browser:   # bundled Chromium announces itself as HeadlessChrome; use the stock desktop UA
+            ctx_opts["user_agent"] = pw.devices["Desktop Chrome"]["user_agent"]
+        if args.user_data_dir:     # reuse a (signed-in) browser profile
             ctx = pw.chromium.launch_persistent_context(args.user_data_dir, **launch, **ctx_opts)
-            browser = None
         else:
-            browser = pw.chromium.launch(**launch)
-            ctx = browser.new_context(**ctx_opts)
+            ctx = pw.chromium.launch(**launch).new_context(**ctx_opts)
+        ctx.add_init_script(script=JS_LIB)
         if re.search(r"youtube\.|youtu\.be", url) and not args.user_data_dir:
-            # pre-accepted consent cookies so the EU/UK consent interstitial never shows
-            ctx.add_cookies([
+            ctx.add_cookies([  # pre-accepted consent so the EU/UK interstitial never shows
                 {"name": "SOCS", "value": "CAISAiAD", "domain": ".youtube.com", "path": "/", "secure": True},
                 {"name": "CONSENT", "value": "YES+1", "domain": ".youtube.com", "path": "/", "secure": True},
             ])
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        log(f"opening {url} in {'headed' if args.headed else 'headless'} "
-            f"{args.browser_channel or 'chromium'}")
+        page = ctx.new_page()
+        log(f"opening {url} in {'headed' if args.headed else 'headless'} {args.use_browser or 'chromium'}")
         page.goto(url, wait_until="domcontentloaded", timeout=90000)
-        meta = page.evaluate(JS_PREP, {"quality": args.yt_quality})
+        target_h = QUALITY_HEIGHT.get(args.yt_quality, 0)
+        meta = page.evaluate("o => window.__fg.prep(o)",
+                             {"quality": args.yt_quality, "targetHeight": target_h, "heights": QUALITY_HEIGHT,
+                              "mime": "image/png" if ext == "png" else "image/jpeg", "q": 0.92})
         if meta.get("error"):
             shot = frames_dir.parent / "browser_error.png"
-            page.screenshot(path=str(shot), full_page=False)
+            page.screenshot(path=str(shot))
             die(meta["error"] + f" (page screenshot saved to {shot})")
         dur = float(meta["duration"])
-        log(f"title={meta['title']!r} duration={dur:.1f}s stream={meta['width']}x{meta['height']}"
-            + (f" yt-quality={meta['qual']}" if meta.get("qual") else ""))
-        step = 1.0 / args.fps
-        times = [round(i * step, 3) for i in range(int(dur / step) + 2)]
-        times = [t for t in times if t <= max(dur - 0.05, 0.0)] or [0.0]
+        log(f"title={meta['title']!r} duration={dur:.1f}s stream={meta['width']}x{meta['height']}")
+        if meta["yt"] and meta["height"] < target_h:
+            log(f"note: the player settled at {meta['height']}p, below the requested {args.yt_quality} "
+                "(that may simply be the best this video has)")
+        end = max(dur - 0.05, 0.0)
+        times = [round(i / args.fps, 3) for i in range(int(end * args.fps) + 1)]
 
-        def grab(t, seek=True):
-            r = page.evaluate(JS_GRAB, {"t": t, "seek": seek, "mime": mime, "q": 0.92})
+        def grab(t=None):
+            r = page.evaluate("t => window.__fg.grab(t)", t)
             if r.get("error"):
                 die(f"frame at t={t}: {r['error']}")
-            return base64.b64decode(r["data"].split(",", 1)[1]), int(r["w"]), int(r["h"]), float(r["at"]), r
+            r["raw"] = base64.b64decode(r["data"].split(",", 1)[1])
+            return r
+
+        probe_t = times[1] if len(times) > 1 else 0.0
+        seekable = abs(grab(probe_t)["at"] - probe_t) < 0.25   # does seeking actually move the playhead?
+
+        def by_seeking():
+            for i, t in enumerate(times, 1):
+                yield i, t, grab(t)
+
+        def by_playing():   # unseekable player: play it through and snapshot each slot as it comes up
+            log(f"player is not seekable here; playing it through at {args.playback_rate}x")
+            grab(0.0)
+            page.evaluate("r => window.__fg.play(r)", args.playback_rate)
+            idx, tol, last_at, last_move = 0, 0.5 / args.fps, -1.0, time.monotonic()
+            while idx < len(times):
+                s = page.evaluate("() => window.__fg.state()")
+                at = float(s["at"])
+                if at >= times[idx] - tol:
+                    while idx + 1 < len(times) and at >= times[idx + 1] - tol:
+                        idx += 1                       # fell behind: skip the slots we missed
+                    r = grab()
+                    idx += 1
+                    yield idx, float(r["at"]), r
+                    continue
+                if s["ended"]:
+                    break
+                if s["paused"]:
+                    page.evaluate("r => window.__fg.play(r)", args.playback_rate)
+                if at != last_at:
+                    last_at, last_move = at, time.monotonic()
+                elif time.monotonic() - last_move > 20:
+                    die(f"playback stalled at t={at:.2f}s")
+                page.wait_for_timeout(max(5, min(250, (times[idx] - tol - at) / args.playback_rate * 1000)))
 
         frames, seen = [], set()
-
-        def keep(i, t, raw, w, h):
-            digest = hashlib.sha1(raw).hexdigest()
+        for i, t, r in (by_seeking() if seekable else by_playing()):
+            digest = hashlib.sha1(r["raw"]).hexdigest()
             if args.dedupe and digest in seen:
-                return
+                continue
             seen.add(digest)
             name = f"frame_{i:05d}_t{t:07.2f}s.{ext}"
-            (frames_dir / name).write_bytes(raw)
-            frames.append({"file": f"frames/{name}", "t": round(t, 3), "w": w, "h": h})
-
-        # Preferred: frame-accurate seeking. Verify the first real seek actually moved the playhead;
-        # some players/servers are not seekable, in which case we play the video through instead.
-        probe_t = times[1] if len(times) > 1 else 0.0
-        _, _, _, at, _ = grab(probe_t, seek=True)
-        seekable = abs(at - probe_t) < 0.25
-        if seekable:
-            for i, t in enumerate(times, 1):
-                raw, w, h, at, _ = grab(t, seek=True)
-                keep(i, t, raw, w, h)
-                if i % 20 == 0 or i == len(times):
-                    log(f"  {i}/{len(times)} captured ({w}x{h})")
-        else:
-            log(f"player is not seekable here; playing it through at {args.playback_rate}x and grabbing on the fly")
-            grab(0.0, seek=True)
-            page.evaluate(JS_PLAY, {"rate": args.playback_rate})
-            idx, tol, stalls, last_at = 0, 0.5 / args.fps, 0, -1.0
-            while idx < len(times):
-                raw, w, h, at, r = grab(0.0, seek=False)
-                if at + 1e-3 >= times[idx] - tol:
-                    while idx + 1 < len(times) and at >= times[idx + 1] - tol:
-                        idx += 1                          # capture loop fell behind; skip missed slots
-                    keep(idx + 1, at, raw, w, h)
-                    idx += 1
-                    if idx % 20 == 0 or idx == len(times):
-                        log(f"  {idx}/{len(times)} captured ({w}x{h}) t={at:.2f}s")
-                if r.get("ended"):
-                    break
-                stalls = stalls + 1 if at == last_at else 0
-                last_at = at
-                if stalls > 200:
-                    die(f"playback stalled at t={at:.2f}s")
-                if r.get("paused") and not r.get("ended"):
-                    page.evaluate(JS_PLAY, {"rate": args.playback_rate})
-                page.wait_for_timeout(20)
-        # adaptive streams often start below full quality: re-grab any frame smaller than the best seen
-        best_h = max(f["h"] for f in frames)
-        redo = [f for f in frames if f["h"] < best_h]
-        if redo and seekable:
-            log(f"re-capturing {len(redo)} early low-res frames at {best_h}p")
+            (frames_dir / name).write_bytes(r["raw"])
+            frames.append({"file": f"frames/{name}", "t": round(t, 3), "w": r["w"], "h": r["h"]})
+            if i % 20 == 0 or i == len(times):
+                log(f"  {i}/{len(times)} captured ({r['w']}x{r['h']})")
+        best = max(frames, key=lambda f: f["h"])
+        redo = [f for f in frames if f["h"] < best["h"]] if seekable else []
+        if redo:   # adaptive streams often start below full quality: re-grab those frames now
+            log(f"re-capturing {len(redo)} early low-res frames at {best['h']}p")
             for f in redo:
-                raw, w, h, at, _ = grab(f["t"], seek=True)
-                if h >= f["h"]:
-                    (frames_dir / Path(f["file"]).name).write_bytes(raw)
-                    f["w"], f["h"] = w, h
+                r = grab(f["t"])
+                if r["h"] > f["h"]:
+                    (frames_dir / Path(f["file"]).name).write_bytes(r["raw"])
+                    f["w"], f["h"] = r["w"], r["h"]
         ctx.close()
-        if browser:
-            browser.close()
-    info = {"title": meta.get("title"), "webpage_url": url, "duration": dur,
-            "width": meta.get("width"), "height": best_h, "pre_roll_ad_seen": meta.get("adSeen"),
-            "capture_strategy": "seek" if seekable else f"play-through@{args.playback_rate}x"}
-    return frames, info
+    return frames, {"title": meta["title"], "webpage_url": url, "duration": dur, "width": best["w"],
+                    "height": best["h"], "pre_roll_ad_seen": meta["adSeen"],
+                    "capture_strategy": "seek" if seekable else f"play-through@{args.playback_rate:g}x"}
 
 
 # --------------------------------------------------------------------------- packaging
-README_TMPL = """Still frames extracted from a video, packaged for downstream spatial / interior-design work.
-
-Source     : {title}
-URL        : {url}
-Duration   : {duration}
-Resolution : {res}
-Captured   : {mode} mode, {when}
-
-frames/   {nframes} stills, {sampling}.{dedupe}
-          File names are frame_<index>_t<seconds>s.{ext}; t is the timestamp in the source video,
-          so consecutive files are adjacent moments (useful for overlap / multi-view reasoning).
-scenes/   {nscenes} stills, one per detected shot change (scene threshold {thr}); a quick
-          "one picture per shot" summary. {scene_note}
-contact_sheet.jpg   thumbnail grid of the whole video in time order.
-manifest.json       machine-readable index of everything above.
-{source_note}
-Generated by grab_video_frames.py
-"""
+DEDUPE_NOTE = {"mpdecimate": " Near-duplicate frames (static moments) were dropped.",
+               "exact": " Byte-identical frames were dropped.", None: ""}
 
 
-def write_docs(out: Path, manifest: dict) -> None:
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
-    v = manifest["video"]
-    dur = v.get("duration")
+def write_docs(out: Path, m: dict) -> None:
+    (out / "manifest.json").write_text(json.dumps(m, indent=2))
+    v, c = m["video"], m["capture"]
     res = f"{v.get('width')}x{v.get('height')}" if v.get("height") else "unknown"
-    if v.get("fps"):
-        res += f" @ {v['fps']:g} fps"
-    c = manifest["capture"]
-    sampling = ("every frame of the source" if c["all_frames"]
-                else f"one every {1 / c['fps']:.2f} s ({c['fps']:g} per second)")
-    (out / "README.txt").write_text(README_TMPL.format(
-        title=v.get("title") or "(unknown title)", url=v.get("webpage_url") or "(local file)",
-        duration=f"{dur:.1f} s" if dur else "unknown", res=res, mode=c["mode"],
-        when=manifest["generated_at"], nframes=len(manifest["frames"]), sampling=sampling,
-        dedupe=" Near-duplicate frames (static moments) were dropped." if c["dedupe"] else "",
-        ext="png" if c["png"] else "jpg", nscenes=len(manifest["scenes"]), thr=c["scene_threshold"],
-        scene_note="" if manifest["scenes"] else "(not produced in this mode)",
-        source_note=f"source/   the original video file + metadata ({manifest['source_file']})\n"
-        if manifest.get("source_file") else ""))
+    lines = [
+        "Still frames extracted from a video.",
+        "",
+        f"Source     : {v.get('title') or '(unknown)'}",
+        f"URL        : {v.get('webpage_url') or '(local file)'}",
+        "Duration   : " + (f"{v['duration']:.1f} s" if v.get("duration") else "unknown"),
+        f"Resolution : {res}" + (f" @ {v['fps']:g} fps" if v.get("fps") else ""),
+        f"Captured   : {c['mode']} mode, {m['generated_at']}",
+        "",
+        f"frames/   {len(m['frames'])} stills, "
+        + ("every frame of the source" if c["fps"] is None else f"one every {1 / c['fps']:.2f} s")
+        + "." + DEDUPE_NOTE[c["dedupe"]],
+        f"          Named frame_<index>_t<seconds>s.{c['ext']}: t is the timestamp in the source video,",
+        "          so neighbouring files are neighbouring moments (overlapping views of the same space).",
+    ]
+    if m["scenes"] is not None:
+        lines.append(f"scenes/   {len(m['scenes'])} stills, one per detected shot change "
+                     f"(scene threshold {c['scene_threshold']}).")
+    lines += ["contact_sheet.jpg   thumbnail grid of the whole video in time order.",
+              "manifest.json       machine-readable index: source details and every file with its timestamp."]
+    if m["source_file"]:
+        lines.append(f"{m['source_file']}   the original video (plus yt-dlp .info.json metadata).")
+    (out / "README.txt").write_text("\n".join(lines) + "\n")
 
 
-def make_zip(out: Path, zip_path: Path) -> None:
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+def make_zip(out: Path) -> Path:
+    zip_path = out.parent / (out.name + ".zip")
+    with zipfile.ZipFile(zip_path, "w") as z:
         for p in sorted(out.rglob("*")):
             if p.is_file():
-                z.write(p, (Path(out.name) / p.relative_to(out)).as_posix())
-    mb = zip_path.stat().st_size / 1e6
-    log(f"zip written: {zip_path} ({mb:.1f} MB)")
+                kind = zipfile.ZIP_STORED if p.suffix.lower() in ALREADY_COMPRESSED else zipfile.ZIP_DEFLATED
+                z.write(p, (Path(out.name) / p.relative_to(out)).as_posix(), compress_type=kind)
+    log(f"zip written: {zip_path} ({zip_path.stat().st_size / 1e6:.1f} MB)")
+    return zip_path
 
 
-def slugify(s: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]+", "_", s).strip("_")[:60] or "video"
+def default_out_dir(url, video_file) -> Path:
+    if video_file:
+        key = Path(video_file).stem
+    else:
+        m = re.search(r"(?:v=|youtu\.be/|shorts/|embed/|live/)([A-Za-z0-9_-]{6,})", url)
+        key = m.group(1) if m else url.split("//")[-1]
+    return Path("frames_" + (re.sub(r"[^A-Za-z0-9._-]+", "_", key).strip("_")[:60] or "video"))
 
 
 # --------------------------------------------------------------------------- main
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    src = ap.add_argument_group("which video")
-    src.add_argument("--url", help="video URL (YouTube watch URL or anything yt-dlp/Chromium can open)")
-    src.add_argument("--channel", help="channel URL; used with --title to find the video")
-    src.add_argument("--title", help="regex matched (case-insensitive) against upload titles on --channel")
-    src.add_argument("--video-file", help="local video file (implies --mode file)")
-    ap.add_argument("--mode", choices=["download", "browser", "file"])
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument("--url", help="video URL (YouTube watch URL, or any page/file Chromium/yt-dlp can open)")
+    src.add_argument("--channel", help="YouTube channel URL; used with --title to find the video")
+    src.add_argument("--video-file", help="a video file you already have")
+    ap.add_argument("--title", help="regex (case-insensitive) matched against upload titles on --channel")
+    ap.add_argument("--mode", choices=["download", "browser"], default="download",
+                    help="how to capture a URL: yt-dlp download (default) or watch it in headless Chromium")
     cap = ap.add_argument_group("capture")
     cap.add_argument("--fps", type=float, default=2.0, help="stills per second of video (default 2)")
-    cap.add_argument("--all-frames", action="store_true", help="every frame (download/file modes; big!)")
+    cap.add_argument("--all-frames", action="store_true", help="every frame (download/file; big)")
     cap.add_argument("--scene-threshold", type=float, default=0.30, help="ffmpeg scene score 0-1 (default 0.30)")
     cap.add_argument("--no-dedupe", dest="dedupe", action="store_false", help="keep near-duplicate frames")
-    cap.add_argument("--png", action="store_true", help="lossless PNG instead of JPEG")
-    cap.add_argument("--jpg-quality", type=int, default=2, help="ffmpeg -q:v, 2 (best) .. 31")
-    out_g = ap.add_argument_group("output")
-    out_g.add_argument("--out", help="output directory (default frames_<video id or file name>)")
-    out_g.add_argument("--zip", help="zip path (default <out>.zip)")
-    out_g.add_argument("--no-source", action="store_true", help="leave the downloaded video out of the zip")
-    yt = ap.add_argument_group("youtube niceties")
+    cap.add_argument("--png", action="store_true", help="lossless PNG instead of JPEG (much bigger)")
+    outg = ap.add_argument_group("output")
+    outg.add_argument("--out", help="output directory (default frames_<video id or file name>); zip lands beside it")
+    outg.add_argument("--force", action="store_true", help="replace the output directory if it exists")
+    outg.add_argument("--no-source", action="store_true", help="leave the downloaded video out of the zip")
+    yt = ap.add_argument_group("youtube / browser")
     yt.add_argument("--format", default="bv*+ba/b", help="yt-dlp format selector (default: best video+audio)")
-    yt.add_argument("--cookies", help="cookies.txt for yt-dlp (if YouTube asks you to sign in)")
-    yt.add_argument("--cookies-from-browser", metavar="BROWSER", help="e.g. chrome, firefox, safari (yt-dlp)")
+    yt.add_argument("--cookies", metavar="FILE", help="cookies.txt for yt-dlp, if YouTube asks you to sign in")
+    yt.add_argument("--cookies-from-browser", metavar="SPEC", help="yt-dlp style, e.g. chrome or 'chrome:Profile 2'")
     yt.add_argument("--yt-quality", default="hd1080", help="browser mode: quality to request (hd2160, hd1080, hd720...)")
-    yt.add_argument("--headed", action="store_true", help="browser mode: show the browser window")
-    yt.add_argument("--browser-channel", metavar="CHANNEL",
-                    help="browser mode: use an installed browser instead of Playwright's Chromium, e.g. chrome, msedge")
+    yt.add_argument("--use-browser", metavar="CHANNEL_OR_PATH",
+                    help="browser mode: an installed browser (chrome, msedge) or a path to a Chromium binary")
     yt.add_argument("--user-data-dir", metavar="DIR",
-                    help="browser mode: browser profile dir to reuse (e.g. one already signed in to YouTube); quit that browser first")
+                    help="browser mode: profile dir to reuse, e.g. one signed in to YouTube (quit that browser first)")
+    yt.add_argument("--headed", action="store_true", help="browser mode: show the window")
     yt.add_argument("--playback-rate", type=float, default=1.0,
-                    help="browser mode fallback (unseekable player): playback speed while grabbing (default 1.0)")
+                    help="browser mode, unseekable players only: playback speed while grabbing (default 1)")
     args = ap.parse_args()
-
-    mode = args.mode or ("file" if args.video_file else "download")
-    if mode == "file" and not args.video_file:
-        die("--mode file needs --video-file")
-    if mode != "file" and not args.url and not (args.channel and args.title):
-        die("say which video: --url URL, or --channel URL --title REGEX, or --video-file PATH")
+    if args.channel and not args.title:
+        ap.error("--channel needs --title REGEX")
+    mode = "file" if args.video_file else args.mode
     if args.all_frames and mode == "browser":
-        die("--all-frames is only for download/file modes (browser mode samples at --fps; try --fps 10)")
+        ap.error("--all-frames is only for download/file capture (browser mode samples at --fps; try --fps 10)")
 
-    ffmpeg = find_ffmpeg(required=mode != "browser")  # browser mode only uses it for the contact sheet
-
-    url = None
-    if mode != "file":
-        url = args.url or resolve_from_channel(args)
-        log(f"video: {url}")
-
-    # output directory
-    if args.out:
-        out = Path(args.out)
-    elif mode == "file":
-        out = Path(f"frames_{slugify(Path(args.video_file).stem)}")
-    else:
-        m = re.search(r"(?:v=|youtu\.be/|shorts/|embed/)([A-Za-z0-9_-]{6,})", url)
-        out = Path(f"frames_{m.group(1) if m else slugify(url.split('//')[-1])}")
-    if out.exists():
-        if (out / "manifest.json").exists() or not any(out.iterdir()):
-            shutil.rmtree(out)
-        else:
-            die(f"{out} exists and is not a previous run of this script; pass a different --out")
-    out.mkdir(parents=True)
-    frames_dir, scenes_dir = out / "frames", out / "scenes"
     ext = "png" if args.png else "jpg"
+    ffmpeg = find_ffmpeg(required=mode != "browser")   # browser mode only uses it for the contact sheet
+    url = None if mode == "file" else (args.url or resolve_from_channel(args))
+    out = Path(args.out) if args.out else default_out_dir(url, args.video_file)
+    if out.exists() and any(out.iterdir()):
+        if not args.force:
+            die(f"{out} already exists: pass --force to replace it, or --out DIR")
+        shutil.rmtree(out)
+    out.mkdir(parents=True, exist_ok=True)
 
-    video_meta: dict = {}
-    source_file = None
-    scenes: list = []
+    scenes = source_file = None
     if mode == "browser":
-        frames, video_meta = capture_browser(args, url, frames_dir)
+        frames, video = capture_browser(args, url, out / "frames", ext)
     else:
-        if mode == "download":
-            video_path, video_meta = download_video(args, url, out / "source", ffmpeg)
-        else:
+        if mode == "file":
             video_path = Path(args.video_file)
-            if not video_path.exists():
+            if not video_path.is_file():
                 die(f"no such file: {video_path}")
-            video_meta = {"title": video_path.name, "webpage_url": None}
-        pr = probe(ffmpeg, video_path)
-        for k in ("duration", "width", "height", "fps"):
-            video_meta[k] = video_meta.get(k) or pr[k]
-        log(f"source: {video_path.name} {pr['width']}x{pr['height']} {pr['fps']} fps {pr['duration']} s")
-        vf = ([] if args.all_frames else [f"fps={args.fps}"]) + (["mpdecimate"] if args.dedupe else [])
-        frames = slice_stills(ffmpeg, video_path, frames_dir, vf, "frame", png=args.png, jpg_q=args.jpg_quality)
-        scenes = slice_stills(ffmpeg, video_path, scenes_dir,
-                              [f"select=eq(n\\,0)+gt(scene\\,{args.scene_threshold})"], "scene",
-                              png=args.png, jpg_q=args.jpg_quality)
-        if mode == "download":
+            video = {"title": video_path.name}
+        else:
+            video_path, video = download_video(args, url, out / "source", ffmpeg)
             if args.no_source:
-                shutil.rmtree(out / "source", ignore_errors=True)
+                shutil.rmtree(out / "source")
             else:
                 source_file = f"source/{video_path.name}"
+        for k, val in probe(ffmpeg, video_path).items():
+            video[k] = video.get(k) or val
+        log(f"source: {video_path.name} {video['width']}x{video['height']} {video['fps']} fps {video['duration']} s")
+        vf = ([] if args.all_frames else [f"fps={args.fps}"]) + (["mpdecimate"] if args.dedupe else [])
+        frames = slice_stills(ffmpeg, video_path, out / "frames", vf, "frame", ext)
+        scenes = slice_stills(ffmpeg, video_path, out / "scenes",
+                              [f"select=eq(n\\,0)+gt(scene\\,{args.scene_threshold})"], "scene", ext)
     if not frames:
         die("no frames were produced")
     if ffmpeg:
-        contact_sheet(ffmpeg, frames_dir, out / "contact_sheet.jpg", ext)
+        contact_sheet(ffmpeg, [out / f["file"] for f in frames], out / "contact_sheet.jpg")
 
-    manifest = {
+    write_docs(out, {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "video": video_meta,
-        "capture": {"mode": mode, "fps": None if args.all_frames else args.fps, "all_frames": args.all_frames,
-                    "dedupe": args.dedupe, "png": args.png, "scene_threshold": args.scene_threshold,
+        "video": video,
+        "capture": {"mode": mode, "fps": None if args.all_frames else args.fps, "ext": ext,
+                    "dedupe": ("exact" if mode == "browser" else "mpdecimate") if args.dedupe else None,
+                    "scene_threshold": None if scenes is None else args.scene_threshold,
                     "yt_quality": args.yt_quality if mode == "browser" else None},
         "source_file": source_file,
         "frames": frames,
         "scenes": scenes,
-    }
-    write_docs(out, manifest)
-    zip_path = Path(args.zip) if args.zip else out.with_suffix(".zip")
-    make_zip(out, zip_path)
-    print(zip_path.resolve())
+    })
+    print(make_zip(out).resolve())
 
 
 if __name__ == "__main__":
